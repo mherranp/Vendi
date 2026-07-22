@@ -1,0 +1,327 @@
+{
+  "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
+  "version": 1,
+  "cli": {
+    "packageManager": "npm"
+  },
+  "newProjectRoot": "projects",
+  "projects": {
+    "vendi-app": {
+      "projectType": "application",
+      "schematics": {
+        "@schematics/angular:component": {
+          "style": "scss"
+        }
+      },
+      "root": "projects/vendi-app",
+      "sourceRoot": "projects/vendi-app/src",
+      "prefix": "vd",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "projects/vendi-app/src/main.ts",
+            "tsConfig": "projects/vendi-app/tsconfig.app.json",
+            "inlineStyleLanguage": "scss",
+            "assets": [
+              {
+                "glob": "**/*",
+                "input": "projects/vendi-app/public"
+              }
+            ],
+            "styles": ["projects/vendi-app/src/styles.scss"]
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "500kB",
+                  "maximumError": "1MB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kB",
+                  "maximumError": "8kB"
+                }
+              ],
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "production": {
+              "buildTarget": "vendi-app:build:production"
+            },
+            "development": {
+              "buildTarget": "vendi-app:build:development"
+            }
+          },
+          "defaultConfiguration": "development"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test"
+        },
+        "lint": {
+          "builder": "@angular-eslint/builder:lint",
+          "options": {
+            "lintFilePatterns": ["projects/vendi-app/**/*.ts", "projects/vendi-app/**/*.html"],
+            "eslintConfig": "projects/vendi-app/eslint.config.js"
+          }
+        }
+      }
+    },
+    "vendi-portal": {
+      "projectType": "application",
+      "schematics": {
+        "@schematics/angular:component": {
+          "style": "scss"
+        }
+      },
+      "root": "projects/vendi-portal",
+      "sourceRoot": "projects/vendi-portal/src",
+      "prefix": "vd",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "projects/vendi-portal/src/main.ts",
+            "tsConfig": "projects/vendi-portal/tsconfig.app.json",
+            "inlineStyleLanguage": "scss",
+            "assets": [
+              {
+                "glob": "**/*",
+                "input": "projects/vendi-portal/public"
+              }
+            ],
+            "styles": ["projects/vendi-portal/src/styles.scss"]
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "500kB",
+                  "maximumError": "1MB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kB",
+                  "maximumError": "8kB"
+                }
+              ],
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "production": {
+              "buildTarget": "vendi-portal:build:production"
+            },
+            "development": {
+              "buildTarget": "vendi-portal:build:development"
+            }
+          },
+          "defaultConfiguration": "development"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test"
+        },
+        "lint": {
+          "builder": "@angular-eslint/builder:lint",
+          "options": {
+            "lintFilePatterns": [
+              "projects/vendi-portal/**/*.ts",
+              "projects/vendi-portal/**/*.html"
+            ],
+            "eslintConfig": "projects/vendi-portal/eslint.config.js"
+          }
+        }
+      }
+    },
+    "ui-kit": {
+      "projectType": "library",
+      "root": "projects/libs/ui-kit",
+      "sourceRoot": "projects/libs/ui-kit/src",
+      "prefix": "vd",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:ng-packagr",
+          "configurations": {
+            "production": {
+              "tsConfig": "projects/libs/ui-kit/tsconfig.lib.prod.json"
+            },
+            "development": {
+              "tsConfig": "projects/libs/ui-kit/tsconfig.lib.json"
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "tsConfig": "projects/libs/ui-kit/tsconfig.spec.json"
+          }
+        },
+        "lint": {
+          "builder": "@angular-eslint/builder:lint",
+          "options": {
+            "lintFilePatterns": ["projects/libs/ui-kit/**/*.ts", "projects/libs/ui-kit/**/*.html"],
+            "eslintConfig": "projects/libs/ui-kit/eslint.config.js"
+          }
+        }
+      }
+    },
+    "domain": {
+      "projectType": "library",
+      "root": "projects/libs/domain",
+      "sourceRoot": "projects/libs/domain/src",
+      "prefix": "vd",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:ng-packagr",
+          "configurations": {
+            "production": {
+              "tsConfig": "projects/libs/domain/tsconfig.lib.prod.json"
+            },
+            "development": {
+              "tsConfig": "projects/libs/domain/tsconfig.lib.json"
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "tsConfig": "projects/libs/domain/tsconfig.spec.json"
+          }
+        },
+        "lint": {
+          "builder": "@angular-eslint/builder:lint",
+          "options": {
+            "lintFilePatterns": ["projects/libs/domain/**/*.ts", "projects/libs/domain/**/*.html"],
+            "eslintConfig": "projects/libs/domain/eslint.config.js"
+          }
+        }
+      }
+    },
+    "data-access": {
+      "projectType": "library",
+      "root": "projects/libs/data-access",
+      "sourceRoot": "projects/libs/data-access/src",
+      "prefix": "vd",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:ng-packagr",
+          "configurations": {
+            "production": {
+              "tsConfig": "projects/libs/data-access/tsconfig.lib.prod.json"
+            },
+            "development": {
+              "tsConfig": "projects/libs/data-access/tsconfig.lib.json"
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "tsConfig": "projects/libs/data-access/tsconfig.spec.json"
+          }
+        },
+        "lint": {
+          "builder": "@angular-eslint/builder:lint",
+          "options": {
+            "lintFilePatterns": [
+              "projects/libs/data-access/**/*.ts",
+              "projects/libs/data-access/**/*.html"
+            ],
+            "eslintConfig": "projects/libs/data-access/eslint.config.js"
+          }
+        }
+      }
+    },
+    "auth": {
+      "projectType": "library",
+      "root": "projects/libs/auth",
+      "sourceRoot": "projects/libs/auth/src",
+      "prefix": "vd",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:ng-packagr",
+          "configurations": {
+            "production": {
+              "tsConfig": "projects/libs/auth/tsconfig.lib.prod.json"
+            },
+            "development": {
+              "tsConfig": "projects/libs/auth/tsconfig.lib.json"
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "tsConfig": "projects/libs/auth/tsconfig.spec.json"
+          }
+        },
+        "lint": {
+          "builder": "@angular-eslint/builder:lint",
+          "options": {
+            "lintFilePatterns": ["projects/libs/auth/**/*.ts", "projects/libs/auth/**/*.html"],
+            "eslintConfig": "projects/libs/auth/eslint.config.js"
+          }
+        }
+      }
+    },
+    "native": {
+      "projectType": "library",
+      "root": "projects/libs/native",
+      "sourceRoot": "projects/libs/native/src",
+      "prefix": "vd",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:ng-packagr",
+          "configurations": {
+            "production": {
+              "tsConfig": "projects/libs/native/tsconfig.lib.prod.json"
+            },
+            "development": {
+              "tsConfig": "projects/libs/native/tsconfig.lib.json"
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "tsConfig": "projects/libs/native/tsconfig.spec.json"
+          }
+        },
+        "lint": {
+          "builder": "@angular-eslint/builder:lint",
+          "options": {
+            "lintFilePatterns": ["projects/libs/native/**/*.ts", "projects/libs/native/**/*.html"],
+            "eslintConfig": "projects/libs/native/eslint.config.js"
+          }
+        }
+      }
+    }
+  }
+}

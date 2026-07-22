@@ -1,0 +1,86 @@
+/* To learn more about Typescript configuration file: https://www.typescriptlang.org/docs/handbook/tsconfig-json.html. */
+/* To learn more about Angular compiler options: https://angular.dev/reference/configs/angular-compiler-options. */
+{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "experimentalDecorators": true,
+    "importHelpers": true,
+    "target": "ES2022",
+    "module": "preserve",
+    "paths": {
+      "auth": [
+        "./projects/libs/auth/src/public-api.ts"
+      ],
+      "data-access": [
+        "./projects/libs/data-access/src/public-api.ts"
+      ],
+      "domain": [
+        "./projects/libs/domain/src/public-api.ts"
+      ],
+      "native": [
+        "./projects/libs/native/src/public-api.ts"
+      ],
+      "ui-kit": [
+        "./projects/libs/ui-kit/src/public-api.ts"
+      ]
+    }
+  },
+  "angularCompilerOptions": {
+    "enableI18nLegacyMessageIdFormat": false,
+    "strictInjectionParameters": true,
+    "strictInputAccessModifiers": true,
+    "strictTemplates": true
+  },
+  "files": [],
+  "references": [
+    {
+      "path": "./projects/vendi-app/tsconfig.app.json"
+    },
+    {
+      "path": "./projects/vendi-app/tsconfig.spec.json"
+    },
+    {
+      "path": "./projects/vendi-portal/tsconfig.app.json"
+    },
+    {
+      "path": "./projects/vendi-portal/tsconfig.spec.json"
+    },
+    {
+      "path": "./projects/libs/ui-kit/tsconfig.lib.json"
+    },
+    {
+      "path": "./projects/libs/ui-kit/tsconfig.spec.json"
+    },
+    {
+      "path": "./projects/libs/domain/tsconfig.lib.json"
+    },
+    {
+      "path": "./projects/libs/domain/tsconfig.spec.json"
+    },
+    {
+      "path": "./projects/libs/data-access/tsconfig.lib.json"
+    },
+    {
+      "path": "./projects/libs/data-access/tsconfig.spec.json"
+    },
+    {
+      "path": "./projects/libs/auth/tsconfig.lib.json"
+    },
+    {
+      "path": "./projects/libs/auth/tsconfig.spec.json"
+    },
+    {
+      "path": "./projects/libs/native/tsconfig.lib.json"
+    },
+    {
+      "path": "./projects/libs/native/tsconfig.spec.json"
+    }
+  ]
+}
