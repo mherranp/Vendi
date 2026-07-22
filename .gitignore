@@ -1,0 +1,43 @@
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Editores
+.idea/
+*.swp
+
+# Secretos y entorno  ← lo más importante de este archivo
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Firmas de aplicaciones móviles
+*.jks
+*.keystore
+frontend/android/keystore.properties
+frontend/ios/*.mobileprovision
+frontend/ios/*.p12
+
+# Python / backend
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# Terraform / infraestructura
+infra/**/.terraform/
+infra/**/*.tfstate
+infra/**/*.tfstate.*
+infra/**/*.tfvars
+!infra/**/*.tfvars.example
+
+# Logs y temporales
+*.log
+tmp/

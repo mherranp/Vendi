@@ -3,11 +3,19 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
-    "start": "ng serve",
-    "build": "ng build",
-    "watch": "ng build --watch --configuration development",
+    "start": "ng serve vendi-app",
+    "start:portal": "ng serve vendi-portal",
+    "build": "ng build vendi-app",
+    "build:portal": "ng build vendi-portal",
+    "build:libs": "ng build domain && ng build ui-kit && ng build data-access && ng build auth && ng build native",
     "test": "ng test",
-    "lint": "ng lint"
+    "lint": "ng lint",
+    "sync": "ng build vendi-app && cap sync",
+    "android": "npm run sync && cap run android",
+    "android:studio": "npm run sync && cap open android",
+    "ios": "npm run sync && cap run ios",
+    "ios:xcode": "npm run sync && cap open ios",
+    "cap:doctor": "cap doctor"
   },
   "private": true,
   "packageManager": "npm@11.11.0",
