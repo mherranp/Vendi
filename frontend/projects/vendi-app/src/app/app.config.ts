@@ -4,15 +4,17 @@ import { provideRouter } from '@angular/router';
 import { routes } from './app.routes';
 import { provideServiceWorker } from '@angular/service-worker';
 
+import { Capacitor } from '@capacitor/core';
+
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
     provideServiceWorker('ngsw-worker.js', {
-      // TODO(paso 12): añadir `&& !Capacitor.isNativePlatform()` al instalar Capacitor.
-      // Dentro del WebView el SW sirve HTML cacheado tras actualizar el binario.
-      // La fuente de verdad offline es IndexedDB, no el service worker.
-      enabled: !isDevMode(),
+      // El SW no debe correr dentro del WebView de Capacitor: serviría HTML
+      // cacheado tras actualizar el binario nativo. La fuente de verdad
+      // offline es IndexedDB (data-access), no el service worker.
+      enabled: !isDevMode() && !Capacitor.isNativePlatform(),
       registrationStrategy: 'registerWhenStable:30000',
     }),
   ],
