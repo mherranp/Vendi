@@ -1,6 +1,7 @@
 // @ts-check
 const { defineConfig } = require('eslint/config');
 const rootConfig = require('../../../eslint.config.js');
+const { fronteraDeCapa } = require('../../../eslint.fronteras.js');
 
 module.exports = defineConfig([
   ...rootConfig,
@@ -27,20 +28,10 @@ module.exports = defineConfig([
   },
   {
     files: ['**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['ui-kit', 'auth', '@capacitor/*'],
-              message:
-                'data-access no conoce la UI ni la sesión (la dependencia va auth → data-access, no al revés). El acceso a plataforma va por native.',
-            },
-          ],
-        },
-      ],
-    },
+    rules: fronteraDeCapa(
+      ['ui-kit', 'auth', '@capacitor/*'],
+      'data-access no conoce la UI ni la sesión (la dependencia va auth → data-access, no al revés). El acceso a plataforma va por native.',
+    ),
   },
   {
     files: ['**/*.html'],

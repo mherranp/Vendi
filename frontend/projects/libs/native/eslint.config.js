@@ -1,6 +1,7 @@
 // @ts-check
 const { defineConfig } = require('eslint/config');
 const rootConfig = require('../../../eslint.config.js');
+const { fronteraDeCapa } = require('../../../eslint.fronteras.js');
 
 module.exports = defineConfig([
   ...rootConfig,
@@ -27,20 +28,10 @@ module.exports = defineConfig([
   },
   {
     files: ['**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['domain', 'ui-kit', 'data-access', 'auth', 'dexie'],
-              message:
-                'native solo envuelve APIs de plataforma. No conoce dominio, UI, persistencia ni sesión.',
-            },
-          ],
-        },
-      ],
-    },
+    rules: fronteraDeCapa(
+      ['domain', 'ui-kit', 'data-access', 'auth', 'dexie'],
+      'native solo envuelve APIs de plataforma. No conoce dominio, UI, persistencia ni sesión.',
+    ),
   },
   {
     files: ['**/*.html'],

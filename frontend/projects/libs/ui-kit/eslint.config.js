@@ -1,6 +1,7 @@
 // @ts-check
 const { defineConfig } = require('eslint/config');
 const rootConfig = require('../../../eslint.config.js');
+const { fronteraDeCapa } = require('../../../eslint.fronteras.js');
 
 module.exports = defineConfig([
   ...rootConfig,
@@ -27,27 +28,10 @@ module.exports = defineConfig([
   },
   {
     files: ['**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: [
-                '@angular/common/http',
-                '@capacitor/*',
-                'dexie',
-                'data-access',
-                'auth',
-                'native',
-              ],
-              message:
-                'ui-kit es presentación pura: sin HTTP, sin persistencia, sin plataforma nativa. Recibe datos por inputs y emite eventos por outputs.',
-            },
-          ],
-        },
-      ],
-    },
+    rules: fronteraDeCapa(
+      ['@angular/common/http', '@capacitor/*', 'dexie', 'data-access', 'auth', 'native'],
+      'ui-kit es presentación pura: sin HTTP, sin persistencia, sin plataforma nativa. Recibe datos por inputs y emite eventos por outputs.',
+    ),
   },
   {
     files: ['**/*.html'],

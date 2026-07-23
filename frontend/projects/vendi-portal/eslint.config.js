@@ -1,6 +1,7 @@
 // @ts-check
 const { defineConfig } = require('eslint/config');
 const rootConfig = require('../../eslint.config.js');
+const { fronteraDeCapa } = require('../../eslint.fronteras.js');
 
 module.exports = defineConfig([
   ...rootConfig,
@@ -27,20 +28,10 @@ module.exports = defineConfig([
   },
   {
     files: ['**/*.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: ['@capacitor/*', 'dexie', 'data-access', 'native'],
-              message:
-                'El portal es web pura: sin plataforma nativa ni persistencia offline. Usa ui-kit, domain y auth.',
-            },
-          ],
-        },
-      ],
-    },
+    rules: fronteraDeCapa(
+      ['@capacitor/*', 'dexie', 'native'],
+      'El portal público es web pura: sin plataforma nativa ni persistencia offline. Puede usar ui-kit, domain, auth y data-access (data-access es la capa HTTP del monorepo — spec §6.2 —, no solo persistencia).',
+    ),
   },
   {
     files: ['**/*.html'],

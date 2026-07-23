@@ -233,28 +233,35 @@ git commit -m "Spike de RLS en PG17: idiom NULLIF fail-closed, FORCE+BYPASSRLS, 
 ### Tarea 1.3 (frontend): resolver la contradicción ESLint y fijar dependencias del workspace
 
 **Files:**
+- Create: `frontend/eslint.fronteras.js` (helper `fronteraDeCapa()`: emite `no-restricted-imports` **y** `no-restricted-syntax` a partir de un único grupo)
 - Modify: `frontend/projects/libs/auth/eslint.config.js` (quitar `data-access` del grupo prohibido; actualizar mensaje)
 - Modify: `frontend/projects/libs/data-access/eslint.config.js` (mensaje: confirmar dirección `auth → data-access`)
+- Modify: `frontend/projects/libs/{domain,native,ui-kit}/eslint.config.js` (pasar al helper; `native` suma `domain` al grupo prohibido por spec §6.3)
+- Modify: `frontend/projects/vendi-{portal,tenant,admin}/eslint.config.js` (grupo web puro `['@capacitor/*','dexie','native']` — **sin** `data-access`)
+- Modify: `frontend/tsconfig.json` (alias de librerías apuntando a `dist/`) y `frontend/package.json` (scripts por app y hooks `pre*` que encadenan `build:libs`)
 - Modify: `frontend/package.json` (añadir `keycloak-js@26.x`, `@ngx-translate/core@^17`, `@ngx-translate/http-loader@^17`)
 
 - [ ] **Paso 1:** en `auth/eslint.config.js`, cambiar el grupo a `['ui-kit', 'dexie', '@capacitor/*']` y el mensaje a: `'auth maneja identidad y entitlements. Puede usar data-access (la dependencia va auth → data-access). Para abrir el navegador del sistema usa la fachada de native, no @capacitor/browser directo.'`
-- [ ] **Paso 2:** verificar que `data-access/eslint.config.js` mantiene `auth` prohibido (ya lo hace — no tocar el grupo, solo revisar el mensaje).
-- [ ] **Paso 3:** `cd frontend && npm install keycloak-js@26 @ngx-translate/core@17 @ngx-translate/http-loader@17`
-- [ ] **Paso 4:** `npx ng lint` — debe pasar en las 5 libs y 4 apps.
-- [ ] **Paso 5: commit**
+- [ ] **Paso 2:** en `data-access/eslint.config.js`, **añadir `auth` al grupo prohibido**. (Corregido tras la Etapa 1: el plan afirmaba que el grupo ya lo contenía; era falso, el grupo original era `['ui-kit', '@capacitor/*']`. El mensaje sí describía la dirección correcta, pero no había regla que la hiciera cumplir. Alineado con spec §6.3.)
+- [ ] **Paso 3:** las apps web **no pueden prohibir `data-access`**. `data-access` es la capa HTTP del monorepo (spec §6.2: recibe `api.service.ts`, los interceptores y el cliente generado por `codegen-api-client.sh`), no solo la persistencia offline. El grupo web puro es `['@capacitor/*', 'dexie', 'native']`. Prohibir `data-access` deja las Tareas 2.4 Paso 2, 4.5 Paso 1 y 4.6 Paso 2 sin forma de ejecutarse.
+- [ ] **Paso 4:** declarar cada frontera con `fronteraDeCapa(grupo, mensaje)`. `no-restricted-imports` **no visita `ImportExpression`** (ver el `return {}` de `node_modules/eslint/lib/rules/no-restricted-imports.js`: solo `ImportDeclaration`, `ExportNamedDeclaration`, `ExportAllDeclaration` y `TSImportEqualsDeclaration`), así que un `import('data-access')` dinámico —el patrón normal de lazy loading en Angular— se salta la frontera entera. El helper genera además los selectores de `no-restricted-syntax` para `import()`, `import('...').Tipo` y `require()`.
+- [ ] **Paso 5:** `cd frontend && npm install keycloak-js@26 @ngx-translate/core@17 @ngx-translate/http-loader@17`
+- [ ] **Paso 6:** `npx ng lint` — debe pasar en las 5 libs y 4 apps.
+- [ ] **Paso 7: commit**
 
 ```bash
-git add frontend/projects/libs/auth/eslint.config.js frontend/projects/libs/data-access/eslint.config.js frontend/package.json frontend/package-lock.json
+git add frontend/eslint.fronteras.js frontend/projects/*/eslint.config.js frontend/projects/libs/*/eslint.config.js frontend/tsconfig.json frontend/package.json frontend/package-lock.json
 git commit -m "ADR-011: la dependencia auth → data-access queda permitida; deps keycloak-js y ngx-translate"
 ```
 
-**Criterios de aceptación:** `npx ng lint` verde; `grep -n "data-access" frontend/projects/libs/auth/eslint.config.js` no aparece en ningún grupo prohibido; ambos mensajes cuentan la misma historia.
+**Criterios de aceptación:** `npx ng lint` verde en los 9 proyectos; `grep -n "data-access" frontend/projects/libs/auth/eslint.config.js` no aparece en ningún grupo prohibido; `grep -n "data-access" frontend/projects/vendi-{tenant,admin,portal}/eslint.config.js` tampoco; ambos mensajes cuentan la misma historia. Sondas obligatorias, estática **y dinámica**: `import { X } from 'data-access'` y `import('data-access')` desde `vendi-admin` pasan; desde `data-access` hacia `auth`, ambas fallan.
 
 ### Superficie de ataque para QA — Etapa 1
 
 - **KC spike:** repetir el spike con el usuario en **cero** organizaciones y en **dos**; el informe debe cubrir ambos o está incompleto. Pedir el token con `scope=organization:<alias-inexistente>` y ver qué pasa. Crear una organización con alias duplicado y con dominio duplicado. Verificar que el claim sobrevive al **refresh token** (no solo al access token inicial). Intentar crear la org SIN dominio: si falla y el informe no lo documenta, la tarea no está terminada.
 - **RLS spike:** ejecutar el script **dos veces seguidas** (¿es re-ejecutable o revienta por objetos existentes?). Conectar como `vendi_app` y probar `SET ROLE vendi_platform` (debe fallar: `vendi_app` no debe ser miembro). Probar `ALTER TABLE ventas DISABLE ROW LEVEL SECURITY` como `vendi_app` (debe fallar: no es owner). Probar un `UPDATE ventas SET tenant_id = '2222...'` con GUC del tenant 1 (WITH CHECK debe bloquearlo). Verificar el caso `current_setting('vendi.tenant_id', true)` cuando la variable NUNCA se definió en la sesión vs. cuando se definió y se puso a `''` — ambos deben dar cero filas.
-- **ESLint:** escribir un import `data-access` → `auth` temporal y confirmar que lint lo rechaza; escribir `auth` → `data-access` y confirmar que pasa. Borrar los archivos de prueba.
+- **ESLint:** escribir un import `data-access` → `auth` temporal y confirmar que lint lo rechaza; escribir `auth` → `data-access` y confirmar que pasa. Repetir **las cuatro formas** en cada caso: estática, `import()` dinámico, `import('...').Tipo` en posición de tipo y ruta relativa (`../../libs/auth/src/public-api`) — la primera es la única que `no-restricted-imports` ve por sí sola. Probar también el import de `data-access` desde `vendi-tenant` y `vendi-admin`: **debe pasar** (es la capa HTTP), mientras que `native`, `dexie` y `@capacitor/*` deben fallar. Borrar los archivos de prueba.
+- **Suite:** `npm test -- --watch=false` debe salir con código 0. El builder `@angular/build:unit-test` **aborta** con "No tests found" en cualquier proyecto sin un solo `.spec.ts`, así que las cinco librerías necesitan al menos la prueba de humo de su barril desde el primer día o el script queda roto para la Etapa 2 y para el CI de la Tarea 5.1.
 
 ### Criterio de integración — Etapa 1
 
