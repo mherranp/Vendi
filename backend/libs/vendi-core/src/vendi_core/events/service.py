@@ -33,9 +33,12 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from vendi_core.messaging.outbox import OutboxService
+from vendi_core.messaging.outbox import EXCHANGE_DE_EVENTOS, OutboxService
 
-EVENT_EXCHANGE = "events.tenant"
+#: Reexportado de `messaging.outbox`, donde vive desde la Etapa 5: el dispatcher
+#: publica SIEMPRE ahí e ignora el `exchange` de la fila (deuda D-07). Que sean
+#: el mismo objeto y no dos literales iguales es lo que impide que se separen.
+EVENT_EXCHANGE = EXCHANGE_DE_EVENTOS
 
 # Clave de enrutado para eventos que no pertenecen a ningún negocio.
 CLAVE_PLATAFORMA = "plataforma"

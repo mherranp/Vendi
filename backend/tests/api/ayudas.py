@@ -35,7 +35,7 @@ from fastapi import FastAPI
 from app.factory import crear_app
 from app.settings import Settings
 from vendi_core.auth.context import UserContext
-from vendi_core.auth.policies import PERM_PLATFORM_ADMIN, ROL_DUENO
+from vendi_core.auth.policies import PERM_PLATFORM_ADMIN, ROL_DUENO, roles_de_realm_del_grupo
 from vendi_core.errors.domain import ExternalServiceError
 
 #: Prefijo de los nombres de negocio que crean los tests. La limpieza borra por
@@ -121,13 +121,18 @@ def usuario_de_plataforma(user_id: str = "admin-plataforma") -> UserContext:
 
 
 def usuario_de_negocio(*tenant_ids: uuid.UUID, user_id: str = "dueno") -> UserContext:
-    """Dueño de uno o varios negocios. Sin ningún permiso de plataforma."""
+    """Dueño de uno o varios negocios. Sin ningún permiso de plataforma.
+
+    `roles` lleva el rol de negocio **y** sus permisos, que es exactamente lo que
+    trae `realm_access.roles` de un token real desde que el grupo `dueno` mapea
+    los dos (Etapa 5, D-08). Antes el rol viajaba en un campo `groups` que el
+    realm nunca llenaba, así que este doble era más generoso que la realidad.
+    """
     return UserContext(
         user_id=user_id,
         username="dueno@demo.vendi.co",
         email="dueno@demo.vendi.co",
-        roles=frozenset(),
-        groups=frozenset({ROL_DUENO}),
+        roles=frozenset(roles_de_realm_del_grupo(ROL_DUENO)),
         realm="vendi-co",
         organizations={str(t): f"org-{t}" for t in tenant_ids},
     )
@@ -151,6 +156,14 @@ def settings_de_prueba(**anulaciones) -> Settings:
         "metrics_token": TOKEN_METRICAS,
         "log_json": False,
         "log_level": "WARNING",
+        # Se fijan explícitamente aunque coincidan con el defecto del código:
+        # pydantic-settings lee el ENTORNO del proceso, y el `.env` de la raíz
+        # —que `conftest.py` carga para los tests de integración— trae
+        # `DOCS_PUBLICOS=true`. Sin esta línea, un test que afirma «por defecto
+        # /docs no existe» pasa o falla según qué haya en el `.env` de quien lo
+        # ejecuta, que es la definición de test no determinista.
+        "docs_publicos": False,
+        "keycloak_audience": "",
     }
     base.update(anulaciones)
     return Settings(**base)  # type: ignore[arg-type]

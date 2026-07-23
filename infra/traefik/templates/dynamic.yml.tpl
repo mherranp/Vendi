@@ -32,8 +32,27 @@ http:
           - PATCH
           - DELETE
           - OPTIONS
+        # Lista EXPLÍCITA, no `"*"`. La combinación `"*"` +
+        # `accessControlAllowCredentials: true` es inválida: la especificación
+        # de Fetch dice que en una petición con credenciales el `*` de
+        # `Access-Control-Allow-Headers` se compara LITERALMENTE —no es un
+        # comodín—, así que el preflight de cualquier petición con
+        # `Authorization` (es decir, TODA petición autenticada de las SPAs en
+        # cuanto alguien use `withCredentials`) se rechazaría en el navegador,
+        # sin un solo log en el backend.
+        #
+        # Tiene que coincidir con `CABECERAS_CORS` de
+        # backend/services/api/app/factory.py, que es la misma superficie vista
+        # desde el otro lado del borde. Hay un test que compara los dos
+        # archivos: backend/tests/api/test_cors.py.
         accessControlAllowHeaders:
-          - "*"
+          - Accept
+          - Accept-Language
+          - Authorization
+          - Content-Type
+          - X-Correlation-Id
+          - X-Requested-With
+          - X-Tenant-Id
         accessControlAllowCredentials: true
         accessControlMaxAge: 3600
         addVaryHeader: true
@@ -125,16 +144,36 @@ http:
       tls: ${TLS_OPCIONES}
 
     # --- Apps de frontend ---
-    # Vendi todavía no empaqueta las apps Angular en imágenes: en desarrollo
-    # se sirven con `ng serve`. Cuando exista frontend/Dockerfile (Etapa 5),
-    # descomentar estos routers y sus servicios de abajo:
-    #
-    #   portal:  Host(`${BASE_DOMAIN}`) || Host(`www.${BASE_DOMAIN}`) -> vendi-portal
-    #   tenant:  Host(`app.${BASE_DOMAIN}`)                           -> vendi-tenant
-    #   admin:   Host(`admin.${BASE_DOMAIN}`)                         -> vendi-admin
+    # Las tres SPAs web se sirven desde imágenes nginx (frontend/Dockerfile,
+    # servicios `portal`/`tenant`/`admin` del compose). `vendi-app` no tiene
+    # router: es la app móvil y su artefacto es el AAB.
     #
     # Vendi NO enruta por subdominio de tenant (no hay HostRegexp comodín como
     # en BaseSaaS): el tenant se resuelve del claim `organization` del token.
+    #
+    # NO llevan `cors-api`: CORS lo negocia el navegador contra el ORIGEN de la
+    # API (`api.${BASE_DOMAIN}`), no contra el que sirve la SPA. Poner el
+    # middleware aquí solo añadiría cabeceras que nadie mira.
+    portal:
+      rule: "Host(`${BASE_DOMAIN}`) || Host(`www.${BASE_DOMAIN}`)"
+      entryPoints: [websecure]
+      service: portal
+      middlewares: [secure-headers]
+      tls: ${TLS_OPCIONES}
+
+    tenant:
+      rule: "Host(`app.${BASE_DOMAIN}`)"
+      entryPoints: [websecure]
+      service: tenant
+      middlewares: [secure-headers]
+      tls: ${TLS_OPCIONES}
+
+    admin:
+      rule: "Host(`admin.${BASE_DOMAIN}`)"
+      entryPoints: [websecure]
+      service: admin
+      middlewares: [secure-headers]
+      tls: ${TLS_OPCIONES}
 
   services:
     api:
@@ -153,4 +192,16 @@ http:
       loadBalancer:
         servers:
           - url: "http://mailhog:8025"
+    portal:
+      loadBalancer:
+        servers:
+          - url: "http://portal:80"
+    tenant:
+      loadBalancer:
+        servers:
+          - url: "http://tenant:80"
+    admin:
+      loadBalancer:
+        servers:
+          - url: "http://admin:80"
 

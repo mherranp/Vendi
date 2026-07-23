@@ -44,3 +44,14 @@ services:
   worker:
     environment:
       WORKER_HEARTBEAT_SECONDS: ${WORKER_HEARTBEAT_SECONDS:-10}
+
+  # Documentación interactiva de la API, SOLO en desarrollo. En el compose base
+  # `DOCS_PUBLICOS` no se declara y el defecto del código es `false`: `/docs`,
+  # `/redoc` y `/openapi.json` devuelven 404 en producción porque las rutas ni
+  # se registran. Lo que publican es el mapa completo de la API —rutas,
+  # esquemas, códigos de error, incluidas las de plataforma—, y en Fase 0 no hay
+  # ningún consumidor externo que lo necesite: el cliente TypeScript se genera
+  # aquí mismo (scripts/codegen-api-client.sh). Ver app/settings.py.
+  api:
+    environment:
+      DOCS_PUBLICOS: ${DOCS_PUBLICOS:-true}

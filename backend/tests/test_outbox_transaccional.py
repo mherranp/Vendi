@@ -103,9 +103,20 @@ async def test_la_api_encola_en_su_propia_transaccion(pg_app_url, pg_platform_ur
 
     assert fila.tenant_id == T1
     assert fila.exchange == EVENT_EXCHANGE
-    assert fila.status == STATUS_PENDING
     assert fila.payload["id"] == event_id
     assert fila.payload["event"] == marca
+    # `status` NO se fija en `pending`, y no es un aflojamiento: este test corre
+    # contra el Postgres del compose, donde el worker real está sondeando cada
+    # `OUTBOX_POLL_INTERVAL` (2 s por defecto). Entre el `commit()` y esta
+    # consulta cabe perfectamente una pasada del dispatcher, así que exigir
+    # `pending` es una carrera contra un proceso que hace justo lo que debe: se
+    # midió en verde muchas veces y en rojo con `assert 'processed' == 'pending'`.
+    # Lo que este test afirma es que la fila EXISTE y es la del llamante —o sea,
+    # que `emit()` funciona con la sesión de tenant, que es el fallo que reprodujo
+    # el QA—; que acabe publicada es exactamente lo correcto. La máquina de
+    # estados la prueban `test_outbox_dispatcher.py` (con dobles, determinista) y
+    # `tests/worker/test_outbox_dispatch.py` (con una pasada explícita).
+    assert fila.status in (STATUS_PENDING, "processed")
 
 
 async def test_un_rollback_del_llamante_no_deja_mensaje_fantasma(pg_app_url, pg_platform_url, limpiar_outbox):

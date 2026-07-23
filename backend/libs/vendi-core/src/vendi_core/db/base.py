@@ -102,6 +102,42 @@ TABLAS_DE_PLATAFORMA: frozenset[str] = frozenset(
 )
 
 
+# Privilegios que el rol de la API (`vendi_app`) DEBE tener sobre cada tabla del
+# esquema regional. Es un candado **invertido**: enumera lo permitido, no lo
+# prohibido.
+#
+# Por qué invertido (deuda D-06). El candado anterior enumeraba las tablas
+# prohibidas y comprobaba que `vendi_app` no las alcanzaba. Una lista de
+# prohibidos siempre se queda corta: `alembic_version` —la tabla que decide qué
+# DDL se considera aplicado— nunca estuvo en ella, y `vendi_app` conservó
+# SELECT/INSERT/UPDATE/DELETE sobre ella durante cuatro etapas sin que ningún
+# test lo dijera. Con la lista invertida, una tabla nueva sin clasificar pone el
+# test rojo aunque nadie se acuerde de tocarlo.
+#
+# La regla implícita para lo que NO está aquí: es tabla de negocio, tiene
+# `tenant_id`, lleva RLS forzada con policy, y `vendi_app` tiene los cuatro
+# privilegios (RLS es lo que la acota, no el GRANT).
+PRIVILEGIOS_DE_VENDI_APP: dict[str, frozenset[str]] = {
+    # Escribe la auditoría la fábrica de sesión de PLATAFORMA, a propósito y
+    # fuera de la transacción del llamante. El rol de la API no la toca.
+    "audit_events": frozenset(),
+    # INSERT y solo INSERT: `enqueue()` escribe en la sesión del llamante para
+    # que el evento y la escritura de negocio compartan transacción. No lee la
+    # cola de nadie, no marca procesado, no borra. Además pasa por la policy
+    # `outbox_encolado_del_tenant`.
+    "outbox_messages": frozenset({"INSERT"}),
+    # El catálogo de negocios: sin policy y con SELECT, cualquier handler
+    # listaría todos los negocios de la región. Migración 0002.
+    "tenants": frozenset(),
+    # La tabla que decide qué migraciones se consideran aplicadas. Migración
+    # 0003; ver la deuda D-06.
+    "alembic_version": frozenset(),
+}
+
+#: Los cuatro privilegios que una tabla de negocio sí debe conceder.
+PRIVILEGIOS_DE_TABLA_DE_NEGOCIO: frozenset[str] = frozenset({"SELECT", "INSERT", "UPDATE", "DELETE"})
+
+
 def verificar_indices_de_tenant(metadata: MetaData) -> list[str]:
     """Devuelve los nombres de las tablas que incumplen la regla del índice.
 

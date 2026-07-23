@@ -207,9 +207,12 @@ class JWTValidator:
     @staticmethod
     def _build_user_context(claims: dict, realm: str) -> UserContext:
         realm_access = claims.get("realm_access", {})
+        # `realm_access.roles` es el ÚNICO canal de autorización del token: trae
+        # los permisos y los roles de negocio (`dueno`, `cajero`, `almacenista`),
+        # que en Vendi son roles de realm. El claim `groups` ya no se lee: el
+        # realm no lo emite y leerlo daba una comprobación de rol siempre falsa
+        # (deuda D-08, cerrada en la Etapa 5; ver ADR-015).
         roles = realm_access.get("roles", []) if isinstance(realm_access, dict) else []
-        groups_raw = claims.get("groups", [])
-        groups = [g.lstrip("/") for g in groups_raw] if isinstance(groups_raw, list) else []
         exp_raw = claims.get("exp")
         token_exp = int(exp_raw) if exp_raw is not None else None
         return UserContext(
@@ -217,7 +220,6 @@ class JWTValidator:
             username=claims.get("preferred_username", ""),
             email=claims.get("email", ""),
             roles=roles,
-            groups=frozenset(groups),
             realm=realm,
             organizations=parsear_claim_organization(claims.get("organization")),
             acr=claims.get("acr"),

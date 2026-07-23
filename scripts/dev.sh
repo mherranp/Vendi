@@ -15,8 +15,11 @@
 #   ./scripts/setup-certs.sh        # generar los certificados TLS
 #   cp .env.example .env            # y cambiar las contraseñas
 #
-# Las apps Angular NO están en el compose: en desarrollo se sirven con
-# `cd frontend && npm start`. Ver infra/traefik/templates/dynamic.yml.tpl.
+# Las tres apps web (portal, tenant, admin) SÍ están en el compose desde la
+# Etapa 5: se construyen con frontend/Dockerfile y se sirven por Traefik en
+# https://vendi.co, https://app.vendi.co y https://admin.vendi.co. `ng serve`
+# queda solo para iterar con recarga en caliente, nunca para verificar
+# integración. Ver infra/traefik/templates/dynamic.yml.tpl.
 # =============================================================================
 
 set -euo pipefail
@@ -198,4 +201,4 @@ echo "Siguientes pasos:"
 echo "  ./scripts/verify-setup.sh   # comprobar que todo responde"
 echo "  ./scripts/migrate.sh        # migraciones de Alembic (rol vendi_platform)"
 echo "  ./scripts/seed.sh           # datos de demostración"
-echo "  cd frontend && npm start    # las apps Angular no van en el compose"
+echo "  Apps web por dominio:  https://vendi.co · https://app.vendi.co · https://admin.vendi.co"

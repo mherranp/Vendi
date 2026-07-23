@@ -297,3 +297,71 @@ async def test_los_mensajes_publicados_quedan_marcados_processed(pg_platform_url
     finally:
         await engine.dispose()
     assert estados and all(e == STATUS_PROCESSED for e in estados)
+
+
+@pytest.mark.asyncio
+async def test_un_exchange_ajeno_no_se_declara_ni_desvia_el_mensaje(
+    pg_app_url, pg_platform_url, conexion_amqp, cola_por_clave, limpiar_outbox
+):
+    """D-07, el resto de D-05, con dos exchanges reales.
+
+    La policy del outbox acota `tenant_id` y nada más: `vendi_app` puede encolar
+    una fila con su propio negocio y el `exchange` que quiera. El dispatcher lo
+    usaba literalmente en `declare_exchange`, de modo que un nombre nuevo
+    **creaba** el exchange —escritura en la topología del broker desde el rol de
+    la API— y uno reservado (`amq.direct`) reventaba la publicación.
+
+    Se afirman las dos mitades:
+
+    1. el mensaje sale igualmente por el exchange bueno, con su clave derivada;
+    2. el exchange que pedía la fila **no existe** después. La comprobación es
+       un `declare_exchange(..., passive=True)`, que en AMQP es «dime si existe»
+       y responde 404 si no: si el dispatcher lo hubiera creado, esa llamada
+       tendría éxito y el test fallaría.
+    """
+    exchange_ajeno = f"vendi.suplantado.{uuid.uuid4().hex[:8]}"
+    cola_a = await cola_por_clave(f"{A}.#")
+
+    engine_app = create_engine(pg_app_url)
+    marca = current_tenant_id.set(A)
+    try:
+        async with create_session_factory(engine_app)() as sesion:
+            await sesion.execute(
+                text(
+                    "INSERT INTO outbox_messages (tenant_id, exchange, routing_key, payload) "
+                    "VALUES (:t, :x, :k, CAST(:p AS jsonb))"
+                ),
+                {
+                    "t": A,
+                    "x": exchange_ajeno,
+                    "k": f"{A}.venta.creada",
+                    "p": '{"event": "venta.creada", "data": {}}',
+                },
+            )
+            await sesion.commit()
+    finally:
+        current_tenant_id.reset(marca)
+        await engine_app.dispose()
+
+    publicador = await EventPublisher.connect(_amqp_url())
+    try:
+        await _drenar(pg_platform_url, publicador)
+    finally:
+        await publicador.close()
+
+    propio = await _recibir(cola_a)
+    assert propio is not None, (
+        "el mensaje no llegó al exchange configurado: el dispatcher sigue publicando "
+        "en el exchange que dice la fila (D-07)."
+    )
+    assert propio.routing_key == f"{A}.venta.creada"
+
+    # Canal aparte: un `declare` pasivo fallido cierra el canal en el que se
+    # hace, y con él se llevaría las colas declaradas arriba.
+    canal = await conexion_amqp.channel()
+    try:
+        with pytest.raises(aio_pika.exceptions.ChannelNotFoundEntity):
+            await canal.declare_exchange(exchange_ajeno, passive=True)
+    finally:
+        if not canal.is_closed:
+            await canal.close()

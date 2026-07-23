@@ -1,0 +1,30 @@
+# Contexto de construcción de `frontend/Dockerfile`.
+#
+# Sin este archivo el contexto que se envía al demonio de Docker incluye
+# `node_modules/` (~1,4 GB) y `android/` con su caché de Gradle: la
+# construcción tarda minutos solo en subir el contexto y, peor, `npm ci`
+# encontraría un `node_modules` heredado del anfitrión —con binarios
+# compilados para macOS— dentro de una imagen Alpine.
+node_modules
+dist
+.angular
+tmp
+out-tsc
+
+# Plataformas nativas: el AAB lo produce el workflow de Android, no esta imagen.
+android
+ios
+
+# Pruebas de extremo a extremo y sus artefactos.
+e2e
+playwright.config.ts
+playwright-report
+test-results
+.auth
+
+# Ruido del anfitrión.
+.vscode
+.DS_Store
+*.log
+Dockerfile
+.dockerignore

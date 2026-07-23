@@ -1,64 +1,46 @@
-# DataAccess
+# @vendi/data-access
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 21.2.0.
+Persistencia local (IndexedDB como fuente de verdad offline), cola de
+sincronización, cliente de la API, interceptores, avisos al usuario e i18n. El
+acceso a plataforma va siempre por `@vendi/native`.
 
-## Code scaffolding
+Puede importar `@vendi/domain` y `@vendi/native`. No importa `@vendi/ui-kit` ni
+`@vendi/auth`.
 
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
-
-```bash
-ng generate component component-name
-```
-
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+## Construir
 
 ```bash
-ng generate --help
+npm run build:libs     # domain, native, ui-kit, data-access y auth, en orden
+ng build data-access   # solo esta librería
 ```
 
-## Building
+El resultado va a `dist/data-access`. Es una librería interna del monorepo: se
+consume por el mapeo de rutas de `tsconfig.json`, **no** se publica en npm.
 
-To build the library, run:
+## Tests unitarios
+
+El runner es Vitest, a través del builder `@angular/build:unit-test`. En este
+workspace no hay Karma: pasar `--browsers` aborta el comando sin ejecutar un
+solo test.
 
 ```bash
-ng build data-access
+ng test data-access --watch=false   # solo esta librería
+npm test                            # los 9 proyectos del workspace
 ```
 
-This command will compile your project, and the build artifacts will be placed in the `dist/` directory.
+## Cliente de la API
 
-### Publishing the Library
-
-Once the project is built, you can publish your library by following these steps:
-
-1. Navigate to the `dist` directory:
-
-   ```bash
-   cd dist/data-access
-   ```
-
-2. Run the `npm publish` command to publish your library to the npm registry:
-   ```bash
-   npm publish
-   ```
-
-## Running unit tests
-
-To execute unit tests with the [Karma](https://karma-runner.github.io) test runner, use the following command:
+Los tipos del cliente se generan desde el `openapi.json` del backend; no se
+editan a mano:
 
 ```bash
-ng test
+npm run codegen:api
 ```
 
-## Running end-to-end tests
+## Tests de extremo a extremo
 
-For end-to-end (e2e) testing, run:
+Los E2E son de Playwright y viven en `frontend/e2e`, no por librería:
 
 ```bash
-ng e2e
+npm run e2e
 ```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.

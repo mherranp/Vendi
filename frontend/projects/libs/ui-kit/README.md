@@ -1,64 +1,47 @@
-# UiKit
+# @vendi/ui-kit
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 21.2.0.
+Presentación pura: componentes, directivas, pipes y tokens de diseño. Sin HTTP,
+sin persistencia y sin plataforma nativa. Recibe datos por inputs y emite
+eventos por outputs.
 
-## Code scaffolding
+Puede importar `@vendi/domain`. No importa `@vendi/data-access`,
+`@vendi/auth`, `@vendi/native`, `@angular/common/http`, `@capacitor/*` ni
+`dexie` (la lista completa la hace cumplir
+`projects/libs/ui-kit/eslint.config.js`). El prefijo de selectores es `vd`.
 
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
-
-```bash
-ng generate component component-name
-```
-
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
-
-```bash
-ng generate --help
-```
-
-## Building
-
-To build the library, run:
+## Construir
 
 ```bash
-ng build ui-kit
+npm run build:libs   # domain, native, ui-kit, data-access y auth, en orden
+ng build ui-kit      # solo esta librería
 ```
 
-This command will compile your project, and the build artifacts will be placed in the `dist/` directory.
+El resultado va a `dist/ui-kit`. Es una librería interna del monorepo: se
+consume por el mapeo de rutas de `tsconfig.json`, **no** se publica en npm.
 
-### Publishing the Library
+## Tests unitarios
 
-Once the project is built, you can publish your library by following these steps:
-
-1. Navigate to the `dist` directory:
-
-   ```bash
-   cd dist/ui-kit
-   ```
-
-2. Run the `npm publish` command to publish your library to the npm registry:
-   ```bash
-   npm publish
-   ```
-
-## Running unit tests
-
-To execute unit tests with the [Karma](https://karma-runner.github.io) test runner, use the following command:
+El runner es Vitest, a través del builder `@angular/build:unit-test`. En este
+workspace no hay Karma: pasar `--browsers` aborta el comando sin ejecutar un
+solo test.
 
 ```bash
-ng test
+ng test ui-kit --watch=false   # solo esta librería
+npm test                       # los 9 proyectos del workspace
 ```
 
-## Running end-to-end tests
+## Contraste de color
 
-For end-to-end (e2e) testing, run:
+Los tokens de diseño tienen su propio candado de accesibilidad:
 
 ```bash
-ng e2e
+npm run verificar:contraste
 ```
 
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
+## Tests de extremo a extremo
 
-## Additional Resources
+Los E2E son de Playwright y viven en `frontend/e2e`, no por librería:
 
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+```bash
+npm run e2e
+```

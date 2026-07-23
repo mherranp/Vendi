@@ -128,6 +128,18 @@ export class TenantsComponent {
     const skip = this.indicePagina() * this.tamanoPagina();
     this.servicio.listar(skip, this.tamanoPagina(), this.incluirEliminados()).subscribe({
       next: (pagina) => {
+        // Última página vaciada: el usuario estaba en la página 4, dio de baja
+        // el único negocio que quedaba en ella y el servidor devuelve cero
+        // filas con un total que dice que sí hay negocios. Sin esta corrección
+        // la pantalla enseña «Todavía no hay negocios» —una afirmación FALSA
+        // sobre la plataforma entera— y el paginador deja al usuario encallado
+        // en una página que ya no existe. Se retrocede una página y se vuelve a
+        // pedir; el retroceso converge porque `indicePagina` decrece.
+        if (pagina.items.length === 0 && pagina.total > 0 && this.indicePagina() > 0) {
+          this.indicePagina.update((indice) => indice - 1);
+          this.recargar();
+          return;
+        }
         this.filas.set(pagina.items);
         this.total.set(pagina.total);
         this.cargando.set(false);

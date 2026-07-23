@@ -203,7 +203,18 @@ La misma build se publica como PWA instalable (manifest + service worker) — ca
 
 ## 8. Roadmap técnico por fases (actualizado)
 
-**Fase 0 — Fundaciones (sem 1–4):** monorepo (FastAPI + Angular + Capacitor), CI/CD con build de binarios (Android primero), Keycloak 26 región CO (realm como código + Organizations + passkeys), PG + RLS, RabbitMQ + Redis, IaC parametrizado por región (ADR-003), despliegue staging. *Entregable:* login con passkey, CRUD de tenant, pipeline que produce AAB de prueba.
+**Fase 0 — Fundaciones (sem 1–4):** monorepo (FastAPI + Angular + Capacitor), CI/CD con build de binarios (Android primero), Keycloak 26 región CO (realm como código + Organizations + passkeys), PG + RLS, RabbitMQ + Redis, **compose de producción versionado + `deploy.yml` + runbook de la VM**, despliegue staging. *Entregable:* login con passkey, CRUD de tenant, pipeline que produce AAB de prueba.
+
+> **Corrección de la Etapa 5 (2026-07-23).** Esta línea decía «IaC parametrizado
+> por región (ADR-003)» como entregable de Fase 0, y el plan maestro §7 lo
+> repetía. **Terraform se difiere a Fase 2** (ver `docs/adr/adr-003-multi-region.md`):
+> con una sola región y un solo servidor, un módulo de Terraform es coste de
+> mantenimiento sin ningún despliegue que lo ejercite, y el primer uso real
+> —levantar la región MX— cae en Fase 3. La reproducibilidad interina de Fase 0
+> la dan `infra/docker-compose.override.prod.yml` versionado,
+> `.github/workflows/deploy.yml` y el runbook de despliegue en la VM. La
+> parametrización POR REGIÓN del diseño (§3) no cambia: sigue siendo la
+> arquitectura; lo que se difiere es escribirla en Terraform.
 
 **Fase 1 — MVP Colombia (sem 5–13):** catálogo + POS offline-first, inventario con alertas, compras, caja, asistente IA v1 (consultas + recomendaciones por reglas narradas), registro por voz (Gemini), escáner de códigos, push FCM. *Entregable:* piloto 50–100 tiendas; app en Play Store (track cerrado → producción); PWA pública; TestFlight iOS interno.
 

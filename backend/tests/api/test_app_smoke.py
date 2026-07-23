@@ -194,3 +194,32 @@ def test_con_cors_de_aplicacion_el_preflight_se_responde_con_cabeceras():
         )
     assert respuesta.status_code == 200
     assert respuesta.headers["access-control-allow-origin"] == "http://localhost:4200"
+
+
+# --- La documentación interactiva: cerrada salvo que se pida ----------------
+
+
+def test_por_defecto_docs_openapi_y_redoc_no_existen():
+    """404 real, no un middleware que las tape: con `docs_publicos=False`
+    FastAPI ni siquiera registra las rutas.
+
+    Hasta la Etapa 5 estaban abiertas en el borde sin decisión escrita. Lo que
+    publican es el mapa completo de la API —rutas, esquemas, códigos de error,
+    incluidas las de plataforma—, y en Fase 0 no hay ningún consumidor externo
+    que lo necesite: el cliente TypeScript se genera contra el contrato
+    versionado en docs/api/openapi-fase0.json.
+    """
+    app, _, _ = app_de_prueba()
+    cliente = TestClient(app)
+    for ruta in ("/docs", "/redoc", "/openapi.json"):
+        assert cliente.get(ruta).status_code == 404, f"{ruta} no debería existir con DOCS_PUBLICOS apagado"
+
+
+def test_con_docs_publicos_las_tres_rutas_se_sirven():
+    """El interruptor tiene que funcionar en los dos sentidos: si solo se
+    probara el 404, un cambio que las apagara para siempre pasaría igual."""
+    app, _, _ = app_de_prueba(settings_de_prueba(docs_publicos=True))
+    cliente = TestClient(app)
+    assert cliente.get("/openapi.json").status_code == 200
+    assert cliente.get("/docs").status_code == 200
+    assert cliente.get("/redoc").status_code == 200

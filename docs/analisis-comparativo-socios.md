@@ -2,7 +2,13 @@
 
 **Fecha:** 21 de julio de 2026
 **Documento analizado:** `AI-Smart-Business-Manager-BP-VLM-Scanning.docx` (business plan del socio, en inglés)
-**Comparado contra:** `vision-producto/index.html`, `investor_pdf/Vendi_Inversores.pdf`, `docs/plan-tecnico.md` (v2, ADR-001..004), `docs/monetizacion-web.md`
+**Comparado contra:** `docs/Vendi_Inversores.pdf`, `docs/plan-tecnico.md` (v2, ADR-001..004), `docs/monetizacion-web.md`
+
+> **Corrección de la Etapa 5 (2026-07-23).** Esta línea citaba
+> `vision-producto/index.html` e `investor_pdf/Vendi_Inversores.pdf`. El primero
+> no existe en el repositorio (la visión interactiva nunca se versionó) y el
+> segundo está en `docs/`, no en `investor_pdf/`. Se corrige la ruta del PDF y
+> se retira la referencia al archivo inexistente.
 
 ---
 

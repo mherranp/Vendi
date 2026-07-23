@@ -30,6 +30,15 @@ export interface UserProfile {
   email: string;
   firstName: string;
   lastName: string;
+  /**
+   * Nombre completo tal y como lo compone Keycloak (claim `name`).
+   *
+   * Existe porque un realm puede tener usuarios sin nombre ni apellido —los
+   * sembrados por `seed.sh` lo están, pero no hay nada que lo garantice— y sin
+   * este respaldo el shell caía directamente al nombre de usuario, que suele
+   * ser un correo. Cadena vacía cuando el token no trae el claim.
+   */
+  nombreCompleto: string;
   /** Roles de realm (`dueno`, `cajero`, `almacenista`, `platform:admin`, …). */
   roles: string[];
   /** Tenant activo. `null` si no hay ninguno o si hay varios sin elegir. */

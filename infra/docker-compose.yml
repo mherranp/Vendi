@@ -11,9 +11,13 @@ name: vendi
 #   - fuera `storage-service` y `realtime-service` (ADR-016: el monolito
 #     modular sirve archivos y no hay tiempo real en Fase 0)
 #   - fuera `platform-service`/`mail-worker`; entran `api` y `worker`
-#   - fuera los servicios de frontend: Vendi todavía no tiene Dockerfile de
-#     frontend (las apps se sirven con `ng serve` en desarrollo). Sus routers
-#     de Traefik están preparados y comentados en el template dinámico.
+#   - los servicios de frontend (`portal`, `tenant`, `admin`) entraron en la
+#     Etapa 5 junto con `frontend/Dockerfile`: los E2E de Playwright verifican
+#     la integración con Keycloak y con la API, y eso solo tiene sentido si las
+#     SPAs se sirven por su hostname a través de Traefik. `ng serve` en un
+#     puerto pelado no ejercita ni el enrutado, ni las cabeceras del borde, ni
+#     el TLS. `vendi-app` no tiene servicio: es la app móvil y su artefacto es
+#     el AAB.
 
 # Logging centralizado: todos los contenedores con rotación para que los logs
 # no llenen el disco del anfitrión.
@@ -381,6 +385,13 @@ services:
       # D-02: ver docs/deuda-tecnica.md.
       KEYCLOAK_PROVISIONING_CLIENT_ID: vendi-provisioning
       KEYCLOAK_PROVISIONING_CLIENT_SECRET: ${VENDI_PROVISIONING_CLIENT_SECRET:?VENDI_PROVISIONING_CLIENT_SECRET es obligatorio}
+      # Audiencia exigida en el claim `aud`. La emite el client scope
+      # `vendi-audiencia` del realm (mapper `oidc-audience-mapper`) en los
+      # tokens de vendi-web y vendi-admin. Sin esta comprobación, cualquier
+      # token firmado por el realm sirve contra la API aunque se emitiera para
+      # otro público. Se pasa explícito para que se vea en `docker compose
+      # config`; el defecto del código es el mismo valor.
+      KEYCLOAK_AUDIENCE: ${KEYCLOAK_AUDIENCE-vendi-backend}
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-vendi}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY es obligatorio}
@@ -478,6 +489,17 @@ services:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
+    # La MISMA sonda que usa el check 13 de scripts/verify-setup.sh. Sin
+    # healthcheck, `docker compose up -d --wait` da por bueno el servicio en
+    # cuanto el contenedor está «running», y verify-setup puede llegar antes
+    # de que Prometheus haya abierto el puerto: un rojo intermitente en CI que
+    # no corresponde a ningún defecto. Con la sonda, `--wait` espera de verdad.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     networks:
       - vendi-net
     # Sin puerto publicado: solo se consulta desde dentro de la red del
@@ -494,8 +516,66 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
+    # La MISMA sonda que usa el check 14 de scripts/verify-setup.sh, por el
+    # mismo motivo que en prometheus: `--wait` sin healthcheck no espera a que
+    # Grafana termine de provisionar y de escuchar.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:3000/api/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     depends_on:
       - prometheus
+    networks:
+      - vendi-net
+
+  # -----------------------------------------------------------------
+  # Frontend — las tres SPAs web, servidas por su hostname
+  # -----------------------------------------------------------------
+  # Las tres salen de la MISMA receta (`frontend/Dockerfile`); lo único que
+  # cambia es el argumento `APP`. `vendi-app` no está aquí: es la app móvil y
+  # su artefacto es el AAB de `.github/workflows/android.yml`.
+  #
+  # No publican puertos: solo Traefik habla con ellas, por la red del compose.
+  # Y no llevan variables de entorno: una SPA es HTML y JavaScript estáticos,
+  # su configuración se hornea en tiempo de construcción (`environment.ts` +
+  # el argumento `BASE_DOMAIN`). Inyectar aquí una URL de API no tendría ningún
+  # efecto y haría creer lo contrario.
+  #
+  # Los catálogos de i18n (`/i18n/*.json`) no llevan hash ni sello de versión:
+  # su invalidación descansa en el `max-age=300, must-revalidate` de
+  # nginx-spa.conf (a lo sumo 5 minutos de desfase tras un despliegue).
+  portal:
+    logging: *default-logging
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        APP: vendi-portal
+        BASE_DOMAIN: ${BASE_DOMAIN:-vendi.co}
+    networks:
+      - vendi-net
+
+  tenant:
+    logging: *default-logging
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        APP: vendi-tenant
+        BASE_DOMAIN: ${BASE_DOMAIN:-vendi.co}
+    networks:
+      - vendi-net
+
+  admin:
+    logging: *default-logging
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        APP: vendi-admin
+        BASE_DOMAIN: ${BASE_DOMAIN:-vendi.co}
     networks:
       - vendi-net
 

@@ -62,17 +62,19 @@ browser-passwordless`), así que el flujo de passkey es del IdP y aquí no hay
   tarea pendiente: la auth móvil es el subproyecto 2, porque el login tiene que
   salir al navegador del sistema (los passkeys no funcionan dentro del WebView
   de Capacitor) y eso depende de la fachada de `native`. Lo que sí demuestra en
-  Fase 0 es el criterio 4: `ng build vendi-app && npx cap sync android &&
-./gradlew bundleDebug` produce un `.aab`. Un spec vigila que no se cuele un
-  guard de sesión antes de traer el flujo correcto.
+  Fase 0 es el criterio 4: `.github/workflows/android.yml` compila la app,
+  sincroniza Capacitor y produce con `./gradlew bundleRelease` un `.aab`
+  descargable. Un spec vigila que no se cuele un guard de sesión antes de traer
+  el flujo correcto.
 - **`vendi-portal`** — página pública única con el enlace a la consola del
   negocio. Sin captación ni precios: la monetización es el subproyecto 4.
 
-Ojo: en Fase 0 las apps **no** se sirven por Traefik. Los routers de
-`infra/traefik/templates/dynamic.yml.tpl` están comentados a la espera de que
-exista `frontend/Dockerfile` (Etapa 5), así que en desarrollo se sirven con
-`ng serve` en los puertos de arriba, que son los `redirect_uri` registrados en
-el realm.
+Las tres apps web se sirven **por su hostname a través de Traefik** desde la
+Etapa 5 (`frontend/Dockerfile` y los servicios `portal`/`tenant`/`admin` del
+compose): ver «Las apps servidas por su hostname» más abajo. Los puertos de la
+tabla siguen siendo válidos para el trabajo diario con `ng serve` —y son los
+`redirect_uri` de desarrollo registrados en el realm—, pero no sirven para
+verificar nada que toque Keycloak o la API.
 
 ## Librerías
 
@@ -327,6 +329,9 @@ npm run lint              # lint de los nueve proyectos, incluidas las fronteras
 npm run format:check      # verifica el formato (prettier); `npm run format` lo corrige
 npm run codegen:api       # regenera el cliente tipado de la API
 npm run verificar:contraste  # candado WCAG AA sobre los tokens de color de ui-kit
+npm run e2e               # suite de extremo a extremo (Playwright) contra el stack local
+npm run e2e:ui            # la misma suite en el modo interactivo de Playwright
+npm run verificar:passkey # solo el spec de login con passkey (criterio 2 de Fase 0)
 ```
 
 ### Móvil (Capacitor 8)
@@ -336,6 +341,105 @@ npm run sync              # compila vendi-app y sincroniza con android/ e ios/
 npm run android           # compila, sincroniza y ejecuta en Android
 npm run android:studio    # abre el proyecto en Android Studio
 ```
+
+El **AAB** (el artefacto que pide el criterio 4 de Fase 0) no se construye a
+mano: lo produce `.github/workflows/android.yml` en cada `push` a `main`/`master`
+y bajo demanda con `workflow_dispatch`, y se descarga como artefacto
+`vendi-app-aab`. Para reproducirlo en local hace falta un JDK 21 y el SDK de
+Android, y una clave en `frontend/android/keystore.properties` (ignorada por
+git; sin ella el AAB sale sin firmar):
+
+```bash
+npm run build:libs && npx ng build vendi-app --configuration production
+npx cap sync android
+cd android && ./gradlew bundleRelease
+# → app/build/outputs/bundle/release/app-release.aab
+```
+
+Para instalarlo en un emulador, **desinstala antes** cualquier versión previa:
+si el dispositivo tiene `co.vendi.app` firmado con otra clave (por ejemplo la
+de depuración que usa `npm run android`), `bundletool install-apks` falla y
+deja la versión ANTIGUA en su sitio — y quien prueba abre la app vieja creyendo
+que abre la nueva.
+
+```bash
+bundletool build-apks --bundle=app-release.aab --output=vendi.apks
+adb uninstall co.vendi.app || true
+bundletool install-apks --apks=vendi.apks
+```
+
+## Las apps servidas por su hostname (no por `ng serve`)
+
+`ng serve` vale para trabajar en un componente. **No vale para verificar nada
+que toque Keycloak o la API**: por `localhost:4202` no se ejercita ni el
+enrutado de Traefik, ni las cabeceras que inyecta, ni el TLS, ni la resolución
+de nombres — que es exactamente donde viven los fallos reales, y es la razón
+por la que existen `dnsmasq` y `mkcert` en este proyecto.
+
+Para eso están `frontend/Dockerfile` y los servicios `portal`, `tenant` y
+`admin` de `infra/docker-compose.yml`. Las tres SPAs salen de la MISMA receta;
+lo único que cambia es el argumento de construcción `APP`:
+
+```bash
+cd ../infra
+docker compose -f docker-compose.yml -f docker-compose.override.dev.yml \
+  build portal tenant admin
+docker compose -f docker-compose.yml -f docker-compose.override.dev.yml \
+  up -d portal tenant admin
+```
+
+| App            | URL                                        | Servicio del compose |
+| -------------- | ------------------------------------------ | -------------------- |
+| `vendi-portal` | `https://vendi.co`, `https://www.vendi.co` | `portal`             |
+| `vendi-tenant` | `https://app.vendi.co`                     | `tenant`             |
+| `vendi-admin`  | `https://admin.vendi.co`                   | `admin`              |
+
+`vendi-app` no tiene servicio ni router: es la app móvil y su artefacto es el
+AAB que produce `.github/workflows/android.yml`.
+
+La configuración de una SPA se **hornea en tiempo de construcción**
+(`environment.ts` más el argumento `BASE_DOMAIN`). Por eso los servicios no
+llevan variables de entorno: inyectar ahí una URL de API no tendría ningún
+efecto y haría creer lo contrario.
+
+## Pruebas de extremo a extremo
+
+Dos specs, uno por criterio de cierre de Fase 0:
+
+- `e2e/login-passkey.spec.ts` — criterio 2. Registra un passkey con un
+  autenticador virtual de Chrome (CDP) y vuelve a entrar **sin contraseña**,
+  hasta ver la fila del negocio en «Mi negocio». Sustituye al script suelto
+  `scripts/verificar-passkey-tenant.mjs` de la Etapa 4.
+- `e2e/tenants-crud.spec.ts` — criterio 3. Crear → suspender → eliminar un
+  negocio desde la consola de plataforma, comprobando además que la baja es
+  lógica (reaparece al activar «Ver también los eliminados»).
+
+Requisitos: el stack de `infra/` levantado, `scripts/seed.sh` ejecutado y las
+tres SPAs servidas por Traefik (sección anterior). Los dos specs son
+**reentrantes**: se pueden repetir sin limpiar nada a mano.
+
+```bash
+npm run e2e                      # los dos specs
+npm run e2e -- --repeat-each=5   # caza de flakes
+VENDI_EVIDENCIA=1 npm run verificar:passkey   # refresca docs/evidencia-passkey-tenant.png
+```
+
+La captura de «Mi negocio» tras el login con passkey va **siempre** adjunta al
+informe de Playwright. Solo se reescribe `docs/evidencia-passkey-tenant.png`
+—la que acompaña al criterio 2 en la documentación— cuando se pide con
+`VENDI_EVIDENCIA=1`: un spec que escribe en `docs/` en cada ejecución deja el
+árbol sucio y acaba metiendo ruido en todas las ramas.
+
+Dos cosas de la configuración que **no** se tocan (ver los comentarios de
+`playwright.config.ts`):
+
+1. **Sin `ignoreHTTPSErrors`.** La CA de mkcert está en el llavero del sistema
+   para que la validación funcione sola; si fallara, sería una señal real.
+2. **`--host-resolver-rules` siempre.** El dominio `vendi.co` está registrado
+   por un tercero y resuelve públicamente a una IP ajena: sin la regla, cada
+   petición del navegador sale a internet, a un servidor que no controlamos.
+   Las llamadas que los specs hacen fuera del navegador usan `pedir()` de
+   `e2e/helpers/stack.ts`, que aplica la misma protección por el lado de Node.
 
 ## Convenciones
 
@@ -347,3 +451,24 @@ npm run android:studio    # abre el proyecto en Android Studio
 - **TypeScript estricto**: `strict`, `noImplicitOverride`,
   `noPropertyAccessFromIndexSignature`, `noImplicitReturns` y
   `noFallthroughCasesInSwitch` activos en todo el workspace.
+
+### Presupuestos de bundle: se miden en crudo, no en transferido
+
+Los `budgets` de `angular.json` se comparan contra el **tamaño en crudo**. No es
+una elección: el constructor de Angular no sabe presupuestar sobre el tamaño
+transferido —lo calcula y lo imprime, pero no lo compara con nada—, así que
+«medir en transferido» no se puede configurar hoy. Lo que sí se puede es no
+dejar el presupuesto tan holgado que no guarde nada.
+
+Medición de `vendi-admin` con `npm run build:admin`:
+
+| Métrica             | Valor         |
+| ------------------- | ------------- |
+| Inicial en crudo    | 1,05 MB       |
+| Inicial transferido | 213 kB        |
+| Aviso / error       | 1,1 / 1,25 MB |
+
+Los 213 kB son el número que sufre el usuario en una conexión móvil colombiana;
+el 1,05 MB es el que vigila el candado. Cuando el presupuesto salte, mira
+primero el transferido antes de subir el número: casi siempre lo que hay que
+hacer es mover algo a carga diferida, no relajar el límite.

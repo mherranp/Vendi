@@ -1,0 +1,183 @@
+# =============================================================================
+# Despliegue de Vendi en la VM de la región CO, por SSH + docker compose.
+#
+# Cosechado de /Users/maoherran/BaseSaaS/.github/workflows/deploy.yml, con la
+# ruta de infraestructura de Vendi (`infra/`, no `infrastructure/`) y sin el
+# `-k` del smoke check final: en producción el certificado lo emite Let's
+# Encrypt y validarlo ES parte de la comprobación. Un despliegue cuyo TLS no
+# valida no está desplegado.
+#
+# Secretos del repositorio (Settings → Secrets → Actions). Aquí solo los
+# NOMBRES: ningún valor vive en el repositorio.
+#
+#   DEPLOY_HOST      IP o FQDN de la VM
+#   DEPLOY_USER      usuario SSH (p. ej. `deploy`)
+#   DEPLOY_SSH_KEY   clave privada ed25519 autorizada en la VM
+#   DEPLOY_DOMAIN    dominio público del despliegue (p. ej. vendi.co)
+#   REGISTRY_URL     el mismo de release-images.yml; la VM tiene que poder
+#                    hacer `docker login` contra él (se configura en el
+#                    ~/.docker/config.json del usuario de despliegue)
+#
+# En el `.env` de la VM (lo pone el operador una vez, nunca viaja desde GitHub):
+#
+#   VENDI_IMAGE_REGISTRY   el mismo valor que REGISTRY_URL
+#
+# `VENDI_IMAGE_TAG` NO va en ese `.env`: la exporta este workflow con el SHA
+# corto del commit que pasó `ci` y `e2e`, para que lo desplegado sea exactamente
+# lo verificado.
+#
+# **Qué se despliega.** Las seis imágenes propias de Vendi —`vendi-api`,
+# `vendi-worker`, `vendi-keycloak`, `vendi-portal`, `vendi-tenant` y
+# `vendi-admin`— salen del registro. Ninguna se construye en la VM: el `rsync`
+# de abajo copia solo `infra/`, así que allí no existen `../backend` ni
+# `../frontend`, que son los contextos de construcción del compose. De ahí el
+# `--no-build` del `up` y los `image:` obligatorios del override de producción.
+#
+# Lo que este workflow NO hace, a propósito:
+#
+# - **No copia el `.env` de la VM.** Las contraseñas de la base, los secretos
+#   de los clientes de Keycloak y el token de métricas viven en el servidor y
+#   los pone el operador una vez. Un workflow que los sincronice desde secretos
+#   de GitHub convierte cualquier acceso al repositorio en acceso a producción.
+# - **No migra la base de datos.** `scripts/migrate.sh` lo ejecuta el operador
+#   con el runbook delante. Una migración automática en el mismo paso que el
+#   despliegue no tiene punto de vuelta atrás.
+# - **No siembra.** `seed.sh` es de desarrollo.
+# =============================================================================
+
+name: deploy
+
+on:
+  workflow_run:
+    workflows: [release-images]
+    types: [completed]
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  # `if: secrets.X != ''` no se admite a nivel de job, así que el chequeo de
+  # secretos se hace en un job aparte y se expone como salida.
+  preparacion:
+    runs-on: ubuntu-latest
+    outputs:
+      configurado: ${{ steps.comprobar.outputs.configurado }}
+    steps:
+      - name: ¿Están los secretos de despliegue?
+        id: comprobar
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -n "$DEPLOY_HOST" ] && [ -n "$DEPLOY_SSH_KEY" ]; then
+            echo "configurado=true" >> "$GITHUB_OUTPUT"
+            echo "Secretos de despliegue presentes."
+          else
+            echo "configurado=false" >> "$GITHUB_OUTPUT"
+            echo "Sin DEPLOY_HOST / DEPLOY_SSH_KEY: no hay nada que desplegar todavía."
+          fi
+
+  desplegar:
+    runs-on: ubuntu-latest
+    needs: preparacion
+    if: >-
+      ${{
+        (github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch')
+        && needs.preparacion.outputs.configurado == 'true'
+      }}
+    steps:
+      # El MISMO commit del que salieron las imágenes. En un disparo por
+      # `workflow_run`, checkout sin `ref` se trae la punta de la rama por
+      # defecto, que puede haber avanzado desde que `release-images` publicó:
+      # la VM acabaría con el compose de un commit y las imágenes de otro.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha != '' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Cargar la clave SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Añadir el host a known_hosts
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Sincronizar la infraestructura versionada
+        # Solo lo que es código: compose, configuración de Traefik, init de
+        # Postgres, realm y tema de Keycloak. Ni `.env` ni `certs/`.
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          rsync -avz --delete \
+            --include='docker-compose.yml' \
+            --include='docker-compose.override.prod.yml' \
+            --include='traefik/***' \
+            --include='postgres/***' \
+            --include='keycloak/***' \
+            --include='prometheus/***' \
+            --include='grafana/***' \
+            --exclude='*' \
+            infra/ \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/vendi/infra/"
+
+      - name: docker compose pull + up
+        # `--no-build` no es una precaución teórica: los servicios propios
+        # (`api`, `worker`, `keycloak`, `portal`, `tenant`, `admin`) declaran en
+        # el compose base un `build:` que apunta a `../backend` y `../frontend`,
+        # y el rsync de arriba NO copia esos directorios a la VM. Sin la
+        # bandera, cualquier imagen que faltara en el registro se intentaría
+        # construir en el servidor y moriría con «unable to prepare context».
+        # Con ella el fallo dice la verdad: falta la imagen publicada.
+        #
+        # `VENDI_IMAGE_TAG` se fija al SHA del commit que disparó
+        # release-images.yml, que es exactamente la etiqueta que ese workflow
+        # publicó (`sha-<corto>`). Así el despliegue no depende de `latest`, que
+        # es una etiqueta móvil: dos `up` seguidos podrían traer cosas distintas
+        # y el rollback no tendría a qué volver.
+        #
+        # OJO: este paso exporta VENDI_IMAGE_TAG en el shell remoto, y esa
+        # variable SIEMPRE gana sobre el .env de compose. Por eso un tag `v*`
+        # NO se despliega con `workflow_dispatch` (desplegaría `sha-<corto>`
+        # del checkout, que release-images no publicó para tags): se despliega
+        # a mano por SSH con la variable en el shell, como documenta
+        # docs/runbooks/despliegue-en-la-vm.md.
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          # En workflow_dispatch no hay workflow_run: se cae al SHA del propio
+          # checkout, que es el mismo commit.
+          SHA_DESPLEGADO: ${{ github.event.workflow_run.head_sha != '' && github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          # 7 caracteres, la misma longitud que fija `git rev-parse --short=7`
+          # en release-images.yml.
+          ETIQUETA="sha-${SHA_DESPLEGADO:0:7}"
+          echo "Desplegando la etiqueta ${ETIQUETA}"
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "cd /opt/vendi/infra && \
+             export VENDI_IMAGE_TAG='${ETIQUETA}' && \
+             docker compose -f docker-compose.yml -f docker-compose.override.prod.yml pull && \
+             docker compose -f docker-compose.yml -f docker-compose.override.prod.yml up -d --no-build --remove-orphans"
+
+      - name: Comprobación de humo por el borde
+        # `/health/ready` y no `/health`: el primero comprueba PostgreSQL, Redis
+        # y Keycloak, así que un contenedor que arrancó pero no alcanza sus
+        # dependencias sale rojo. Sin `-k`: si el certificado no valida, el
+        # despliegue no está bien.
+        env:
+          DEPLOY_DOMAIN: ${{ secrets.DEPLOY_DOMAIN }}
+        run: |
+          set -euo pipefail
+          curl -f --retry 10 --retry-delay 6 --retry-connrefused \
+            "https://api.${DEPLOY_DOMAIN}/health/ready"
+          # Las tres SPAs también, por su hostname y a través de Traefik. Un
+          # despliegue en el que la API responde pero `app.` devuelve 502 está
+          # roto para todos los usuarios, y sin esta comprobación el workflow
+          # salía verde igual.
+          for HOST in "${DEPLOY_DOMAIN}" "app.${DEPLOY_DOMAIN}" "admin.${DEPLOY_DOMAIN}"; do
+            echo "Comprobando https://${HOST}/"
+            curl -f --retry 10 --retry-delay 6 --retry-connrefused \
+              -o /dev/null "https://${HOST}/"
+          done

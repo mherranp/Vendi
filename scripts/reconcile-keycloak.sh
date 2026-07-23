@@ -9,8 +9,9 @@
 #   1. Deriva de CONFIGURACIÓN: clientes, flujos de autenticación, ajustes de
 #      seguridad del realm y roles de la cuenta de servicio de `vendi-backend`,
 #      comparados contra infra/keycloak/realm-vendi-co.json. Solo informa: la
-#      corrección de configuración la aplica el operador (ver
-#      scripts/lib/kc_deriva_config.py).
+#      corrección de configuración se aplica con RECONCILE_APLICAR_CONFIG=1 y
+#      solo en el subconjunto seguro (ver scripts/lib/kc_deriva_config.py y
+#      scripts/lib/kc_aplicar_config.py).
 #   2. Deriva de DATOS: organizaciones de Keycloak contra la tabla `tenants`.
 #      Con RECONCILE_APLICAR=1 se corrige llamando al MISMO servicio de
 #      aprovisionamiento que usa la consola (app.scripts.reconciliar, dentro
@@ -36,7 +37,14 @@
 #   KEYCLOAK_URL              base de la Admin API (por defecto http://127.0.0.1:8080,
 #                             el puerto que el compose publica en loopback)
 #   KEYCLOAK_ADMIN_USER/_PASSWORD
-#   RECONCILE_APLICAR=1       aplica las correcciones en vez de solo informar
+#   RECONCILE_APLICAR=1       aplica las correcciones de DATOS (organizaciones)
+#                             en vez de solo informar
+#   RECONCILE_APLICAR_CONFIG=1
+#                             aplica además la deriva de CONFIGURACIÓN que se
+#                             puede aplicar sin tirar sesiones: interruptores de
+#                             cliente, redirect URIs y client scopes declarados
+#                             (scripts/lib/kc_aplicar_config.py). Flujos y
+#                             ajustes del realm siguen siendo del operador.
 #   RECONCILE_BORRAR_HUERFANAS=1
 #                             además, borra las organizaciones sin negocio vivo
 #                             (destructivo e irreversible)
@@ -106,6 +114,23 @@ if [[ -f "${REALM_JSON}" ]]; then
     SALIDA_CONFIG="$(KC_URL_BASE="${KC_URL_BASE}" KC_TOKEN="${TOKEN}" KC_REALM="${REALM}" \
         REALM_JSON="${REALM_JSON}" python3 "${SCRIPT_DIR}/lib/kc_deriva_config.py")" || DERIVA_CONFIG=$?
     printf '%s\n' "${SALIDA_CONFIG}"
+
+    # Con RECONCILE_APLICAR_CONFIG=1 se corrige el subconjunto que se puede
+    # corregir sin tirar sesiones ni rotar credenciales: interruptores de
+    # cliente, redirect URIs, client scopes declarados y sus mappers. Los
+    # flujos de autenticación y los ajustes del realm siguen siendo del
+    # operador — ver la cabecera de scripts/lib/kc_aplicar_config.py.
+    if [[ "${RECONCILE_APLICAR_CONFIG:-0}" == "1" ]]; then
+        info "Aplicando la configuración declarada (RECONCILE_APLICAR_CONFIG=1)..."
+        KC_URL_BASE="${KC_URL_BASE}" KC_TOKEN="${TOKEN}" KC_REALM="${REALM}" \
+            REALM_JSON="${REALM_JSON}" python3 "${SCRIPT_DIR}/lib/kc_aplicar_config.py" \
+            || error "no pude aplicar la configuración del realm"
+        info "Recomparando tras aplicar..."
+        DERIVA_CONFIG=0
+        SALIDA_CONFIG="$(KC_URL_BASE="${KC_URL_BASE}" KC_TOKEN="${TOKEN}" KC_REALM="${REALM}" \
+            REALM_JSON="${REALM_JSON}" python3 "${SCRIPT_DIR}/lib/kc_deriva_config.py")" || DERIVA_CONFIG=$?
+        printf '%s\n' "${SALIDA_CONFIG}"
+    fi
 else
     warn "no encuentro ${REALM_JSON}: me salto la comparación de clientes y flujos"
 fi

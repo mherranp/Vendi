@@ -63,6 +63,18 @@ Lo que sí se arregla en la aplicación, porque es un defecto suyo y no del bord
 `TenantMiddleware` ya no responde 401 a un preflight de CORS. Un preflight no
 lleva `Authorization` —la especificación de Fetch lo prohíbe— así que exigirle
 token era garantizar que el navegador nunca hiciera el request real.
+
+Nota de la Etapa 5 sobre `allow_headers=["*"]`: cuando la aplicación sí gestiona
+CORS (topologías sin Traefik delante), el comodín se combina con
+`allow_credentials=True`, y la especificación de Fetch dice que en una petición
+**con credenciales** el `*` de `Access-Control-Allow-Headers` se compara
+LITERALMENTE: no es un comodín. El preflight de cualquier petición con
+`Authorization` fallaría. Por eso aquí va la lista explícita. El mismo defecto
+estaba en el middleware `cors-api` de Traefik y se corrigió allí igual.
+
+## `/docs`, `/redoc` y `/openapi.json`: cerrados salvo que se pidan
+
+Ver `Settings.docs_publicos`. Por defecto no se registran las rutas.
 """
 
 from __future__ import annotations
@@ -93,6 +105,21 @@ pertenece a varios negocios indica cuál con la cabecera `X-Tenant-Id`, y solo
 puede elegir entre los que ya trae su token.
 """
 
+#: Cabeceras que la API acepta en una petición cruzada. Tiene que coincidir con
+#: `accessControlAllowHeaders` del middleware `cors-api` de Traefik
+#: (infra/traefik/templates/dynamic.yml.tpl): las dos listas describen la misma
+#: superficie desde los dos lados del borde, y `tests/api/test_cors.py` compara
+#: literalmente los dos archivos para que no puedan separarse en silencio.
+CABECERAS_CORS = [
+    "Accept",
+    "Accept-Language",
+    "Authorization",
+    "Content-Type",
+    "X-Correlation-Id",
+    "X-Requested-With",
+    "X-Tenant-Id",
+]
+
 
 def _cadena_en_orden_de_ejecucion(settings: Settings) -> list[Middleware]:
     """La cadena de fuera hacia dentro. `crear_app` la registra invertida."""
@@ -107,7 +134,10 @@ def _cadena_en_orden_de_ejecucion(settings: Settings) -> list[Middleware]:
                 allow_origin_regex=settings.cors_origin_regex or None,
                 allow_credentials=True,
                 allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-                allow_headers=["*"],
+                # Lista explícita, NO `["*"]`: con `allow_credentials=True` el
+                # comodín se compara literalmente (Fetch §CORS-preflight) y el
+                # preflight de cualquier petición con `Authorization` fallaría.
+                allow_headers=CABECERAS_CORS,
                 max_age=3600,
             )
         )
@@ -133,11 +163,17 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or cargar_settings()
     setup_logging(level=settings.log_level, json_output=settings.log_json)
 
+    # `/docs`, `/redoc` y `/openapi.json` solo existen si se piden. Ver
+    # `Settings.docs_publicos`: por defecto NO, y entonces FastAPI ni siquiera
+    # registra las rutas —el 404 es real, no un middleware que las tape.
     app = FastAPI(
         title="Vendi API",
         version="0.1.0",
         description=DESCRIPCION,
         lifespan=lifespan,
+        docs_url="/docs" if settings.docs_publicos else None,
+        redoc_url="/redoc" if settings.docs_publicos else None,
+        openapi_url="/openapi.json" if settings.docs_publicos else None,
     )
 
     publicar_en_estado(app, construir_recursos(settings))

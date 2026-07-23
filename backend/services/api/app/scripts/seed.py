@@ -4,8 +4,10 @@ Qué deja montado, en este orden:
 
 1. Los **permisos** como roles de realm (`PERMISSION_CATALOG` de
    `vendi_core.auth.policies`).
-2. Los **roles de negocio** como grupos de Keycloak (`dueno`, `cajero`,
-   `almacenista`) con sus permisos mapeados.
+2. Los **roles de negocio** (`dueno`, `cajero`, `almacenista`) como roles de
+   realm **y** como grupos homónimos, donde el grupo mapea {su rol} ∪ {sus
+   permisos}. Que el rol sea de realm es lo que hace que viaje en
+   `realm_access.roles` y que `has_role()` funcione (deuda D-08, ADR-015).
 3. El **administrador de plataforma** `admin@vendi.co`, con `platform:admin`
    directo y sin pertenecer a ninguna organización.
 4. El **negocio demo** «Tienda Don Carlos» con su Organization (alias =
@@ -59,9 +61,9 @@ from vendi_core.audit.service import AuditService
 from vendi_core.auth.keycloak_admin import VendiKeycloakAprovisionamiento
 from vendi_core.auth.policies import (
     PERM_PLATFORM_ADMIN,
-    PERMISOS_POR_ROL,
     PERMISSION_CATALOG,
     ROLES_DE_NEGOCIO,
+    roles_de_realm_del_grupo,
 )
 from vendi_core.db.engine import create_engine, dispose_engine
 from vendi_core.db.session import create_platform_session_factory
@@ -91,12 +93,20 @@ async def sembrar_realm(kc: VendiKeycloakAprovisionamiento) -> None:
         await kc.ensure_realm_role(permiso, description=f"Permiso de Vendi sobre {recurso}")
     log.info("permisos_sembrados", cuantos=len(PERMISSION_CATALOG))
 
+    # Los roles de negocio son ROLES DE REALM (restricción global del plan), y
+    # por eso se crean aquí antes que los grupos: sin el rol creado,
+    # `set_group_realm_roles` no tendría qué mapear y `realm_access.roles` no
+    # llevaría `dueno` — que era exactamente la deuda D-08.
+    for rol in ROLES_DE_NEGOCIO:
+        await kc.ensure_realm_role(rol, description=f"Rol de negocio de Vendi: {rol}")
+
     for rol in ROLES_DE_NEGOCIO:
         group_id = await kc.ensure_group(rol, description=f"Rol de negocio de Vendi: {rol}")
         # `set_group_realm_roles` hace diff: quita lo que sobra. Es lo correcto
         # aquí — el grupo es la definición del rol y `PERMISOS_POR_ROL` es su
-        # fuente de verdad al sembrar.
-        await kc.set_group_realm_roles(group_id, sorted(PERMISOS_POR_ROL[rol]))
+        # fuente de verdad al sembrar. El propio rol de negocio entra en el
+        # mapeo (ver `roles_de_realm_del_grupo`).
+        await kc.set_group_realm_roles(group_id, roles_de_realm_del_grupo(rol))
     log.info("roles_de_negocio_sembrados", roles=list(ROLES_DE_NEGOCIO))
 
 

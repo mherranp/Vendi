@@ -109,10 +109,17 @@ export class AuthService {
     () => this._organizaciones().length > 1 && this._seleccion() === null,
   );
 
+  /**
+   * Nombre con el que saludar al usuario en el shell.
+   *
+   * Tres fuentes, en orden de preferencia: nombre y apellido, luego el `name`
+   * que compone Keycloak, y por último el nombre de usuario. La última nunca
+   * está vacía si hay sesión, así que el shell no vuelve a quedarse mudo.
+   */
   readonly displayName = computed(() => {
     const u = this._user();
     if (!u) return '';
-    return `${u.firstName} ${u.lastName}`.trim() || u.username;
+    return `${u.firstName} ${u.lastName}`.trim() || u.nombreCompleto || u.username;
   });
 
   async init(config: ConfiguracionAuth): Promise<boolean> {
@@ -250,24 +257,57 @@ export class AuthService {
     }
   }
 
+  /**
+   * Arma el perfil del usuario. **El token es la fuente primaria.**
+   *
+   * Antes esto era una sola llamada a `loadUserProfile()` dentro de un `try`, y
+   * el `catch` se limitaba a escribir en consola. El resultado medido: la
+   * llamada devolvía **401** —`loadUserProfile()` pega a la API de cuenta de
+   * Keycloak, `/realms/{realm}/account`, que exige la audiencia `account` y el
+   * token de Vendi no la lleva—, `_user` se quedaba en `null` y el shell no
+   * pintaba el nombre de NADIE. Un fallo silencioso de los peores: la consola
+   * llena de 401 y la interfaz simplemente vacía.
+   *
+   * Los claims del scope `profile` (`name`, `preferred_username`,
+   * `given_name`, `family_name`, `email`) viajan ya dentro del token: no hace
+   * falta ninguna petición para saber cómo se llama quien acaba de entrar. La
+   * llamada a `loadUserProfile()` se conserva como **enriquecimiento
+   * opcional** —el día que el token lleve la audiencia `account`, o que el
+   * perfil tenga atributos que no viajan en el token, se aprovechará sola— y
+   * su fallo ya no deja la interfaz muda.
+   */
   private async cargarPerfil(): Promise<void> {
     if (!this.keycloak) return;
 
+    const parsed = this.keycloak.tokenParsed as VendiTokenParsed | undefined;
+    const perfilDelToken: UserProfile = {
+      id: parsed?.sub ?? '',
+      username: parsed?.preferred_username ?? '',
+      email: parsed?.email ?? '',
+      firstName: parsed?.given_name ?? '',
+      lastName: parsed?.family_name ?? '',
+      nombreCompleto: parsed?.name ?? '',
+      roles: this.roles(),
+      tenantId: this.tenantId(),
+    };
+    this._user.set(perfilDelToken);
+
     try {
       const perfil = await this.keycloak.loadUserProfile();
-      const parsed = this.keycloak.tokenParsed as VendiTokenParsed | undefined;
-
       this._user.set({
-        id: parsed?.sub || '',
-        username: perfil.username || '',
-        email: perfil.email || '',
-        firstName: perfil.firstName || '',
-        lastName: perfil.lastName || '',
-        roles: this.roles(),
-        tenantId: this.tenantId(),
+        ...perfilDelToken,
+        username: perfil.username || perfilDelToken.username,
+        email: perfil.email || perfilDelToken.email,
+        firstName: perfil.firstName || perfilDelToken.firstName,
+        lastName: perfil.lastName || perfilDelToken.lastName,
       });
-    } catch (error) {
-      console.error('No se pudo cargar el perfil del usuario', error);
+    } catch {
+      // No es un error de la aplicación: es una capacidad que este token no
+      // tiene. Se registra al nivel más bajo para que no ensucie la consola
+      // en cada arranque, y el perfil del token —que ya está puesto— basta.
+      console.debug(
+        'La API de cuenta de Keycloak no está disponible para este token; se usa el perfil del propio token.',
+      );
     }
   }
 

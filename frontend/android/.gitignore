@@ -5,6 +5,8 @@
 *.aar
 *.ap_
 *.aab
+# Paquetes de bundletool (12 MB por corrida): artefacto local, nunca versionado.
+*.apks
 
 # Files for the ART/Dalvik VM
 *.dex

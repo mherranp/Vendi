@@ -19,9 +19,30 @@ import type { KeycloakTokenParsed } from 'keycloak-js';
  */
 export type ClaimOrganizacion = string[] | Record<string, { id?: string } | null | undefined>;
 
-/** Token de acceso de Vendi: el de Keycloak más el claim de organizaciones. */
+/**
+ * Token de acceso de Vendi: el de Keycloak más el claim de organizaciones y
+ * los claims de perfil del scope `profile`.
+ *
+ * `KeycloakTokenParsed` de keycloak-js solo declara los claims del núcleo de
+ * OIDC (`sub`, `exp`, `realm_access`…). Los del scope `profile` —`name`,
+ * `preferred_username`, `given_name`, `family_name`, `email`— viajan en el
+ * mismo token pero no están en el tipo, así que se declaran aquí.
+ *
+ * POR QUÉ IMPORTA: el perfil del usuario se leía exclusivamente de
+ * `loadUserProfile()`, que llama a la API de cuenta de Keycloak
+ * (`/realms/{realm}/account`) y exige que el token lleve la audiencia
+ * `account`. El de Vendi no la lleva, así que esa llamada devolvía **401** y el
+ * shell nunca pintaba el nombre de nadie. Estos claims ya venían en el token
+ * desde el primer día: no hacía falta ninguna petición.
+ */
 export type VendiTokenParsed = KeycloakTokenParsed & {
   organization?: ClaimOrganizacion;
+  /** Nombre completo tal y como lo compone Keycloak. */
+  name?: string;
+  preferred_username?: string;
+  given_name?: string;
+  family_name?: string;
+  email?: string;
 };
 
 /**

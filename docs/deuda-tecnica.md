@@ -9,56 +9,17 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 
 | # | Deuda | Vence | Dueño |
 |---|---|---|---|
-| D-01 | ROPC activo en `vendi-web` | Etapa 5 (cierre de Fase 0) | backend |
 | D-02 | `manage-realm` en Keycloak (mitigado en la Etapa 3: partido en dos clientes) | Fase 1 (o cuando Keycloak permita acotar Organizations) | backend |
-| D-03 | El realm es semilla, no estado deseado continuo | Fase 1 | backend |
-| D-04 | Keycloak arranca sin `--optimized` en producción | Etapa 5 (imagen propia) | backend |
+| D-03 | El realm es semilla, no estado deseado continuo (mitigado en la Etapa 5: se aplica el subconjunto seguro) | Fase 1 | backend |
+
+Cerradas en la Etapa 5, con su evidencia al final de este documento: **D-01**
+(ROPC), **D-04** (Keycloak sin `--optimized`), **D-06** (`alembic_version`
+escribible por el rol de la API), **D-07** (`exchange` del outbox sin defensa) y
+**D-08** (el claim `groups` no se emite y `has_role()` era inerte).
 
 > Runbooks operativos relacionados: el procedimiento completo de respaldo y
 > restauración (qué se vuelca, qué NO, y cómo se promueve una copia a base
 > viva) está en [`docs/respaldo-y-restauracion.md`](respaldo-y-restauracion.md).
-
----
-
-## D-01 · ROPC (`directAccessGrantsEnabled`) activo en el cliente `vendi-web`
-
-**Qué es.** El cliente público `vendi-web` acepta el grant de contraseña: con
-`client_id`, usuario y contraseña se obtiene un token sin pasar por el
-navegador. Ratificado por el arquitecto como temporal.
-
-**Por qué está.** Los tests de integración y `scripts/seed.sh` (tarea 4.4)
-necesitan un camino determinista para obtener un token de usuario. El flujo de
-navegador del realm es identity-first —dos pantallas— con passkey opcional, y
-no se automatiza sin navegador.
-
-**Qué lo hace tolerable hoy.** El realm tiene `bruteForceProtected: true` con
-`failureFactor: 10`, el stack de desarrollo solo escucha en loopback
-(`TRAEFIK_BIND` por defecto `127.0.0.1`) y no hay usuarios reales.
-
-**Qué lo vuelve inaceptable.** El primer usuario real. Un cliente público con
-ROPC convierte cualquier fuga de contraseña en acceso directo, sin segundo
-factor y sin la protección del flujo de navegador (passkey, consentimiento,
-detección de dispositivo).
-
-**Vencimiento: Etapa 5 del plan de Fase 0.** Antes de abrir Vendi al público
-hay que ejecutar una de estas dos, y dejarlo escrito:
-
-1. Apagar `directAccessGrantsEnabled` en `vendi-web` y mover los tests y la
-   siembra a un cliente `vendi-pruebas` que solo exista en el realm de
-   desarrollo (no en el JSON de producción). **Opción preferida.**
-2. Dejarlo con protección de fuerza bruta como única defensa, firmado
-   explícitamente por el arquitecto y con una alerta en Grafana sobre
-   `LOGIN_ERROR` del grant `password`.
-
-**Cómo se verifica que sigue siendo cierto lo que dice este documento:**
-
-```bash
-docker compose -f infra/docker-compose.yml exec -T postgres true   # stack arriba
-bash scripts/reconcile-keycloak.sh    # compara el realm vivo con el JSON
-python3 -c "import json;d=json.load(open('infra/keycloak/realm-vendi-co.json'));\
-print({c['clientId']:c.get('directAccessGrantsEnabled') for c in d['clients'] if c['clientId'].startswith('vendi')})"
-# → {'vendi-web': True, 'vendi-admin': False, 'vendi-backend': False, 'vendi-provisioning': False}
-```
 
 ---
 
@@ -234,9 +195,41 @@ clientes, flujos, ajustes del realm y roles de la cuenta de servicio
 (`scripts/lib/kc_deriva_config.py`), y la de organizaciones contra la tabla
 `tenants`.
 
-**Qué falta.** Aplicar las correcciones de configuración automáticamente. Hoy
-el script informa y el operador decide, porque corregir configuración de realm
-a ciegas puede tirar sesiones y credenciales.
+**Mitigación aplicada en la Etapa 5.** Con `RECONCILE_APLICAR_CONFIG=1` el
+script **aplica** la deriva de configuración en el subconjunto donde corregir no
+puede tirar sesiones ni rotar credenciales: interruptores de cliente
+(`publicClient`, `standardFlowEnabled`, `directAccessGrantsEnabled`,
+`serviceAccountsEnabled`, `implicitFlowEnabled`, `enabled`), `redirectUris`,
+`webOrigins`, client scopes declarados con sus protocol mappers y las listas de
+scopes por defecto y opcionales de cada cliente
+(`scripts/lib/kc_aplicar_config.py`). Tras aplicar, vuelve a comparar e imprime
+el resultado, así que la corrección se demuestra en la misma ejecución.
+
+El `PUT` se hace sobre una copia del objeto **vivo** con solo los campos
+declarados encima. Es deliberado: así conserva el `secret` del cliente, sus
+mappers dedicados y todo lo que el JSON no declara.
+
+Es lo que cerró D-01 en el realm existente. Ejecución real:
+
+```
+[APLICADO] client scope 'vendi-audiencia' creado
+[APLICADO] cliente 'admin-cli': directAccessGrantsEnabled
+[APLICADO] cliente 'vendi-web': directAccessGrantsEnabled
+[APLICADO] cliente 'vendi-web': scope 'vendi-audiencia' añadido a defaultClientScopes
+[OK]       sin deriva de configuración: clientes, flujos, roles de servicio y ajustes cuadran
+```
+
+**Qué falta, y por qué la deuda NO se cierra.** Quedan fuera, a propósito:
+
+- **Los flujos de autenticación y sus enlaces.** Reenlazar `browserFlow` con
+  sesiones abiertas es la forma más rápida de dejar a todo el mundo fuera, y un
+  flujo importado a medias deja el realm sin login.
+- **Los ajustes del realm, los roles y los usuarios.** Un script capaz de
+  *añadir* roles a una cuenta de servicio es un camino de escalada de
+  privilegios con forma de herramienta de mantenimiento.
+- **Crear clientes que falten.** Se informa, no se crea.
+
+Para esos tres, el script sigue informando y decidiendo el operador.
 
 **Vencimiento: Fase 1**, cuando haya más de un entorno desplegado y la deriva
 deje de ser hipotética.
@@ -255,65 +248,269 @@ dominio.
 
 ---
 
-## D-04 · Keycloak arranca sin `--optimized` en producción
+## Deuda menor que entra viva a Fase 1
 
-**Qué es.** `docker-compose.override.prod.yml` usa `start --import-realm` sin
-`--optimized`: cada arranque hace un build implícito (decenas de segundos).
+Anotada al cierre de Fase 0 por el arquitecto. Ninguna bloquea el cierre; toda
+tiene que resolverse o re-firmarse en Fase 1:
 
-**Por qué está.** `--optimized` exige una imagen sobre la que ya se ejecutó
-`kc.sh build`; con la imagen oficial tal cual, el servidor se niega a arrancar.
-
-**Vencimiento: Etapa 5**, cuando `release-images.yml` construya la imagen de
-Keycloak de Vendi. Entonces aquí van `image:` propia y `start --optimized`.
-
----
-
-## D-06 · `alembic_version` escribible por `vendi_app` e invisible a los dos candados
-
-**Qué es.** Medido por el QA de la Etapa 4: `vendi_app` conserva
-SELECT/INSERT/UPDATE/DELETE sobre `alembic_version` (un `UPDATE version_num`
-dentro de una transacción funcionó). Ni el candado de tablas de plataforma
-(`test_rls_coverage.py`, que enumera nombres concretos) ni el de cobertura RLS
-(que solo mira tablas con columna `tenant_id`) la ven. Es el mismo agujero que
-la migración 0002 documenta y cierra para `tenants`, dejado abierto en la tabla
-que decide qué DDL se ha aplicado.
-
-**Vencimiento: Etapa 5.** REVOKE en una migración nueva + añadir
-`alembic_version` a la lista del candado (o mejor: invertir el candado para que
-enumere las tablas que `vendi_app` SÍ puede tocar y falle ante cualquier otra).
-
----
-
-## D-07 · La columna `exchange` del outbox sigue sin defensa (resto de D-05)
-
-**Qué es.** La mitigación de D-05 cubre `routing_key` y `payload`, pero la
-policy tampoco acota `exchange` y el dispatcher lo usa literalmente en
-`declare_exchange`. Medido por el QA: una fila insertada con `vendi_app` y
-`exchange='amq.direct'` llevó al worker a intentar declarar ese exchange
-(PRECONDITION_FAILED ×5 → `failed`); con un nombre nuevo lo habría **creado**.
-Atenuante medido: no bloquea la cabecera de línea (el mensaje honesto posterior
-se publicó igual).
-
-**Vencimiento: Etapa 5.** Misma receta que D-05: el dispatcher ignora
-`msg.exchange` y publica siempre en el exchange configurado del worker (o
-valida contra una lista blanca), con test de dos exchanges reales.
+- **Invalidación de i18n sin sello de versión.** Los catálogos `/i18n/*.json`
+  dependen del `max-age=300` de nginx (≤5 min de desfase tras desplegar). El
+  mecanismo `?v=<version>` que BaseSaaS insinuaba nunca existió en el código y
+  se retiró de la documentación en la Etapa 5. Si 5 minutos dejan de ser
+  aceptables: `appVersion` en los environments + query en el cargador.
+- **`BASE_DOMAIN` horneado en las imágenes de las SPAs.** `release-images.yml`
+  compila con `secrets.DEPLOY_DOMAIN`: las imágenes publicadas sirven para UN
+  dominio. No escala a la topología de realm por región (ADR-014): en Fase 1,
+  o imágenes por región, o configuración en tiempo de arranque.
+- **La etiqueta de imagen se recalcula en vez de propagarse.** `deploy.yml`
+  reconstruye `sha-<7>` a partir del SHA del `workflow_run`; lo robusto es que
+  `release-images.yml` la exponga como output.
+- **Las SPAs se sirven sin CSP ni HSTS.** El middleware `secure-headers` de
+  Traefik pone frameDeny/nosniff/referrer-policy, pero las únicas páginas que
+  ejecutan JavaScript no llevan Content-Security-Policy; la API (JSON) sí.
+- **`default-roles-vendi-co` duplicado.** El realm tiene además
+  `default-roles-vendi-co-1` (artefacto del import) y es el `-1` el que se
+  asigna: inofensivo, pero ensucia `realm_access.roles` de todos los tokens.
+- **Login: la contraseña es la opción por defecto** y el passkey queda tras
+  «Pruebe de otra manera». Es configuración del flujo del realm.
+- **Frontend:** 39 claves i18n sin respaldo empotrado; `vendi-portal` con URL
+  fija; sobre de error dual (`{detail}` frente a `{success,...}`); 401 a media
+  sesión sin re-login; códigos de error de `vendi-core` en inglés (contra la
+  restricción global de español).
+- **Los E2E de CRUD acumulan filas `Tienda e2e-*` en estado `eliminado`** en la
+  base de dev (baja lógica, por diseño; Keycloak sí queda limpio). Falta un
+  camino de purga fuera de la UI o un truncado periódico en dev/CI.
+- **Los 5 workflows de CI nunca se han ejecutado en GitHub Actions**: el
+  repositorio no tiene remoto. Validados estáticamente y cada comando
+  reproducido en local; el primer push real es la prueba pendiente.
 
 ---
 
-## D-08 · El claim `groups` no se emite; `has_role()`/`require_role()` son inertes
+## Cerradas en la Etapa 5 (cierre de Fase 0)
 
-**Qué es.** Token real de `dueno@demo.vendi.co`: `groups: None`. Ningún mapper
-de grupo está en los default client scopes del realm. Los permisos llegan por
-`realm_access.roles` (funciona), pero `UserContext.groups`, `has_role()` y
-`require_role()` no ven nada. No se arregló en la Etapa 4 porque
-`vendi-provisioning` no puede gestionar client scopes (403 medido en
-`/client-scopes`) y tocar `realm-vendi-co.json` sin poder aplicarlo al realm
-vivo crea justo la deriva de D-03. Relacionado: el seed no crea los roles de
-negocio del plan (`dueno`, `cajero`, `almacenista`); el usuario demo lleva
-`tenant:read`, `tenant:update`, `audit:read`.
+Cada una se cierra con la evidencia de que el arreglo funciona —comando y salida
+real—, no con una marca de «hecho».
 
-**Vencimiento: Etapa 5** (decisión de infra: mapper de grupos en el realm JSON
-+ re-import controlado, o retirar `groups` de `UserContext`).
+### D-01 · ROPC (`directAccessGrantsEnabled`) en el realm de negocio
+
+**Qué era.** El cliente público `vendi-web` aceptaba el grant de contraseña: con
+`client_id`, usuario y contraseña se obtenía un token completo sin pasar por el
+navegador, anulando la política de passkey del realm.
+
+**Hallazgo que amplió el alcance.** No era solo `vendi-web`. **`admin-cli`, que
+Keycloak crea de fábrica en TODOS los realms, también tenía ROPC encendido en
+`vendi-co`** — cliente público, grant de contraseña, mismo agujero con otro
+nombre. Cerrar solo `vendi-web` habría dejado la puerta abierta al lado y con la
+sensación de haberla cerrado.
+
+**Cómo se cerró.** `directAccessGrantsEnabled: false` en `vendi-web` y en
+`admin-cli`, en `infra/keycloak/realm-vendi-co.json` **y aplicado al realm vivo**
+con `RECONCILE_APLICAR_CONFIG=1 bash scripts/reconcile-keycloak.sh`. La siembra
+ya no lo necesitaba: `scripts/seed.sh` llama a `TenantService` en proceso, no por
+HTTP. Los E2E y los scripts de verificación usan `admin-cli` del realm **master**,
+que es la credencial de administración del propio Keycloak y no la de la
+aplicación.
+
+**Evidencia** (medido antes y después, por el dominio):
+
+```
+# antes
+POST https://accounts.vendi.co/realms/vendi-co/protocol/openid-connect/token
+  grant_type=password client_id=vendi-web username=dueno@demo.vendi.co
+→ HTTP 200, access_token completo
+
+# después (vendi-web, admin-cli y vendi-admin)
+→ HTTP 400 {"error":"unauthorized_client",
+            "error_description":"Client not allowed for direct access grants"}
+```
+
+**Candado.** Check 22 de `verify-setup.sh`: lista los clientes del **realm vivo**
+—no del JSON, que es la semilla y no decide— y falla si alguno tiene
+`directAccessGrantsEnabled`.
+
+---
+
+### D-04 · Keycloak arrancaba sin `--optimized` en producción
+
+**Qué era.** `docker-compose.override.prod.yml` usaba `start --import-realm` sin
+`--optimized`: cada arranque hacía un build implícito de decenas de segundos,
+alargando la indisponibilidad de cada despliegue y de cada reinicio.
+
+**Cómo se cerró.** `infra/keycloak/Dockerfile` construye la imagen de Vendi con
+`kc.sh build` ya ejecutado; el override de producción pasa a
+`image: ${VENDI_IMAGE_REGISTRY:?…}/vendi-keycloak:${VENDI_IMAGE_TAG:?…}` y
+`command: start --optimized --import-realm`. `release-images.yml` la publica
+junto a `vendi-api`, `vendi-worker` y las tres SPAs.
+
+**Trampa medida al escribirlo**, anotada para que nadie la repita:
+`--features=organizations` **aborta el build** con
+`'organizations' is an unrecognized feature`. En 26.6.4 Organizations no es una
+funcionalidad opcional —está activa de fábrica— y el nombre de la lista es
+`organization`, en singular. No hay que declararla.
+
+**Evidencia:**
+
+```
+$ docker build -t vendi-keycloak:prueba infra/keycloak
+… naming to docker.io/library/vendi-keycloak:prueba done
+
+$ docker run --rm vendi-keycloak:prueba start --optimized …
+ISPN000974: Virtual threads support: enabled
+…                        # arranca y va directo a la base; ningún
+                         # «you must first run kc.sh build»
+```
+
+**Sin verificar:** el arranque completo en la topología de producción (con base
+real y ACME). Lo comprobado es que la imagen construye y que `--optimized` deja
+de rechazarse.
+
+---
+
+### D-06 · `alembic_version` era escribible por `vendi_app`
+
+**Qué era.** El rol de la API conservaba SELECT/INSERT/UPDATE/DELETE sobre
+`alembic_version`, y ninguno de los dos candados de la Etapa 3 lo veía: uno
+enumeraba nombres concretos, el otro solo mira tablas con columna `tenant_id`.
+Con UPDATE sobre esa tabla, cualquier handler puede hacer que la siguiente
+migración crea que el esquema está en otro punto del que está.
+
+**Cómo se cerró.** Migración `0003`
+(`REVOKE ALL ON alembic_version FROM vendi_app`) más el candado **invertido**
+que pedía la deuda: `backend/tests/test_privilegios_de_vendi_app.py` recorre
+**todas** las tablas del esquema `public` y exige que los privilegios de
+`vendi_app` coincidan con `PRIVILEGIOS_DE_VENDI_APP`. Una tabla nueva sin
+clasificar lo pone rojo aunque nadie se acuerde de actualizarlo.
+
+**Evidencia:**
+
+```
+# antes de la migración
+alembic_version | DELETE,INSERT,SELECT,UPDATE
+$ uv run pytest -q tests/test_privilegios_de_vendi_app.py
+2 failed
+
+# después
+$ bash scripts/migrate.sh        # → 0003 (head)
+$ uv run pytest -q tests/test_privilegios_de_vendi_app.py
+3 passed
+```
+
+---
+
+### D-07 · La columna `exchange` del outbox no tenía defensa
+
+**Qué era.** Resto de D-05. La policy de INSERT acota `tenant_id` y nada más, así
+que `vendi_app` podía encolar una fila con el `exchange` que quisiera; el
+dispatcher lo usaba literalmente en `declare_exchange`, de modo que un nombre
+nuevo **lo creaba** —escritura en la topología del broker desde el rol de la
+API— y uno reservado reventaba la publicación.
+
+**Cómo se cerró.** Misma receta que D-05: no confiar en el texto. `OutboxDispatcher`
+recibe su `exchange` y publica **siempre** ahí; cuando la fila dice otra cosa se
+registra `outbox_exchange_ignorado` con los dos valores. La columna se conserva
+porque es el registro de lo que el llamante pidió.
+
+**Candado y su comprobación de mutación:**
+`test_un_exchange_ajeno_no_se_declara_ni_desvia_el_mensaje` afirma las dos
+mitades —el mensaje sale por el exchange bueno **y** el ajeno no existe después
+(`declare_exchange(..., passive=True)` → `ChannelNotFoundEntity`)—. Se comprobó
+que el test detecta la regresión revirtiendo el dispatcher a `msg.exchange`:
+
+```
+$ uv run pytest -q tests/worker/test_outbox_dispatch.py -k exchange_ajeno
+FAILED … AssertionError: el mensaje no llegó al exchange configurado
+$ # restaurado
+10 passed
+```
+
+---
+
+### D-08 · El claim `groups` no se emite; `has_role()` era inerte
+
+**Qué era.** Token real de `dueno@demo.vendi.co`: `groups: None`. Ningún mapper
+de grupo está en los default client scopes, así que `has_role()` y
+`require_role()` devolvían `False` para todo el mundo —el dueño incluido— y
+cualquier comprobación de rol denegaba **por la razón equivocada**.
+
+**Cómo se cerró — y por qué NO se añadió el mapper.** Los roles de negocio de
+Vendi son **roles de realm** por restricción del plan, y los roles de realm ya
+viajan en `realm_access.roles` con un scope que el realm trae de fábrica. Añadir
+un mapper de grupos habría exigido gestionar client scopes (403 para
+`vendi-provisioning`, medido) para acabar emitiendo por un segundo canal lo que
+ya viaja por el primero — dos fuentes de verdad para la misma pregunta. Decisión
+completa en [ADR-015](adr/adr-015-roles-de-negocio-como-roles-de-realm.md).
+
+Lo implementado: la siembra crea `dueno`, `cajero` y `almacenista` como roles de
+realm y hace que el grupo homónimo mapee `{su rol} ∪ {sus permisos}`;
+`has_role()` lee `roles`; el campo `UserContext.groups` **se retira** (un campo
+siempre vacío es una trampa esperando al siguiente que escriba `require_role`).
+
+**Evidencia** (token de ejemplo generado por Keycloak para `vendi-web` y el
+usuario demo, antes y después):
+
+```
+antes:   realm_access = ['audit:read', 'default-roles-…', 'tenant:read', 'tenant:update']
+         groups       = None
+después: realm_access = ['audit:read', 'default-roles-…', 'dueno', 'tenant:read', 'tenant:update']
+```
+
+**Candados.** Check 23 de `verify-setup.sh` (falla si el token del dueño deja de
+traer `dueno`), `test_un_rol_ausente_deniega_de_verdad` y
+`test_require_role_corta_a_quien_solo_trae_permisos`, que distinguen «deniega
+porque no lo tiene» de «deniega siempre».
+
+---
+
+### Extra de la Etapa 5 · Cierres que no tenían número de deuda
+
+**Audiencia del token sin validar.** `KEYCLOAK_AUDIENCE` estaba vacío, es decir,
+la API **no comprobaba `aud`**: cualquier token firmado por el realm servía,
+aunque se hubiera emitido para otro público. Medido sobre un token real de
+`vendi-web`: `aud = None` — el claim ni siquiera existía.
+
+Se añadió el client scope `vendi-audiencia` (mapper `oidc-audience-mapper` →
+`aud: vendi-backend`) a `vendi-web` y `vendi-admin`, y `KEYCLOAK_AUDIENCE` pasa a
+tener **defecto no vacío**: un despliegue que olvide la variable falla cerrado.
+
+```
+$ TOK=$(… client_credentials de vendi-backend …)   # aud = realm-management
+$ curl --resolve api.vendi.co:443:127.0.0.1 -H "Authorization: Bearer $TOK"        https://api.vendi.co/api/v1/tenants/me
+{"success":false,"message":"Token inválido o expirado","code":"token_invalido"}   HTTP 401
+```
+
+**`/docs` y `/openapi.json` abiertos en el borde.** Decisión: **se cierran salvo
+que se pidan**. `DOCS_PUBLICOS` es `false` por defecto y entonces FastAPI **no
+registra las rutas** —el 404 es real, no un middleware que las tapa—. El compose
+de desarrollo las enciende. Lo que publican no es documentación de marketing: es
+el mapa completo de rutas, esquemas y códigos de error, incluidas las de
+plataforma, y en Fase 0 no hay ni un consumidor externo que lo necesite (el
+cliente TypeScript se genera contra `docs/api/openapi-fase0.json`).
+
+```
+$ DOCS_PUBLICOS=false docker compose … up -d api
+/docs           404
+/redoc          404
+/openapi.json   404
+/health         200
+```
+
+**CORS: `Access-Control-Allow-Headers: *` junto a `Allow-Credentials: true`.**
+Combinación inválida: la especificación de Fetch obliga a comparar el `*`
+**literalmente** en peticiones con credenciales, así que el preflight de
+cualquier petición con `Authorization` se habría rechazado en el navegador —sin
+un solo log en el backend— en cuanto alguien usara `withCredentials`. Se
+sustituye por la lista explícita, en el middleware `cors-api` de Traefik y en la
+constante `CABECERAS_CORS` de la aplicación, con un test que compara los dos
+archivos para que no puedan separarse.
+
+```
+$ curl -i -X OPTIONS --resolve api.vendi.co:443:127.0.0.1 \
+       https://api.vendi.co/api/v1/tenants/me \
+       -H 'Origin: https://app.vendi.co' -H 'Access-Control-Request-Method: GET' \
+       -H 'Access-Control-Request-Headers: authorization,x-tenant-id'
+access-control-allow-headers: Accept,Accept-Language,Authorization,Content-Type,X-Correlation-Id,X-Requested-With,X-Tenant-Id
+access-control-allow-credentials: true
+```
 
 ---
 

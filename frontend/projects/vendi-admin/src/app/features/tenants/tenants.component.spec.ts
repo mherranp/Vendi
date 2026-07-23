@@ -150,7 +150,12 @@ describe('TenantsComponent — listar', () => {
     m.http.expectOne((r) => r.url === LISTADO).flush(pagina([], 30));
     // El usuario se va a la página 3…
     m.fixture.componentInstance.alPaginar({ pageIndex: 2, pageSize: 10, length: 30 });
-    m.http.expectOne((r) => r.url === LISTADO).flush(pagina([], 30, 20));
+    m.http
+      .expectOne((r) => r.url === LISTADO)
+      // La página 3 trae filas: si viniera vacía con total > 0, el componente
+      // retrocedería de página (ver el spec de «la última página se vacía») y
+      // este caso estaría probando otra cosa.
+      .flush(pagina([{ id: ID_A, nombre: 'Tienda Don Carlos', estado: 'activo' }], 30, 20));
 
     // …y entonces activa "ver eliminados": el conjunto cambia, así que hay que
     // volver a la primera página o se queda mirando una tabla vacía.
@@ -173,8 +178,48 @@ describe('TenantsComponent — listar', () => {
     m.fixture.componentInstance.alPaginar({ pageIndex: 2, pageSize: 10, length: 201 });
     const req = m.http.expectOne((r) => r.url === LISTADO);
     expect(req.request.params.get('skip')).toBe('20');
-    req.flush(pagina([], 201, 20));
+    req.flush(pagina([{ id: ID_A, nombre: 'Tienda Don Carlos', estado: 'activo' }], 201, 20));
     expect(m.fixture.componentInstance.total()).toBe(201);
+  });
+
+  it('si la última página se vacía, retrocede una página en vez de mentir', () => {
+    // El caso real: el usuario está en la página 3, da de baja el único
+    // negocio que quedaba en ella y el servidor devuelve cero filas con un
+    // total que dice que sí hay negocios. Sin corrección, la pantalla enseña
+    // «Todavía no hay negocios» —una afirmación falsa sobre la plataforma
+    // entera— y el paginador deja al usuario encallado en una página que ya no
+    // existe.
+    m.fixture.detectChanges();
+    m.http.expectOne((r) => r.url === LISTADO).flush(pagina([], 21));
+
+    m.fixture.componentInstance.alPaginar({ pageIndex: 2, pageSize: 10, length: 21 });
+    const enLaPagina3 = m.http.expectOne((r) => r.url === LISTADO);
+    expect(enLaPagina3.request.params.get('skip')).toBe('20');
+    // El negocio que quedaba se dio de baja: la página 3 ya no tiene nada.
+    enLaPagina3.flush(pagina([], 20, 20));
+
+    const reintento = m.http.expectOne((r) => r.url === LISTADO);
+    expect(reintento.request.params.get('skip')).toBe('10');
+    expect(m.fixture.componentInstance.indicePagina()).toBe(1);
+    reintento.flush(
+      pagina([{ id: ID_B, nombre: 'Panadería La Espiga', estado: 'activo' }], 20, 10),
+    );
+    m.fixture.detectChanges();
+
+    expect(texto(m.fixture)).toContain('Panadería La Espiga');
+    expect(texto(m.fixture)).not.toContain('Todavía no hay negocios');
+    expect(m.fixture.componentInstance.cargando()).toBe(false);
+  });
+
+  it('la primera página vacía NO retrocede: es el estado vacío legítimo', () => {
+    // El guardia del retroceso es `indicePagina() > 0`. Sin él, un listado
+    // realmente vacío entraría en un bucle de recargas.
+    m.fixture.detectChanges();
+    m.http.expectOne((r) => r.url === LISTADO).flush(pagina([], 0));
+    m.fixture.detectChanges();
+
+    expect(m.fixture.componentInstance.indicePagina()).toBe(0);
+    expect(texto(m.fixture)).toContain('Todavía no hay negocios');
   });
 });
 

@@ -655,6 +655,158 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 22. Ningún cliente del realm de negocio acepta el grant de contraseña (D-01).
+#
+#     Se comprueba sobre el realm VIVO y no sobre el JSON: el JSON es la
+#     semilla del día 1 y el realm existente no se reimporta (D-03), así que
+#     preguntarle al archivo es preguntarle a quien no decide. Un cliente
+#     público con ROPC anula la política de passkey del realm: con usuario y
+#     contraseña se obtiene un token completo sin pasar por el navegador. Se
+#     mide en `vendi-web` y también en `admin-cli`, que es el mismo agujero con
+#     otro nombre —Keycloak lo trae encendido en todos los realms.
+# ---------------------------------------------------------------------------
+info "22. Ningún cliente de vendi-co acepta el grant de contraseña (D-01)"
+if [ -n "${KC_TOKEN:-}" ]; then
+    CON_ROPC="$(curl -fs "${CURL_TOPES[@]}" -H "Authorization: Bearer ${KC_TOKEN}" \
+        "${KC_LOCAL}/admin/realms/vendi-co/clients" 2>/dev/null \
+        | python3 -c 'import sys, json
+try:
+    clientes = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+print(",".join(sorted(c["clientId"] for c in clientes if c.get("directAccessGrantsEnabled"))))' 2>/dev/null)"
+    CODIGO_ROPC=$?
+    if [ "${CODIGO_ROPC}" -ne 0 ]; then
+        falla "no pude listar los clientes del realm vendi-co"
+    elif [ -z "${CON_ROPC}" ]; then
+        ok "ningún cliente de vendi-co tiene directAccessGrantsEnabled"
+    else
+        falla "clientes con ROPC en vendi-co: ${CON_ROPC}. Es la deuda D-01: apágalo con RECONCILE_APLICAR_CONFIG=1 bash scripts/reconcile-keycloak.sh"
+    fi
+else
+    omite "22: sin token de admin de Keycloak (ver check 8)"
+fi
+
+# ---------------------------------------------------------------------------
+# 23. Los tokens del realm llevan la audiencia que la API exige.
+#
+#     Sin el claim `aud`, cualquier token firmado por `vendi-co` sirve contra
+#     la API aunque se emitiera para otro público. Se usa el generador de
+#     tokens de ejemplo de la Admin API, que produce exactamente los claims que
+#     tendría un token real de ese cliente y ese usuario, sin necesitar
+#     credenciales de nadie ni un navegador.
+# ---------------------------------------------------------------------------
+info "23. Los tokens de vendi-web llevan aud=${KEYCLOAK_AUDIENCE:-vendi-backend} y el rol de negocio"
+if [ -n "${KC_TOKEN:-}" ]; then
+    EJEMPLO="$(KC_LOCAL="${KC_LOCAL}" KC_TOKEN="${KC_TOKEN}" \
+        AUD="${KEYCLOAK_AUDIENCE:-vendi-backend}" python3 - <<'PY' 2>/dev/null
+import json, os, urllib.parse, urllib.request
+
+kc = os.environ["KC_LOCAL"]
+aud_esperada = os.environ["AUD"]
+cab = {"Authorization": "Bearer " + os.environ["KC_TOKEN"]}
+
+
+def get(ruta):
+    return json.load(urllib.request.urlopen(urllib.request.Request(kc + ruta, headers=cab), timeout=8))
+
+
+clientes = {c["clientId"]: c["id"] for c in get("/admin/realms/vendi-co/clients")}
+if "vendi-web" not in clientes:
+    print("no existe el cliente vendi-web")
+    raise SystemExit(0)
+
+usuarios = get("/admin/realms/vendi-co/users?" + urllib.parse.urlencode({"username": "dueno@demo.vendi.co", "exact": "true"}))
+if not usuarios:
+    print("no existe el usuario demo (¿falta scripts/seed.sh?)")
+    raise SystemExit(0)
+
+consulta = urllib.parse.urlencode({"userId": usuarios[0]["id"], "scope": "organization"})
+claims = get(f"/admin/realms/vendi-co/clients/{clientes['vendi-web']}/evaluate-scopes/generate-example-access-token?{consulta}")
+
+aud = claims.get("aud")
+aud = [aud] if isinstance(aud, str) else list(aud or [])
+roles = claims.get("realm_access", {}).get("roles", [])
+
+problemas = []
+if aud_esperada not in aud:
+    problemas.append(f"aud={aud or '(ninguna)'}, esperaba {aud_esperada}")
+if "dueno" not in roles:
+    problemas.append("realm_access.roles no trae 'dueno' (deuda D-08: has_role() sería inerte)")
+print("OK" if not problemas else " · ".join(problemas))
+PY
+)"
+    if [ "${EJEMPLO}" = "OK" ]; then
+        ok "aud=${KEYCLOAK_AUDIENCE:-vendi-backend} y realm_access.roles con el rol de negocio"
+    elif [ -z "${EJEMPLO}" ]; then
+        falla "no pude generar el token de ejemplo de vendi-web"
+    else
+        falla "${EJEMPLO}"
+    fi
+else
+    omite "23: sin token de admin de Keycloak (ver check 8)"
+fi
+
+# ---------------------------------------------------------------------------
+# 24. La documentación interactiva de la API no está abierta en el borde
+#     cuando no se ha pedido, y el preflight de CORS no devuelve el comodín de
+#     cabeceras junto a credenciales (combinación inválida en cuanto alguien
+#     use withCredentials).
+# ---------------------------------------------------------------------------
+info "24. Borde: /docs según DOCS_PUBLICOS y CORS sin comodín de cabeceras"
+PROBLEMAS_BORDE=""
+# Misma fijación de DNS que el check 11: el hostname, el SNI, la cabecera Host
+# y la validación TLS son los reales; solo se sustituye la consulta DNS.
+FIJA_DNS_API=(--resolve "api.${BASE_DOMAIN}:443:127.0.0.1")
+CODIGO_DOCS="$(curl -s -o /dev/null -w '%{http_code}' "${CURL_TOPES[@]}" "${FIJA_DNS_API[@]}" \
+    "https://api.${BASE_DOMAIN}/docs" 2>/dev/null || echo "000")"
+case "${DOCS_PUBLICOS:-false}" in
+    true|1|True|TRUE)
+        [ "${CODIGO_DOCS}" = "200" ] || PROBLEMAS_BORDE="${PROBLEMAS_BORDE}DOCS_PUBLICOS=true pero /docs devuelve ${CODIGO_DOCS}. " ;;
+    *)
+        [ "${CODIGO_DOCS}" = "404" ] || PROBLEMAS_BORDE="${PROBLEMAS_BORDE}DOCS_PUBLICOS no está activo y /docs devuelve ${CODIGO_DOCS} (debería ser 404). " ;;
+esac
+
+CABECERAS_CORS="$(curl -s -i -X OPTIONS "${CURL_TOPES[@]}" "${FIJA_DNS_API[@]}" \
+    "https://api.${BASE_DOMAIN}/api/v1/tenants/me" \
+    -H "Origin: https://app.${BASE_DOMAIN}" \
+    -H 'Access-Control-Request-Method: GET' \
+    -H 'Access-Control-Request-Headers: authorization' 2>/dev/null \
+    | tr -d '\r' | awk 'BEGIN{IGNORECASE=1} /^access-control-allow-headers:/ {print $2}')"
+case "${CABECERAS_CORS}" in
+    "") PROBLEMAS_BORDE="${PROBLEMAS_BORDE}el preflight no devolvió Access-Control-Allow-Headers. " ;;
+    \*) PROBLEMAS_BORDE="${PROBLEMAS_BORDE}Access-Control-Allow-Headers es '*' junto a Allow-Credentials: con credenciales el comodín se compara literalmente y el preflight de toda petición con Authorization se rechaza. " ;;
+    *Authorization*) : ;;
+    *) PROBLEMAS_BORDE="${PROBLEMAS_BORDE}Access-Control-Allow-Headers no incluye Authorization (${CABECERAS_CORS}). " ;;
+esac
+
+if [ -z "${PROBLEMAS_BORDE}" ]; then
+    ok "/docs coherente con DOCS_PUBLICOS y CORS con lista explícita de cabeceras"
+else
+    falla "${PROBLEMAS_BORDE}"
+fi
+
+# ---------------------------------------------------------------------------
+# 25. Las tres SPAs responden por su dominio a través de Traefik.
+#     Hallazgo de QA de la Etapa 5: sin este check, un despliegue con portal,
+#     tenant o admin caídos (o sirviendo la app equivocada) pasaba el gate en
+#     verde. Misma fijación de DNS que los checks 11 y 24: hostname, SNI y
+#     validación TLS reales; solo se sustituye la consulta DNS.
+# ---------------------------------------------------------------------------
+info "25. Las SPAs responden por su dominio (vendi.co, app., admin.)"
+PROBLEMAS_SPAS=""
+for HOST_SPA in "${BASE_DOMAIN}" "www.${BASE_DOMAIN}" "app.${BASE_DOMAIN}" "admin.${BASE_DOMAIN}"; do
+    CODIGO_SPA="$(curl -s -o /dev/null -w '%{http_code}' "${CURL_TOPES[@]}" \
+        --resolve "${HOST_SPA}:443:127.0.0.1" "https://${HOST_SPA}/" 2>/dev/null || echo "000")"
+    [ "${CODIGO_SPA}" = "200" ] || PROBLEMAS_SPAS="${PROBLEMAS_SPAS}${HOST_SPA} devuelve ${CODIGO_SPA}. "
+done
+if [ -z "${PROBLEMAS_SPAS}" ]; then
+    ok "las cuatro URLs de SPA devuelven 200 por Traefik con TLS validado"
+else
+    falla "${PROBLEMAS_SPAS}(docker compose logs portal tenant admin)"
+fi
+
+# ---------------------------------------------------------------------------
 # Resumen.
 # ---------------------------------------------------------------------------
 echo ""

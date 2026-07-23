@@ -1,0 +1,339 @@
+# =============================================================================
+# CI de Vendi — lint y tests de backend y frontend.
+#
+# Cosechado de /Users/maoherran/BaseSaaS/.github/workflows/ci.yml, con tres
+# desviaciones que conviene leer antes de "arreglarlas":
+#
+# 1. **Los tests `integration` corren de verdad, contra el compose.** En
+#    BaseSaaS el job de backend era pytest sobre SQLite y los tests que
+#    necesitaban servicios "se auto-omitían". Aquí no: media fundación de Vendi
+#    —RLS, los privilegios por rol, la policy del outbox, Organizations— solo
+#    existe en PostgreSQL y en Keycloak, y un doble los da siempre por buenos.
+#    Por eso hay un job aparte que levanta el stack, migra, siembra y ejecuta
+#    `-m integration`. El plan hablaba de `services:` del workflow; no sirve:
+#    Postgres necesita el `initdb` de infra/postgres/init/01-roles.sh (los dos
+#    roles con y sin BYPASSRLS) y Keycloak el realm importado con sus flujos.
+#    Reproducir eso con `services:` es reescribir el compose peor.
+#
+# 2. **El job de integración falla si algún test se omite.** Un `SKIPPED` en
+#    esta suite significa "el servicio no estaba y nadie se enteró", que es el
+#    fallo que este job existe para impedir. Se cuenta con `-rs` y se compara.
+#
+# 3. **ruff bloquea.** En BaseSaaS era `continue-on-error` porque el corpus no
+#    se escribió contra ninguna configuración de lint. El de Vendi sí: nació
+#    limpio y se queda limpio. mypy sigue siendo señal, no puerta.
+#
+# El E2E de Playwright vive en e2e.yml, no aquí: la ruta lenta (levantar el
+# stack y un navegador) no debe retrasar la señal rápida.
+# =============================================================================
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  backend-lint:
+    name: backend / ruff + mypy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sincronizar dependencias
+        run: uv sync --all-extras
+        working-directory: backend
+      - name: ruff (bloqueante)
+        run: uv run ruff check .
+        working-directory: backend
+      - name: ruff format (bloqueante)
+        run: uv run ruff format --check .
+        working-directory: backend
+      - name: mypy (informativo)
+        # Informativo a propósito: el tipado se adopta de forma incremental y
+        # bloquear aquí incentivaría el `# type: ignore` en vez del arreglo.
+        continue-on-error: true
+        run: uv run mypy libs/vendi-core/src
+        working-directory: backend
+
+  # ---------------------------------------------------------------------------
+  backend-unit:
+    name: backend / pytest (sin integración)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sincronizar dependencias
+        run: uv sync --all-extras
+        working-directory: backend
+      - name: pytest -m 'not integration'
+        run: uv run pytest -q -m 'not integration'
+        working-directory: backend
+
+  # ---------------------------------------------------------------------------
+  candado-de-cosecha:
+    name: backend / candado de cosecha
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sincronizar dependencias
+        run: uv sync --all-extras
+        working-directory: backend
+      - name: Ni base_saas, ni search_path, ni tenant_slug en el CÓDIGO
+        # El plan pedía aquí un `grep -rn 'base_saas|search_path|tenant_slug'`
+        # que diera vacío. **No puede darlo, y no debe.** El mismo plan exige
+        # registrar de dónde vino cada archivo cosechado y qué cambió, y esa
+        # frase —«cosechado de `base_saas.audit.models`; `tenant_slug` pasa a
+        # `tenant_id`»— es literalmente lo que el grep prohíbe. Borrar la prosa
+        # para que el grep salga vacío destruiría la trazabilidad de la cosecha
+        # a cambio de nada.
+        #
+        # Lo que el criterio quiere decir es «no queda CÓDIGO que referencie el
+        # mundo anterior». Eso lo comprueba `test_candado_cosecha.py`, que
+        # tokeniza los .py con la stdlib, descarta comentarios y docstrings, y
+        # hace una segunda pasada sobre las cadenas buscando lo que solo puede
+        # ser SQL o un import. Medido: el grep pelado devuelve 26 líneas, todas
+        # de documentación legítima; el candado devuelve cero.
+        run: uv run pytest -q tests/test_candado_cosecha.py
+        working-directory: backend
+
+  # ---------------------------------------------------------------------------
+  backend-integration:
+    name: backend / pytest -m integration (stack real)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sincronizar dependencias
+        run: uv sync --all-extras
+        working-directory: backend
+
+      - name: Preparar el .env del stack
+        # Sin secretos reales: el compose exige que existan y los tests los
+        # leen del mismo archivo (backend/tests/conftest.py::_cargar_env).
+        run: |
+          cp .env.example .env
+          sed -i "s/^DOCS_PUBLICOS=.*/DOCS_PUBLICOS=true/" .env
+
+      - name: Instalar mkcert y emitir el certificado de vendi.co
+        # mkcert y NO openssl autofirmado, como hacía BaseSaaS: la suite de
+        # Vendi comprueba la IDENTIDAD del otro extremo antes de mandar ningún
+        # secreto (`exigir_stack_local` en tests/conftest.py) y exige que el
+        # certificado lo firme la CA de mkcert de esta máquina. Un autofirmado
+        # obligaría a aflojar esa comprobación, que es justo la que impide que
+        # una prueba entregue el client_secret a un tercero.
+        run: |
+          set -euo pipefail
+          # libnss3-tools trae `certutil`. Sin él, `mkcert -install` avisa y NO
+          # instala la CA en el almacén NSS — que es el que usan Chromium y
+          # Firefox. curl seguiría validando (usa el almacén del sistema) y el
+          # navegador de Playwright no: un fallo que aparece solo en el E2E y
+          # parece un problema del sitio.
+          sudo apt-get update -qq && sudo apt-get install -y -qq libnss3-tools
+          curl -fsSL -o /tmp/mkcert \
+            https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-linux-amd64
+          chmod +x /tmp/mkcert
+          sudo mv /tmp/mkcert /usr/local/bin/mkcert
+          mkcert -install
+          mkdir -p infra/certs
+          # Los mismos SAN que scripts/setup-certs.sh, `localhost` y
+          # `127.0.0.1` incluidos. No sobran: el realm declara
+          # `https://localhost/*` como redirectUri (la WebView de Capacitor),
+          # así que una prueba que entre por ese origen valida el certificado en
+          # el portátil y fallaría solo en CI. Un certificado de CI distinto del
+          # del desarrollador convierte cualquier fallo de TLS en un «funciona
+          # en mi máquina».
+          mkcert -cert-file infra/certs/vendi.co.pem \
+                 -key-file  infra/certs/vendi.co-key.pem \
+                 "vendi.co" "*.vendi.co" "localhost" "127.0.0.1"
+          echo "VENDI_MKCERT_CAROOT=$(mkcert -CAROOT)" >> "$GITHUB_ENV"
+
+      - name: Fijar *.vendi.co a 127.0.0.1
+        # El equivalente en CI de /etc/resolver/vendi.co. vendi.co es un dominio
+        # REAL registrado por un tercero: sin esto, cada petición del stack sale
+        # a Internet. Es la misma condición que verify-setup.sh comprueba en los
+        # checks 11b y 11c.
+        run: |
+          sudo tee -a /etc/hosts >/dev/null <<'EOF'
+          127.0.0.1 vendi.co
+          127.0.0.1 api.vendi.co
+          127.0.0.1 accounts.vendi.co
+          127.0.0.1 app.vendi.co
+          127.0.0.1 admin.vendi.co
+          127.0.0.1 grafana.vendi.co
+          127.0.0.1 mail.vendi.co
+          EOF
+
+      - name: Levantar el stack (solo lo que necesita el backend)
+        # Se enumeran los servicios a propósito: `up -d --wait` a secas
+        # construiría además las tres imágenes de las SPAs, que este job no
+        # usa y que cuestan varios minutos. El E2E sí las levanta (e2e.yml).
+        #
+        # `prometheus` y `grafana` SÍ están en la lista aunque ningún test de
+        # integración los toque: el paso siguiente ejecuta verify-setup.sh
+        # entero, y sus checks 13 y 14 fallan en duro si no responden. Omitirlos
+        # aquí dejaba el job en rojo permanente —y con él la puerta de
+        # release-images.yml, que espera `ci` en verde para el mismo SHA—. Son
+        # dos imágenes prefabricadas (prom/prometheus, grafana/grafana): no se
+        # construyen, así que el coste es la descarga y unos segundos de
+        # arranque, no los minutos que cuestan las SPAs.
+        run: |
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.override.dev.yml \
+            up -d --wait traefik postgres redis rabbitmq minio keycloak api worker postgres-backup \
+                        prometheus grafana
+
+      - name: Migrar y sembrar
+        run: |
+          set -a; . ./.env; set +a
+          bash scripts/migrate.sh
+          bash scripts/seed.sh
+
+      - name: verify-setup.sh
+        # En CI sí debe pasar entero: /etc/hosts hace el papel del resolver que
+        # en el portátil del desarrollador exige sudo. Un fallo aquí es un fallo
+        # de la fundación, no del entorno.
+        run: |
+          set -a; . ./.env; set +a
+          bash scripts/verify-setup.sh
+
+      - name: pytest -m integration
+        # `-rs` lista los omitidos y el grep posterior convierte cualquier
+        # omisión en fallo: un test de integración que desaparece del recuento
+        # no prueba nada, y es exactamente así como una suite se vuelve
+        # decorativa sin que nadie lo note.
+        run: |
+          set -euo pipefail
+          set -a; . ../.env; set +a
+          uv run pytest -q -rs -m integration | tee /tmp/integration.log
+          if grep -qE '^SKIPPED|[0-9]+ skipped' /tmp/integration.log; then
+            echo "::error::Hay tests de integración omitidos. Un SKIPPED aquí significa que el servicio no estaba."
+            exit 1
+          fi
+        working-directory: backend
+
+      - name: Volcar logs del compose si algo falló
+        if: failure()
+        run: |
+          mkdir -p ci-artifacts
+          docker compose -f infra/docker-compose.yml logs --no-color > ci-artifacts/compose.log 2>&1 || true
+          docker compose -f infra/docker-compose.yml ps > ci-artifacts/compose-ps.txt 2>&1 || true
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: backend-integration-logs-${{ github.run_id }}
+          path: ci-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Bajar el stack
+        if: always()
+        run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.override.dev.yml down -v
+
+  # ---------------------------------------------------------------------------
+  frontend-lint:
+    name: frontend / lint + format
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Compilar las libs
+        # `ng lint` resuelve @vendi/* contra dist/: sin las libs construidas, el
+        # compilador no encuentra las declaraciones de tipos.
+        run: npm run build:libs
+      - run: npx ng lint
+      - run: npm run format:check
+
+  # ---------------------------------------------------------------------------
+  frontend-test:
+    name: frontend / ng test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build:libs
+      - name: Ejecutar los tests unitarios de los 9 proyectos
+        # El builder es `@angular/build:unit-test` (Vitest sobre jsdom), NO Karma:
+        # `--browsers` es una opción de Vitest Browser Mode y hace que el comando
+        # aborte con código 1 sin ejecutar un solo test. `--watch=false` fuerza la
+        # ejecución única; sin proyecto, `ng test` recorre los 9 del workspace.
+        run: npx ng test --watch=false
+
+  # ---------------------------------------------------------------------------
+  frontend-build:
+    name: frontend / ng build (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [vendi-portal, vendi-tenant, vendi-admin, vendi-app]
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build:libs
+      - name: Construir ${{ matrix.app }}
+        # Un presupuesto de bundle superado sale por aquí: `ng build` termina en
+        # distinto de cero y el job se pone rojo.
+        run: npx ng build ${{ matrix.app }} --configuration production

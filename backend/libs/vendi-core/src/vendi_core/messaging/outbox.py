@@ -140,6 +140,12 @@ class OutboxService:
 # importación cruzada por una constante de siete letras no vale un ciclo.
 PREFIJO_PLATAFORMA = "plataforma"
 
+# El ÚNICO exchange en el que publica el dispatcher (deuda D-07). Vive aquí y no
+# en `events` porque quien lo usa es el dispatcher, y porque la dirección de la
+# dependencia es `events → messaging`: `vendi_core.events.service.EVENT_EXCHANGE`
+# lo reexporta para no romper a quien ya lo importaba de allí.
+EXCHANGE_DE_EVENTOS = "events.tenant"
+
 
 def derivar_clave_de_enrutado(tenant_id: uuid.UUID | None, clave_guardada: str) -> str:
     """Reconstruye la clave de enrutado a partir de la COLUMNA `tenant_id`.
@@ -212,7 +218,31 @@ def _payload_saneado(tenant_id: uuid.UUID | None, payload: dict) -> dict:
 
 
 class OutboxDispatcher:
-    """Polls outbox and publishes pending messages. Run as background task."""
+    """Drena el outbox y publica los mensajes pendientes. Tarea de fondo.
+
+    ## El exchange lo pone el dispatcher, no la fila (deuda D-07)
+
+    Resto de D-05. La policy de INSERT del outbox acota la columna `tenant_id` y
+    nada más: una sesión de `vendi_app` puede encolar legalmente una fila con su
+    propio `tenant_id` y el `exchange` que se le antoje. El dispatcher usaba ese
+    texto literalmente en `declare_exchange`, así que una fila con
+    `exchange='amq.direct'` llevaba al worker a chocar contra un exchange
+    reservado (PRECONDITION_FAILED ×5 → `failed`, medido por el QA de la Etapa
+    4) y una con un nombre nuevo lo habría **creado**: escritura en la topología
+    del broker desde el rol de la API.
+
+    La receta es la misma que cerró la clave de enrutado: no confiar en el
+    texto. El dispatcher publica **siempre** en su exchange configurado. Lo que
+    aporta el llamante deja de decidir a qué exchange va nada.
+
+    Para el código correcto es un no-op —`DomainEventService.emit` siempre
+    escribe `EXCHANGE_DE_EVENTOS`—; para el equivocado es un candado, y queda en
+    el log como `outbox_exchange_ignorado` con los dos valores para que un
+    handler mal escrito se vea en vez de fallar en silencio.
+
+    La columna `exchange` se conserva: es el registro de lo que el llamante
+    pidió, y borrarla perdería la prueba de que alguien pidió otra cosa.
+    """
 
     def __init__(
         self,
@@ -221,9 +251,11 @@ class OutboxDispatcher:
         poll_interval: float = 2.0,
         batch_size: int = 100,
         max_retries: int = 5,
+        exchange: str = EXCHANGE_DE_EVENTOS,
     ):
         self._session_factory = session_factory
         self._publisher = publisher
+        self._exchange = exchange
         self._poll_interval = poll_interval
         self._batch_size = batch_size
         self._max_retries = max_retries
@@ -270,9 +302,19 @@ class OutboxDispatcher:
                         clave_guardada=msg.routing_key,
                         clave_publicada=clave,
                     )
+                if msg.exchange != self._exchange:
+                    # D-07: el exchange guardado no decide destino. Ver la
+                    # cabecera de la clase.
+                    logger.warning(
+                        "outbox_exchange_ignorado",
+                        message_id=str(msg.id),
+                        tenant_id=str(msg.tenant_id) if msg.tenant_id else None,
+                        exchange_guardado=msg.exchange,
+                        exchange_publicado=self._exchange,
+                    )
                 cuerpo = _payload_saneado(msg.tenant_id, msg.payload)
                 try:
-                    await self._publisher.publish(msg.exchange, clave, cuerpo)
+                    await self._publisher.publish(self._exchange, clave, cuerpo)
                     await session.execute(
                         update(OutboxMessage)
                         .where(OutboxMessage.id == msg.id)
@@ -282,7 +324,7 @@ class OutboxDispatcher:
                     logger.warning(
                         "outbox_publish_failed",
                         message_id=str(msg.id),
-                        exchange=msg.exchange,
+                        exchange=self._exchange,
                         routing_key=clave,
                         error=str(exc),
                     )

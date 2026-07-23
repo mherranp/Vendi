@@ -1561,6 +1561,30 @@
           "protocolMapper": "oidc-usermodel-attribute-mapper"
         }
       ]
+    },
+    {
+      "name": "vendi-audiencia",
+      "description": "Anade aud=vendi-backend al token: la API valida la audiencia.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "audiencia-vendi-backend",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "vendi-backend",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true",
+            "lightweight.claim": "false"
+          }
+        }
+      ]
     }
   ],
   "clientSessionIdleTimeout": 0,
@@ -1688,7 +1712,7 @@
         "basic",
         "email"
       ],
-      "directAccessGrantsEnabled": true,
+      "directAccessGrantsEnabled": false,
       "enabled": true,
       "frontchannelLogout": false,
       "fullScopeAllowed": true,
@@ -1874,10 +1898,11 @@
         "organization",
         "profile",
         "roles",
+        "vendi-audiencia",
         "web-origins"
       ],
       "description": "Cliente público PKCE de vendi-app y vendi-tenant. ng serve: 4200 = vendi-app, 4202 = vendi-tenant (en desarrollo las apps no pasan por Traefik). El 4201 es vendi-portal, que es público y no usa Keycloak: no va aquí.",
-      "directAccessGrantsEnabled": true,
+      "directAccessGrantsEnabled": false,
       "enabled": true,
       "frontchannelLogout": true,
       "fullScopeAllowed": true,
@@ -1919,6 +1944,7 @@
         "organization",
         "profile",
         "roles",
+        "vendi-audiencia",
         "web-origins"
       ],
       "description": "Cliente público PKCE de vendi-admin. Sin ROPC: la consola solo entra por navegador. Puerto de desarrollo: 4203 (ng serve; ver angular.json).",

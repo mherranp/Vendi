@@ -1,14 +1,23 @@
 """Catálogo de permisos de Vendi y semilla de roles de negocio.
 
-Se mantiene el mapeo semántico de BaseSaaS, que sigue siendo el correcto:
+El mapeo semántico, corregido en la Etapa 5 (deuda D-08, ADR-015):
 
-- Un **permiso** de Vendi es un rol de realm en Keycloak (mismo nombre, sin prefijo).
-- Un **rol de negocio** de Vendi es un grupo de Keycloak, cuyos "role-mappings"
-  son los permisos.
-- El claim `realm_access.roles` del JWT trae los roles de realm efectivos del
-  usuario (directos + heredados de grupos), es decir, el conjunto completo de
-  permisos.
-- El claim `groups` trae los grupos (= roles de negocio) del usuario.
+- Un **permiso** de Vendi es un rol de realm en Keycloak (mismo nombre, sin
+  prefijo): `tenant:read`, `platform:admin`…
+- Un **rol de negocio** de Vendi (`dueno`, `cajero`, `almacenista`) es **también
+  un rol de realm**, como manda la restricción global del plan. Además existe un
+  **grupo** de Keycloak con el mismo nombre, cuyo role-mapping es {el rol de
+  negocio} ∪ {sus permisos}: el grupo es la comodidad de administración —se
+  mete al usuario en un grupo y hereda todo— y el rol es lo que viaja al token.
+- El claim `realm_access.roles` del JWT trae los roles de realm efectivos
+  (directos + heredados de grupos): permisos **y** roles de negocio. Es el único
+  canal de autorización.
+
+Por qué no hay claim `groups`: el realm no lo emite (ningún mapper de grupo está
+en los default client scopes) y añadirlo exigía gestionar client scopes, que la
+credencial de aprovisionamiento no puede (403 medido). Emitir por un segundo
+canal lo que ya viaja por el primero no compraba nada. El campo `groups` de
+`UserContext` se retiró; `has_role()` lee `roles`.
 
 La autorización en caliente lee **solo el token**: ni una consulta a base de
 datos en la ruta de cada request.
@@ -108,6 +117,19 @@ PERMISOS_POR_ROL: dict[str, frozenset[str]] = {
     ROL_CAJERO: _PERMISOS_CAJERO,
     ROL_ALMACENISTA: _PERMISOS_ALMACENISTA,
 }
+
+
+def roles_de_realm_del_grupo(rol: str) -> list[str]:
+    """Roles de realm que el grupo `rol` debe mapear, en orden estable.
+
+    Son sus permisos **más el propio rol de negocio**. Esa última parte es la
+    que cierra D-08: sin ella el rol no aparece en `realm_access.roles` y
+    `has_role('dueno')` es falso para el dueño. Con ella, meter al usuario en el
+    grupo basta para que el token lleve las dos cosas.
+    """
+    if rol not in PERMISOS_POR_ROL:
+        raise KeyError(f"Rol de negocio desconocido: {rol!r}. Los válidos son {list(ROLES_DE_NEGOCIO)}.")
+    return sorted(PERMISOS_POR_ROL[rol] | {rol})
 
 
 def has_permission(user: UserContext, permission: str) -> bool:

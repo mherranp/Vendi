@@ -1,64 +1,40 @@
-# Native
+# @vendi/native
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 21.2.0.
+Fachadas de las APIs de plataforma con fallback web. Es el **único** punto del
+workspace autorizado a importar `@capacitor/*`: así la misma base de código
+corre como PWA y como app nativa sin que el resto se entere de en cuál está.
 
-## Code scaffolding
+No importa **ninguna** otra librería `@vendi/*` (ni `@vendi/domain`, ni
+`@vendi/ui-kit`, ni `@vendi/data-access`, ni `@vendi/auth`) ni `dexie`:
+`native` solo envuelve APIs de plataforma y no conoce dominio, UI,
+persistencia ni sesión. El ESLint del workspace
+(`projects/libs/native/eslint.config.js`) hace cumplir esta frontera.
 
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
-
-```bash
-ng generate component component-name
-```
-
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
-
-```bash
-ng generate --help
-```
-
-## Building
-
-To build the library, run:
+## Construir
 
 ```bash
-ng build native
+npm run build:libs   # domain, native, ui-kit, data-access y auth, en orden
+ng build native      # solo esta librería
 ```
 
-This command will compile your project, and the build artifacts will be placed in the `dist/` directory.
+El resultado va a `dist/native`. Es una librería interna del monorepo: se
+consume por el mapeo de rutas de `tsconfig.json`, **no** se publica en npm.
 
-### Publishing the Library
+## Tests unitarios
 
-Once the project is built, you can publish your library by following these steps:
-
-1. Navigate to the `dist` directory:
-
-   ```bash
-   cd dist/native
-   ```
-
-2. Run the `npm publish` command to publish your library to the npm registry:
-   ```bash
-   npm publish
-   ```
-
-## Running unit tests
-
-To execute unit tests with the [Karma](https://karma-runner.github.io) test runner, use the following command:
+El runner es Vitest, a través del builder `@angular/build:unit-test`. En este
+workspace no hay Karma: pasar `--browsers` aborta el comando sin ejecutar un
+solo test.
 
 ```bash
-ng test
+ng test native --watch=false   # solo esta librería
+npm test                       # los 9 proyectos del workspace
 ```
 
-## Running end-to-end tests
+## Tests de extremo a extremo
 
-For end-to-end (e2e) testing, run:
+Los E2E son de Playwright y viven en `frontend/e2e`, no por librería:
 
 ```bash
-ng e2e
+npm run e2e
 ```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.

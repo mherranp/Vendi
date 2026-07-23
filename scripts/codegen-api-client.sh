@@ -242,8 +242,15 @@ else
         curl "${CURL_OPTS[@]}" -f -H "Accept: application/json" \
              -o "${TMP_ESQUEMA}" "${API_URL}/openapi.json" \
             || falla "No se pudo descargar ${API_URL}/openapi.json.
-       Si el endpoint está detrás de autenticación, exporta CODEGEN_TOKEN con un
-       bearer de administrador de plataforma y reintenta."
+       Causa más probable desde la Etapa 5: DOCS_PUBLICOS está en false y la ruta
+       NO existe (404 real; FastAPI ni la registra). Es el valor por defecto y en
+       producción es el correcto. Opciones:
+         1. En desarrollo: DOCS_PUBLICOS=true en el .env y recrear el contenedor
+            de la API.
+         2. Contra un despliegue donde debe seguir cerrada: usa el esquema
+            congelado, CODEGEN_SCHEMA_FILE=docs/api/openapi-fase0.json
+       Si en cambio el endpoint está detrás de autenticación, exporta
+       CODEGEN_TOKEN con un bearer de administrador de plataforma y reintenta."
     fi
 fi
 

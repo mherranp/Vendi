@@ -20,6 +20,18 @@
 | ADR-008 | **Módulo de marketing/publicidad (Meta Ads, CRM avanzado RFM) → Fase 3** | ✅ Nuevo |
 | ADR-009 | **Fiado (crédito a clientes) + CRM mínimo de clientes entran al MVP** | ✅ Nuevo |
 | ADR-010 | **Tiers: Gratis / Light (~$19.500 COP) / Pro (~$40.000–$60.000 COP) + add-on Facturación DIAN; trial de 1 mes del tier Pro sin tarjeta** | ✅ Nuevo |
+| ADR-011 | Fronteras de importación del workspace Angular, validadas por `no-restricted-imports` | ✅ Fase 0 |
+| ADR-012 | Cuatro aplicaciones Angular (`vendi-portal`, `vendi-tenant`, `vendi-admin`, `vendi-app`) y cinco librerías | ✅ Fase 0 |
+| ADR-013 | Aislamiento multi-negocio con **RLS en schema único** y dos roles de base de datos | ✅ Fase 0 |
+| ADR-014 | **Un realm por región** con una Organization de Keycloak por negocio (`alias = str(tenant_id)`) | ✅ Fase 0 |
+| ADR-015 | Los roles de negocio son **roles de realm**; no se usa el claim `groups` | ✅ Fase 0 |
+| ADR-016 | Backend como **monolito modular (`api`) + worker**, sobre la librería `vendi-core` cosechada de BaseSaaS | ✅ Fase 0 |
+
+> Los ADR-001 … ADR-010 nacieron como filas de esta tabla. Desde la Etapa 5 de
+> Fase 0 cada decisión tiene además su archivo en [`docs/adr/`](adr/) con
+> contexto, alternativas descartadas y consecuencias; esta tabla queda como
+> índice. Los ADR-011 … ADR-016 documentan las decisiones que tomó la fundación
+> técnica y que antes solo vivían en el plan de implementación.
 
 ---
 
@@ -104,7 +116,7 @@ Pasarela local (Wompi / Mercado Pago / Bold — verificar tarifas): tarjeta y Ne
 
 ## 7. Roadmap
 
-- **Fase 0 (sem 1–4):** monorepo, CI/CD con binarios Capacitor, Keycloak realm CO + Organizations + passkeys, PG+RLS, RabbitMQ+Redis, IaC por región.
+- **Fase 0 (sem 1–4):** monorepo, CI/CD con binarios Capacitor, Keycloak realm CO + Organizations + passkeys, PG+RLS, RabbitMQ+Redis, **compose de producción versionado + workflow de despliegue** (IaC con Terraform **diferido a Fase 2**, ADR-003: con una sola región y un solo servidor, Terraform es coste sin beneficio y la reproducibilidad la da el compose versionado).
 - **Fase 1 — MVP Colombia (sem 5–13):** POS offline-first, inventario, compras, caja + **P&L simple + forecast 30d**, **fiado + clientes**, asistente IA v1 + voz, escáner 3 capas, multi-empleado. Piloto 50–100 tiendas (semilla desde listas CCB). Play Store + PWA pública; TestFlight iOS.
 - **Fase 2 — Monetización y formalización (mes 4–7):** portal de suscripción + pasarela, trial automático, Factus (clientes + autofacturación), foto de factura de compra, impresora Bluetooth, App Store pública, push APNs.
 - **Fase 3 — Escala (mes 8+):** región MX (SAT), PE (SUNAT), pagos (links PSE/Nequi/Bre-B), **módulo de marketing: CRM avanzado RFM, campañas segmentadas, asistente de pauta Meta Ads (ADR-008)**, warehouse de analytics, API abierta.
@@ -155,5 +167,16 @@ Retención semanal (>40% a semana 4), DAU/MAU, tiempo por venta registrada (<5s)
 - `docs/plan-tecnico.md` — arquitectura completa, ADR-001..004, tiendas, IA.
 - `docs/monetizacion-web.md` — portal de pago, webhooks→entitlements, ciclo de vida, guion WhatsApp.
 - `docs/analisis-comparativo-socios.md` — análisis de diferencias y origen de cada fusión.
-- `vision-producto/index.html` — visión interactiva del producto.
-- `investor_pdf/Vendi_Inversores.pdf` — documento para inversores (a regenerar con este plan maestro).
+- `docs/adr/` — un archivo por decisión, ADR-001 … ADR-016. La tabla de §0 es
+  el índice; el detalle (contexto, alternativas descartadas, consecuencias) vive
+  ahí.
+- `docs/Vendi_Inversores.pdf` — documento para inversores (a regenerar con este
+  plan maestro).
+
+> **Corrección de la Etapa 5 (2026-07-23).** Esta lista citaba dos anexos que no
+> existen en el repositorio: `vision-producto/index.html` (la visión interactiva
+> nunca se versionó; el contenido vivo es este mismo documento) y
+> `investor_pdf/Vendi_Inversores.pdf` (el PDF está en `docs/`, no en una
+> carpeta `investor_pdf/`). Se deja constancia en vez de borrar en silencio,
+> porque las dos referencias se citan también desde
+> `docs/analisis-comparativo-socios.md` y desde documentos que ya circularon.

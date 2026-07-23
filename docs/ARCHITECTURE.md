@@ -302,3 +302,105 @@ uv run pytest -q --cov=vendi_core --cov-report=term
 | `test_tenant_schema*.py`, `test_search_path_reset_hook.py`, `test_alembic_multi_schema.py` | Aislamiento por schema. Vendi aísla por RLS; los equivalentes son `test_rls_*.py` y `test_cross_tenant_isolation.py`, que ya existen |
 | `test_freeze_*.py`, `test_webhook_*.py`, `test_realtime_*.py`, `test_notifications_router.py`, `test_queues_router.py`, `test_oidc_providers.py`, `test_service_accounts.py`, `test_invitation_tokens.py`, `test_bulk_invite.py`, `test_api_keys`… | Módulos fuera del alcance de Fase 0 |
 | `test_account_router.py`, `test_tenant_*_router.py`, `test_docs_gate.py`, `test_rate_limit.py`, `test_production_checks.py`, `test_state_configuration.py`, `test_traefik_domains.py` | Tests de servicio (`app.*`). El servicio de API llega en la Etapa 4 |
+
+---
+
+## Panorama del sistema (consolidado en la Etapa 5)
+
+Hasta aquí este documento era el **registro de la cosecha**: qué archivo vino de
+dónde y con qué cambio. Sigue siéndolo. Lo que faltaba —y se añade aquí— es el
+mapa: qué piezas hay, cómo se hablan y dónde vive cada decisión.
+
+```
+                    Internet / LAN
+                          │
+                    ┌─────▼─────┐   TLS (mkcert en local, ACME en producción)
+                    │  Traefik  │   enruta por Host, termina CORS
+                    └─────┬─────┘
+     ┌───────────┬────────┼─────────┬──────────────┬─────────────┐
+     │           │        │         │              │             │
+ vendi.co    app.       admin.    api.         accounts.     grafana.
+ (portal)   (tenant)   (admin)   (API)        (Keycloak)    (Grafana)
+                                    │              │
+                              ┌─────▼──────┐       │
+                              │  api       │───────┘  valida JWT (JWKS)
+                              │ (FastAPI)  │          y aprovisiona
+                              └──┬───┬───┬─┘          Organizations
+                                 │   │   │
+              ┌──────────────────┘   │   └─────────────┐
+        ┌─────▼─────┐          ┌─────▼─────┐     ┌─────▼─────┐
+        │ PostgreSQL│          │   Redis   │     │  MinIO    │
+        │  (RLS)    │          │  (cache)  │     │ (objetos) │
+        └─────▲─────┘          └───────────┘     └───────────┘
+              │  outbox_messages
+        ┌─────┴─────┐          ┌───────────┐
+        │  worker   │─────────►│ RabbitMQ  │
+        │(dispatcher│          │  (topic)  │
+        │ + jobs)   │          └───────────┘
+        └───────────┘
+```
+
+`vendi-app` (Android/iOS, Capacitor) no aparece en el diagrama porque en Fase 0
+**solo compila y produce un AAB**: no tiene login ni habla con la API todavía.
+
+### Dónde está escrita cada decisión
+
+| Pregunta | Respuesta corta | Dónde |
+|---|---|---|
+| ¿Cómo se aísla un negocio de otro? | RLS en schema único, dos roles, GUC `vendi.tenant_id` | [ADR-013](adr/adr-013-rls-schema-unico.md) |
+| ¿Cómo sabe la API de qué negocio es una petición? | Del claim `organization`; el alias **es** el `tenant_id` | [ADR-014](adr/adr-014-realm-por-region-organizations.md) |
+| ¿Cómo se autoriza? | `realm_access.roles`: permisos y roles de negocio en el mismo claim | [ADR-015](adr/adr-015-roles-de-negocio-como-roles-de-realm.md) |
+| ¿Por qué dos procesos y no cinco? | La frontera se pone donde cambia la operación | [ADR-016](adr/adr-016-backend-api-worker.md) |
+| ¿Por qué cuatro apps? | Cuatro públicos, cuatro clientes de Keycloak | [ADR-012](adr/adr-012-cuatro-apps-angular.md) |
+| ¿Qué puede importar cada lib? | Lo dice ESLint, y explica el porqué | [ADR-011](adr/adr-011-fronteras-workspace-angular.md) |
+
+### Catálogo de módulos: qué existe y qué es backlog
+
+Fase 0 implementa **`tenants`, `auth`, `audit`** y el esqueleto de `platform`.
+
+Backlog declarado del §5.3 del spec, con su motivo (detalle en
+[ADR-016](adr/adr-016-backend-api-worker.md)): `api_keys` y `webhooks` (no hay
+integradores externos), `feature_flags` (con un despliegue no hay nada que
+conmutar), `notifications` (llega con el fiado), `account` y `tenant_settings`
+(necesitan el modelo de datos del MVP para saber qué se configura).
+
+### Tablas de plataforma y privilegios del rol de la API
+
+Cuatro tablas viven en el schema regional **sin RLS**, porque se consultan
+cross-negocio por definición. La excepción solo se sostiene mientras el rol de la
+API no las alcance:
+
+| Tabla | Privilegios de `vendi_app` | Por qué |
+|---|---|---|
+| `audit_events` | **ninguno** | la auditoría se escribe con la sesión de plataforma, fuera de la transacción del llamante |
+| `outbox_messages` | **solo INSERT** | `enqueue()` escribe en la sesión del llamante para compartir transacción; una policy de INSERT ata `tenant_id` al GUC |
+| `tenants` | **ninguno** | sin policy y con SELECT, cualquier handler listaría todos los negocios de la región |
+| `alembic_version` | **ninguno** | decide qué DDL se considera aplicado; con UPDATE, un handler puede desordenar las migraciones (deuda D-06, cerrada en la Etapa 5) |
+
+Lo vigila `backend/tests/test_privilegios_de_vendi_app.py`, un candado
+**invertido**: enumera lo permitido y falla ante cualquier tabla del esquema
+`public` que conceda algo distinto — incluida una tabla nueva que nadie
+clasificó.
+
+### Por qué NO existe un runbook `orm-alembic-sync.md`
+
+BaseSaaS tenía uno: con schema-per-tenant, el ORM y las N copias del esquema se
+desincronizaban y hacía falta un procedimiento para detectarlo y repararlo. En
+Vendi hay **un** schema y **una** cadena de migraciones, así que el problema no
+tiene dónde ocurrir. Se anota aquí para que nadie lo eche de menos y lo escriba
+de nuevo por analogía.
+
+### Superficie de seguridad del borde (estado al cierre de Fase 0)
+
+| Ruta | Quién puede | Cómo se garantiza |
+|---|---|---|
+| `/metrics` | nadie desde fuera | router `denegar-todo` en Traefik + `METRICS_TOKEN` en la app (dos capas) |
+| `/docs`, `/redoc`, `/openapi.json` | nadie, salvo `DOCS_PUBLICOS=true` | las rutas **no se registran**: el 404 es real |
+| `/api/v1/platform/*` | `platform:admin` | dependencia de permiso |
+| `/api/v1/*` | token del realm `vendi-co` con `aud=vendi-backend` | `JWTValidator` (realm permitido + audiencia) |
+| preflight CORS | orígenes de `*.vendi.co`, `localhost:*` y el WebView de Capacitor | middleware `cors-api` de Traefik, con lista **explícita** de cabeceras |
+
+El grant de contraseña (ROPC) está **apagado en todos los clientes** del realm
+`vendi-co`, incluido `admin-cli` —que Keycloak trae encendido de fábrica y es el
+mismo agujero con otro nombre—. Lo comprueba el check 22 de `verify-setup.sh`
+contra el realm vivo, no contra el JSON.

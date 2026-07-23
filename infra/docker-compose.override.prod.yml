@@ -9,6 +9,36 @@
 # Antes de usar este archivo, leer:
 #   - infra/keycloak/README.md (endurecimiento de Keycloak, ROPC, drift)
 #   - la sección de ACME de infra/traefik/traefik.yml
+#
+# -----------------------------------------------------------------------------
+# IMÁGENES: en producción NO se construye, se despliega lo publicado
+# -----------------------------------------------------------------------------
+# Los seis servicios propios de Vendi (`api`, `worker`, `keycloak`, `portal`,
+# `tenant`, `admin`) llevan aquí un `image:` que apunta a una etiqueta CONCRETA
+# publicada por .github/workflows/release-images.yml.
+#
+# No es una preferencia de estilo: `deploy.yml` sincroniza a la VM solo el
+# directorio `infra/`. En el servidor NO existen `../backend` ni `../frontend`,
+# que son los contextos de construcción del compose base. Sin estas líneas,
+# `docker compose pull` no se trae nada («No image to be pulled») y el `up`
+# siguiente intenta construir desde rutas inexistentes y muere con
+# «unable to prepare context: path "/opt/vendi/backend" not found».
+#
+# Las variables son OBLIGATORIAS (`:?`) a propósito. Con un valor por defecto
+# tipo `vendi-api:local`, un despliegue con el .env incompleto fallaba con
+# «pull access denied for vendi-api, repository does not exist», que suena a
+# problema de credenciales del registro y no a lo que realmente pasa: que nadie
+# dijo qué versión desplegar. Ahora el compose se niega a arrancar nombrando la
+# variable que falta.
+#
+# En el .env de la VM (lo pone el operador; nunca viaja desde GitHub):
+#
+#   VENDI_IMAGE_REGISTRY=ghcr.io/<org>
+#   VENDI_IMAGE_TAG=v0.1.0          # o sha-<corto>, la que publicó el workflow
+#
+# Para probar el camino en local sin registro, se construyen a mano
+# (`docker compose ... build`) y se etiquetan con lo que digan esas variables.
+# -----------------------------------------------------------------------------
 
 services:
   traefik:
@@ -83,15 +113,22 @@ services:
 
   keycloak:
     # `start-dev` NO es aceptable en producción: relaja el hostname y usa
-    # almacenamiento de desarrollo. `start` a secas sí lo es (hace un build
-    # implícito en cada arranque: más lento, pero correcto).
+    # almacenamiento de desarrollo.
     #
-    # NO se pone `--optimized`: ese flag EXIGE una imagen sobre la que ya se
-    # ejecutó `kc.sh build`, y con la imagen oficial tal cual el servidor se
-    # niega a arrancar. La imagen optimizada de Vendi se construye en la
-    # Etapa 5 (release-images.yml); cuando exista, aquí van `image:` propia y
-    # `start --optimized`.
-    command: start --import-realm
+    # Desde la Etapa 5 se arranca con `--optimized` sobre la imagen propia de
+    # Vendi (infra/keycloak/Dockerfile), que ya trae ejecutado `kc.sh build`.
+    # Antes se usaba `start` a secas y cada arranque hacía un build implícito de
+    # decenas de segundos, alargando la indisponibilidad de cada despliegue y de
+    # cada reinicio no planificado — era la deuda D-04.
+    #
+    # `--optimized` sobre la imagen oficial NO arranca: el servidor exige que el
+    # build se haya hecho antes. De ahí que las dos líneas —imagen y comando—
+    # tengan que cambiar juntas.
+    #
+    image: ${VENDI_IMAGE_REGISTRY:?VENDI_IMAGE_REGISTRY es obligatorio en producción (p. ej. ghcr.io/<org>); lo publica release-images.yml}/vendi-keycloak:${VENDI_IMAGE_TAG:?VENDI_IMAGE_TAG es obligatorio en producción (p. ej. v0.1.0 o sha-1a2b3c4)}
+    build:
+      context: ./keycloak
+    command: start --optimized --import-realm
     restart: unless-stopped
     deploy:
       resources:
@@ -100,9 +137,7 @@ services:
           cpus: '1.0'
 
   api:
-    # Fijar una etiqueta de imagen concreta publicada por release-images.yml
-    # (Etapa 5) en vez de reconstruir en la VM:
-    # image: ghcr.io/<org>/vendi-api:v0.1.0
+    image: ${VENDI_IMAGE_REGISTRY:?VENDI_IMAGE_REGISTRY es obligatorio en producción}/vendi-api:${VENDI_IMAGE_TAG:?VENDI_IMAGE_TAG es obligatorio en producción}
     restart: unless-stopped
     deploy:
       resources:
@@ -111,13 +146,43 @@ services:
           cpus: '1.0'
 
   worker:
-    # image: ghcr.io/<org>/vendi-worker:v0.1.0
+    image: ${VENDI_IMAGE_REGISTRY:?VENDI_IMAGE_REGISTRY es obligatorio en producción}/vendi-worker:${VENDI_IMAGE_TAG:?VENDI_IMAGE_TAG es obligatorio en producción}
     restart: unless-stopped
     deploy:
       resources:
         limits:
           memory: 512M
           cpus: '0.5'
+
+  # Las tres SPAs. En la VM no existe `../frontend`, así que sin `image:` el
+  # compose intentaba construirlas desde un contexto inexistente. El artefacto
+  # ya viene horneado con el BASE_DOMAIN de producción desde release-images.yml.
+  portal:
+    image: ${VENDI_IMAGE_REGISTRY:?VENDI_IMAGE_REGISTRY es obligatorio en producción}/vendi-portal:${VENDI_IMAGE_TAG:?VENDI_IMAGE_TAG es obligatorio en producción}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+
+  tenant:
+    image: ${VENDI_IMAGE_REGISTRY:?VENDI_IMAGE_REGISTRY es obligatorio en producción}/vendi-tenant:${VENDI_IMAGE_TAG:?VENDI_IMAGE_TAG es obligatorio en producción}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+
+  admin:
+    image: ${VENDI_IMAGE_REGISTRY:?VENDI_IMAGE_REGISTRY es obligatorio en producción}/vendi-admin:${VENDI_IMAGE_TAG:?VENDI_IMAGE_TAG es obligatorio en producción}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
 
   prometheus:
     restart: unless-stopped

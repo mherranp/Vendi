@@ -1,0 +1,230 @@
+# =============================================================================
+# .github/workflows/android.yml — el AAB de `vendi-app`
+#
+# Este workflow es el criterio 4 de cierre de la Fase 0: «el pipeline de CI
+# produce un AAB de prueba descargable».
+#
+# NO SALE DE LA COSECHA. BaseSaaS no construye nada móvil —sus cuatro workflows
+# son API, imágenes, despliegue y E2E—, así que aquí no hay nada que adaptar:
+# es trabajo nuevo. Se documenta por si alguien busca el original en
+# /Users/maoherran/BaseSaaS/.github/workflows/ y no lo encuentra.
+#
+# QUÉ PRODUCE: `frontend/android/app/build/outputs/bundle/release/app-release.aab`,
+# publicado como artefacto `vendi-app-aab`. Se instala con:
+#
+#     bundletool build-apks --bundle=app-release.aab --output=vendi.apks
+#     adb uninstall co.vendi.app || true      # ← ver la nota de abajo
+#     bundletool install-apks --apks=vendi.apks
+#
+# LA DESINSTALACIÓN PREVIA NO ES SUPERSTICIÓN. Medido en un emulador Pixel 6a
+# durante la Etapa 5: si el dispositivo ya tiene `co.vendi.app` instalado con
+# OTRA clave (por ejemplo un `cap run android`, que firma en depuración),
+# `install-apks` lanza una excepción de ddmlib, deja la versión ANTERIOR en su
+# sitio y el que prueba abre la app vieja creyendo que abre la nueva. Pasó
+# exactamente eso: la primera captura mostraba la pantalla de bienvenida del
+# andamiaje de Angular, que ya no existe en el código.
+#
+# FIRMA: con una clave desechable que se genera aquí mismo, en cada ejecución
+# (ver el paso «Clave de firma desechable»). No es la clave de publicación: esa
+# llega con la Fase 1 y vivirá en los secretos del repositorio. Se firma para
+# que el artefacto sea instalable —un AAB sin firmar es descargable pero no
+# demuestra el criterio— y NUNCA se sube al repositorio.
+#
+# ALCANCE DE FASE 0: `vendi-app` compila y se empaqueta; todavía no tiene
+# login (la autenticación móvil es el subproyecto 2). Que el AAB arranque y
+# muestre la pantalla inicial es todo lo que se le pide.
+# =============================================================================
+name: android
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/android.yml'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch: {}
+
+# Una ejecución por rama: los builds de Android son caros y encolar cinco del
+# mismo `push` no aporta nada.
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  aab:
+    name: AAB de prueba de vendi-app
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # El SDK preinstalado en el runner no siempre trae la plataforma que pide
+      # `variables.gradle` (compileSdk 36). Instalarla explícitamente convierte
+      # un fallo futuro y críptico de AGP en un paso nombrado que se ve en el
+      # log. Es idempotente: si ya está, `sdkmanager` no hace nada.
+      - name: Plataforma y build-tools de Android
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [ -z "${SDK}" ]; then
+            echo "::error::Ni ANDROID_SDK_ROOT ni ANDROID_HOME están definidas en el runner."
+            exit 1
+          fi
+          # `|| true` y no por descuido: cuando `sdkmanager` termina, `yes`
+          # recibe SIGPIPE y sale con 141. Con `pipefail` activo eso aborta el
+          # paso aunque las licencias se hayan aceptado perfectamente. Es el
+          # fallo clásico de este idiom en CI.
+          yes 2>/dev/null | "${SDK}/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "${SDK}/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Dependencias del workspace
+        run: npm ci --no-audit --no-fund
+
+      # Las cinco librerías ANTES que la app: `tsconfig.json` resuelve los
+      # alias (`auth`, `ui-kit`, …) contra `dist/`, no contra el código fuente.
+      # Sin este paso `ng build vendi-app` falla con "Cannot find module
+      # 'ui-kit'" — el borrador del plan se saltaba esta línea.
+      - name: Librerías del monorepo
+        run: npm run build:libs
+
+      # `--configuration production` es la configuración por defecto de la app,
+      # pero se escribe explícita: si alguien cambia `defaultConfiguration` en
+      # angular.json, el AAB no debe empezar a llevar `environment.development.ts`
+      # en silencio.
+      - name: Compilación web de vendi-app
+        run: npx ng build vendi-app --configuration production
+
+      # Candado: el paquete web que va a entrar en el AAB no puede contener
+      # URLs de desarrollo. Es exactamente lo que la sección de QA de la
+      # Etapa 5 pide comprobar, hecho aquí para que falle el pipeline y no una
+      # revisión manual.
+      #
+      # Se busca `localhost:<puerto>` y no `localhost` a secas: el runtime del
+      # service worker de Angular menciona `localhost` en su propio código y no
+      # es una URL de nuestra configuración.
+      - name: Candado — sin URLs de desarrollo en el paquete web
+        run: |
+          set -euo pipefail
+          if grep -rIn -E 'localhost:[0-9]{4}|environment\.development' dist/vendi-app/browser; then
+            echo "::error::El paquete de producción de vendi-app contiene URLs o entornos de desarrollo."
+            exit 1
+          fi
+          grep -rIl 'https://api.vendi.co/api/v1' dist/vendi-app/browser > /dev/null \
+            || { echo "::error::El paquete no apunta a la API de producción."; exit 1; }
+          echo "Paquete web limpio: solo URLs de producción."
+
+      - name: Sincronización con la plataforma Android
+        run: npx cap sync android
+
+      # Clave desechable, distinta en cada ejecución. NO es la clave de
+      # publicación y no debe usarse para nada más: existe solo para que el
+      # artefacto de esta ejecución se pueda instalar en un emulador.
+      # `app/build.gradle` la recoge de `keystore.properties` si el archivo
+      # existe (ver el bloque `signingConfigs` de ese archivo).
+      - name: Clave de firma desechable
+        working-directory: frontend/android
+        run: |
+          set -euo pipefail
+          CLAVE="$(openssl rand -hex 24)"
+          keytool -genkeypair -v \
+            -keystore fase0.jks \
+            -alias fase0 \
+            -keyalg RSA -keysize 2048 -validity 3650 \
+            -storepass "${CLAVE}" -keypass "${CLAVE}" \
+            -dname "CN=Vendi Fase 0 (clave desechable de CI), O=Vendi, C=CO"
+          cat > keystore.properties <<EOF
+          storeFile=fase0.jks
+          storePassword=${CLAVE}
+          keyAlias=fase0
+          keyPassword=${CLAVE}
+          EOF
+
+      - name: Construcción del AAB
+        working-directory: frontend/android
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew --no-daemon bundleRelease
+
+      # `bundletool validate` es lo que separa «se generó un archivo» de «se
+      # generó un App Bundle válido». Sin este paso, un AAB corrupto seguiría
+      # subiéndose como artefacto y el criterio 4 se daría por cumplido.
+      #
+      # `build-apks` va después porque valida algo distinto: que del bundle se
+      # puedan derivar los APKs que instala el dispositivo. Es el mismo comando
+      # que ejecutará quien descargue el artefacto.
+      #
+      # OJO A UNA CONFUSIÓN FÁCIL: la firma del AAB y la de los APKs son cosas
+      # DISTINTAS. Gradle firma el bundle (`signReleaseBundle`, con la clave de
+      # `keystore.properties`); `bundletool build-apks` firma aparte los APKs
+      # que genera, y si no se le dice con qué, busca el keystore de depuración
+      # del usuario — que en un runner limpio NO existe. Por eso se le pasa
+      # explícitamente la misma clave desechable: sin esto el paso falla en CI
+      # y funciona en el portátil de quien lo escribió, que es el peor de los
+      # modos de fallo.
+      - name: Validación del AAB con bundletool
+        working-directory: frontend/android
+        env:
+          BUNDLETOOL_VERSION: '1.18.1'
+        run: |
+          set -euo pipefail
+          curl -fsSL -o bundletool.jar \
+            "https://github.com/google/bundletool/releases/download/${BUNDLETOOL_VERSION}/bundletool-all-${BUNDLETOOL_VERSION}.jar"
+          AAB=app/build/outputs/bundle/release/app-release.aab
+          java -jar bundletool.jar validate --bundle="${AAB}"
+          CLAVE="$(grep '^storePassword=' keystore.properties | cut -d= -f2-)"
+          java -jar bundletool.jar build-apks \
+            --bundle="${AAB}" --output=vendi-app.apks --overwrite \
+            --ks=fase0.jks --ks-key-alias=fase0 \
+            --ks-pass="pass:${CLAVE}" --key-pass="pass:${CLAVE}"
+          echo "AAB válido y convertible a APKs: $(du -h "${AAB}" | cut -f1)"
+
+      # Segundo candado, ahora sobre lo que de verdad viaja dentro del AAB: los
+      # assets empaquetados por Capacitor. Que el `dist/` estuviera limpio no
+      # garantiza que lo empaquetado lo esté —`cap sync` copia de otro sitio—.
+      - name: Candado — sin URLs de desarrollo dentro del AAB
+        working-directory: frontend/android
+        run: |
+          set -euo pipefail
+          AAB=app/build/outputs/bundle/release/app-release.aab
+          rm -rf /tmp/aab && mkdir -p /tmp/aab
+          unzip -q "${AAB}" -d /tmp/aab
+          if grep -rIn -E 'localhost:[0-9]{4}|environment\.development' /tmp/aab/base/assets; then
+            echo "::error::El AAB empaqueta URLs o entornos de desarrollo."
+            exit 1
+          fi
+          echo "Assets del AAB limpios."
+
+      - name: Artefacto descargable
+        uses: actions/upload-artifact@v4
+        with:
+          name: vendi-app-aab
+          path: frontend/android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+          retention-days: 30

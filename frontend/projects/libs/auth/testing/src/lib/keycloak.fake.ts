@@ -88,6 +88,15 @@ export class KeycloakFake {
   updateManual = false;
   private resolverPendiente: ((v: boolean) => void) | null = null;
 
+  /**
+   * Error a lanzar desde `loadUserProfile()`.
+   *
+   * Existe para reproducir el 401 real de la API de cuenta de Keycloak: el
+   * token de Vendi no lleva la audiencia `account`, así que esa llamada falla
+   * en producción. El perfil tiene que salir del token de todas formas.
+   */
+  profileThrows: Error | null = null;
+
   /** Perfil que devuelve `loadUserProfile()`. */
   profile: PerfilFalso = {
     username: 'dueno',
@@ -143,6 +152,7 @@ export class KeycloakFake {
 
   async loadUserProfile(): Promise<PerfilFalso> {
     this.loadProfileCalls += 1;
+    if (this.profileThrows) throw this.profileThrows;
     return this.profile;
   }
 
@@ -217,6 +227,13 @@ export class KeycloakFake {
       iat: Math.floor(Date.now() / 1000),
       sub: 'usuario-falso',
       realm_access: { roles: ['dueno'] },
+      // Claims del scope `profile`. Van en el token de verdad y son la fuente
+      // primaria del perfil: `loadUserProfile()` es solo enriquecimiento.
+      name: 'Ana Gómez',
+      preferred_username: 'dueno',
+      given_name: 'Ana',
+      family_name: 'Gómez',
+      email: 'dueno@demo.vendi.co',
       // Forma **por defecto** del claim en Keycloak 26.6.4: lista de alias.
       organization: [ORG_POR_DEFECTO],
     } as KeycloakTokenParsed & VendiTokenParsed;

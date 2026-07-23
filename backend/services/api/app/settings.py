@@ -59,9 +59,21 @@ class Settings(BaseSettings):
     keycloak_backend_client_secret: str = ""
     keycloak_provisioning_client_id: str = "vendi-provisioning"
     keycloak_provisioning_client_secret: str = ""
-    # Vacío = no se valida `aud`. Ver la nota de `JWTValidator`: una cadena
-    # vacía significa "sin audiencia", no "audiencia vacía".
-    keycloak_audience: str = ""
+    # Audiencia que la API exige en el claim `aud`. Vacío = NO se valida, y eso
+    # es una línea base peor de lo que parece: sin esta comprobación, cualquier
+    # token legítimamente firmado por el realm `vendi-co` sirve contra la API,
+    # aunque se haya emitido para otro público (por ejemplo el de la consola de
+    # cuenta de Keycloak, `aud: account`, que un usuario obtiene sin pasar por
+    # ninguna aplicación de Vendi). El valor por defecto es el que emite el
+    # realm: el client scope `vendi-audiencia` pone `aud: vendi-backend` en los
+    # tokens de `vendi-web` y `vendi-admin` (infra/keycloak/realm-vendi-co.json).
+    #
+    # Se deja con DEFECTO y no vacío a propósito: un despliegue que olvide la
+    # variable debe fallar cerrado (rechazar tokens sin audiencia), no abrir la
+    # puerta. Para las topologías que aún no tengan el mapper aplicado, la
+    # salida es poner `KEYCLOAK_AUDIENCE=` explícitamente y saber lo que se
+    # apaga. Ver `JWTValidator`: una cadena vacía significa "sin audiencia".
+    keycloak_audience: str = "vendi-backend"
 
     # --- Observabilidad ----------------------------------------------------
     otel_exporter_otlp_endpoint: str = ""
@@ -71,6 +83,23 @@ class Settings(BaseSettings):
     # una exposición de Prometheus lleva nombres de negocio en las etiquetas y
     # el mapa entero de rutas internas. Ver `app/metrics.py`.
     metrics_token: str = ""
+    # ¿Se publican `/docs`, `/redoc` y `/openapi.json`? **False por defecto.**
+    #
+    # Hasta la Etapa 5 estaban abiertos en el borde sin decisión escrita. Lo que
+    # publican no es documentación de marketing: es el mapa completo de rutas,
+    # parámetros, esquemas y códigos de error de la API —incluidas las de
+    # plataforma—, es decir, el índice del sistema para quien busque por dónde
+    # entrar. No es un secreto (la seguridad no depende de ocultarlo) pero
+    # tampoco hay razón para regalarlo, y en Fase 0 no hay ni un consumidor
+    # externo que lo necesite: el cliente TypeScript del frontend se genera en
+    # desarrollo (`scripts/codegen-api-client.sh`) contra el contrato
+    # versionado en `docs/api/openapi-fase0.json`.
+    #
+    # En desarrollo se enciende desde el compose (`DOCS_PUBLICOS=true` en
+    # docker-compose.override.dev.yml), que es donde sí hace falta. Con esto en
+    # False las tres rutas devuelven 404, y el 404 lo da la aplicación: no hay
+    # forma de olvidarse de una regla de Traefik y dejarlas abiertas.
+    docs_publicos: bool = False
 
     # --- Borde -------------------------------------------------------------
     # CIDR de los proxies de confianza. Con la lista vacía, `trusted_client_ip`

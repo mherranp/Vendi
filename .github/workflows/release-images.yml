@@ -1,0 +1,174 @@
+# =============================================================================
+# Publicación de imágenes de Vendi.
+#
+# Cosechado de /Users/maoherran/BaseSaaS/.github/workflows/release-images.yml.
+# Se conserva tal cual la parte que más vale de aquel: la **puerta** que espera
+# a que `ci` y `e2e` hayan terminado en verde para ESE MISMO commit. Sin ella
+# los tres workflows arrancan a la vez en el mismo push y `release-images`
+# puede terminar —y disparar el despliegue— mientras `e2e` sigue corriendo, de
+# modo que un cambio roto llega a producción con solo compilar.
+#
+# Secretos que hay que configurar antes del primer uso (Settings → Secrets):
+#   REGISTRY_URL       p. ej. ghcr.io/<org>
+#   REGISTRY_USERNAME  usuario del registro
+#   REGISTRY_PASSWORD  contraseña o token
+#   DEPLOY_DOMAIN      dominio público del despliegue; se hornea en las SPAs
+# Sin REGISTRY_URL el job se salta la construcción en vez de fallar con un
+# "invalid reference format" que no dice nada.
+#
+# Imágenes: `vendi-api`, `vendi-worker`, `vendi-keycloak`, `vendi-portal`,
+# `vendi-tenant` y `vendi-admin`.
+#
+# Las TRES SPAs se publican aquí porque el despliegue (deploy.yml) solo copia
+# `infra/` a la VM: allí no hay `frontend/`, así que si la imagen no está en el
+# registro no hay forma de obtenerla y `docker compose up` se queda sin nada que
+# arrancar. Salen de la misma receta (`frontend/Dockerfile`) cambiando el
+# argumento `APP`, igual que en el compose.
+#
+# `BASE_DOMAIN` NO es cosmético en las SPAs: una app de Angular es HTML y
+# JavaScript estáticos y su configuración se hornea en tiempo de construcción
+# (`environment.ts`). Construir con el defecto `vendi.co` y desplegar en otro
+# dominio produce una SPA que pide tokens al Keycloak equivocado. Por eso se
+# toma de `secrets.DEPLOY_DOMAIN`, el mismo que usa deploy.yml para el smoke.
+# En las imágenes de backend el argumento sobra y el Dockerfile lo ignora.
+#
+# Sobre `vendi-keycloak`: es la imagen propia que permite arrancar el servidor
+# con `start --optimized`. Sin ella cada arranque de producción hace un build
+# implícito de decenas de segundos (deuda D-04). El Dockerfile ejecuta `kc.sh
+# build` con los mismos proveedores y funcionalidades que el compose activa por
+# variables, que es la condición que `--optimized` exige.
+# =============================================================================
+
+name: release-images
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  prerrequisitos:
+    name: esperar a ci + e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Exigir ci y e2e en verde para ${{ github.sha }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          limite=$(( $(date +%s) + 2100 ))   # 35 min de tope duro
+          for wf in ci.yml e2e.yml; do
+            echo "::group::Esperando a $wf en ${SHA:0:7}"
+            while :; do
+              run=$(gh api "repos/${REPO}/actions/workflows/${wf}/runs?head_sha=${SHA}&per_page=1" \
+                    --jq '.workflow_runs[0] // empty')
+              if [ -z "$run" ]; then
+                estado=ausente; conclusion=null
+              else
+                estado=$(echo "$run" | jq -r '.status')
+                conclusion=$(echo "$run" | jq -r '.conclusion // "null"')
+              fi
+              echo "  $wf: estado=$estado conclusion=$conclusion"
+              if [ "$estado" = "completed" ]; then
+                if [ "$conclusion" = "success" ]; then break; fi
+                echo "::error::$wf terminó como '$conclusion' en ${SHA:0:7}: no se publican imágenes."
+                exit 1
+              fi
+              if [ "$(date +%s)" -gt "$limite" ]; then
+                echo "::error::Se agotó la espera de $wf en ${SHA:0:7}."
+                exit 1
+              fi
+              sleep 30
+            done
+            echo "::endgroup::"
+          done
+          echo "ci + e2e en verde en ${SHA:0:7}: se procede a construir."
+
+  construir-y-publicar:
+    needs: prerrequisitos
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        imagen:
+          - { nombre: vendi-api,      contexto: backend,        dockerfile: backend/services/api/Dockerfile,     extra: "" }
+          - { nombre: vendi-worker,   contexto: backend,        dockerfile: backend/services/worker/Dockerfile,  extra: "" }
+          - { nombre: vendi-keycloak, contexto: infra/keycloak, dockerfile: infra/keycloak/Dockerfile,           extra: "" }
+          - { nombre: vendi-portal,   contexto: frontend,       dockerfile: frontend/Dockerfile,                 extra: "APP=vendi-portal" }
+          - { nombre: vendi-tenant,   contexto: frontend,       dockerfile: frontend/Dockerfile,                 extra: "APP=vendi-tenant" }
+          - { nombre: vendi-admin,    contexto: frontend,       dockerfile: frontend/Dockerfile,                 extra: "APP=vendi-admin" }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Calcular la etiqueta
+        id: etiqueta
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "valor=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            # `${SHA:0:7}` y no `git rev-parse --short=7`: `--short=7` fija una
+            # longitud MÍNIMA, no exacta — git la alarga si el prefijo resulta
+            # ambiguo, y entonces deploy.yml (que recalcula la etiqueta con
+            # `${SHA:0:7}` del workflow_run) no la encontraría y moriría con
+            # «No such image». Cortar el SHA a 7 con el shell es determinista
+            # en los dos lados. La mejora pendiente (deuda anotada) es propagar
+            # la etiqueta como output del run en vez de recalcularla.
+            echo "valor=sha-$(git rev-parse HEAD | cut -c1-7)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Entrar al registro
+        if: ${{ env.REGISTRY_URL != '' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.REGISTRY_URL }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+        env:
+          REGISTRY_URL: ${{ secrets.REGISTRY_URL }}
+
+      - name: Construir y publicar ${{ matrix.imagen.nombre }}
+        if: ${{ env.REGISTRY_URL != '' }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.imagen.contexto }}
+          file: ${{ matrix.imagen.dockerfile }}
+          push: true
+          tags: |
+            ${{ secrets.REGISTRY_URL }}/${{ matrix.imagen.nombre }}:${{ steps.etiqueta.outputs.valor }}
+            ${{ secrets.REGISTRY_URL }}/${{ matrix.imagen.nombre }}:latest
+          build-args: |
+            BASE_DOMAIN=${{ secrets.DEPLOY_DOMAIN || 'vendi.co' }}
+            ${{ matrix.imagen.extra }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+        env:
+          REGISTRY_URL: ${{ secrets.REGISTRY_URL }}
+
+      - name: Construir sin publicar (registro no configurado)
+        # Sin secretos de registro el push no puede hacerse, pero la
+        # construcción sí, y es señal útil: un Dockerfile roto se ve aquí y no
+        # el día del despliegue.
+        if: ${{ env.REGISTRY_URL == '' }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.imagen.contexto }}
+          file: ${{ matrix.imagen.dockerfile }}
+          push: false
+          # Los MISMOS argumentos que la variante que publica. Sin `APP` el
+          # Dockerfile del frontend no sabe qué aplicación del workspace
+          # construir y la comprobación no probaría nada.
+          build-args: |
+            BASE_DOMAIN=${{ secrets.DEPLOY_DOMAIN || 'vendi.co' }}
+            ${{ matrix.imagen.extra }}
+          cache-from: type=gha
+        env:
+          REGISTRY_URL: ${{ secrets.REGISTRY_URL }}

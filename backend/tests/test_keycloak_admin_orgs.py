@@ -28,6 +28,7 @@ mismo despiste era inofensivo; con un TLD real no lo es.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import pathlib
 import uuid
@@ -209,17 +210,32 @@ async def test_create_user_exige_nombre_y_apellido(api_general):
 @pytest.mark.asyncio
 async def test_ensure_realm_role_es_idempotente(aprovisionamiento):
     nombre = f"prueba-rol-{uuid.uuid4().hex[:8]}"
-    primero = await aprovisionamiento.ensure_realm_role(nombre, "rol de prueba")
-    segundo = await aprovisionamiento.ensure_realm_role(nombre, "rol de prueba")
-    assert primero["id"] == segundo["id"]
+    try:
+        primero = await aprovisionamiento.ensure_realm_role(nombre, "rol de prueba")
+        segundo = await aprovisionamiento.ensure_realm_role(nombre, "rol de prueba")
+        assert primero["id"] == segundo["id"]
+    finally:
+        # El realm es un recurso compartido y persistente: sin esta limpieza,
+        # cada corrida de la suite dejaba un rol nuevo. Se midió: 57 roles y 57
+        # grupos `prueba-*` acumulados en el realm de desarrollo antes de
+        # añadirla. La suite tiene que ser re-entrante Y no dejar basura.
+        with contextlib.suppress(Exception):
+            await aprovisionamiento._kc.a_delete_realm_role(nombre)  # noqa: SLF001
 
 
 @pytest.mark.asyncio
 async def test_ensure_group_es_idempotente(api_general):
     nombre = f"prueba-grupo-{uuid.uuid4().hex[:8]}"
-    primero = await api_general.ensure_group(nombre)
-    segundo = await api_general.ensure_group(nombre)
-    assert primero == segundo
+    grupo_id = None
+    try:
+        primero = await api_general.ensure_group(nombre)
+        segundo = await api_general.ensure_group(nombre)
+        assert primero == segundo
+        grupo_id = primero
+    finally:
+        if grupo_id:
+            with contextlib.suppress(Exception):
+                await api_general._kc.a_delete_group(grupo_id)  # noqa: SLF001
 
 
 # --- El split de D-02, verificado ------------------------------------------

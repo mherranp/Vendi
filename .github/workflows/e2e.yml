@@ -1,0 +1,169 @@
+# =============================================================================
+# E2E de Vendi — Playwright contra el stack de docker compose completo.
+#
+# Cosechado de /Users/maoherran/BaseSaaS/.github/workflows/e2e.yml. Dos
+# diferencias que no son cosméticas:
+#
+# 1. **No hay `--insecure` ni `ignoreHTTPSErrors`.** BaseSaaS generaba un
+#    certificado autofirmado con openssl y le decía a Playwright que ignorara
+#    los errores de TLS. Aquí se instala mkcert y se emite el certificado con
+#    su CA, que el runner confía tras `mkcert -install`: el navegador y curl
+#    validan de verdad. La razón no es purismo — `vendi.co` es un dominio REAL
+#    registrado por un tercero, con certificado público válido, así que "ignora
+#    los errores de TLS" convierte cualquier fallo de resolución en una prueba
+#    que habla con un extraño y no se entera.
+#
+# 2. **Las SPAs se sirven por Traefik, no por `ng serve`.** Los specs entran
+#    por https://app.vendi.co y https://admin.vendi.co, que es la topología que
+#    se despliega. Un `ng serve` en un puerto pelado se salta el enrutado, las
+#    cabeceras que inyecta el borde y el TLS, que es donde viven los fallos.
+#
+# Las tres SPAs las construye y sirve el propio compose (servicios `portal`,
+# `tenant` y `admin` sobre `frontend/Dockerfile`), detrás de Traefik. El E2E sin
+# las apps servidas por el borde no probaría lo que dice probar.
+# =============================================================================
+
+name: e2e
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  playwright:
+    name: playwright / humo de Fase 0
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependencias del frontend
+        run: npm ci
+        working-directory: frontend
+
+      - name: Preparar el .env del stack
+        run: cp .env.example .env
+
+      - name: Instalar mkcert y emitir el certificado de vendi.co
+        run: |
+          set -euo pipefail
+          # libnss3-tools trae `certutil`. Sin él, `mkcert -install` avisa y NO
+          # instala la CA en el almacén NSS — que es el que usan Chromium y
+          # Firefox. curl seguiría validando (usa el almacén del sistema) y el
+          # navegador de Playwright no: un fallo que aparece solo en el E2E y
+          # parece un problema del sitio.
+          sudo apt-get update -qq && sudo apt-get install -y -qq libnss3-tools
+          curl -fsSL -o /tmp/mkcert \
+            https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-linux-amd64
+          chmod +x /tmp/mkcert
+          sudo mv /tmp/mkcert /usr/local/bin/mkcert
+          mkcert -install
+          mkdir -p infra/certs
+          mkcert -cert-file infra/certs/vendi.co.pem \
+                 -key-file  infra/certs/vendi.co-key.pem \
+                 "vendi.co" "*.vendi.co" "localhost" "127.0.0.1"
+          echo "VENDI_MKCERT_CAROOT=$(mkcert -CAROOT)" >> "$GITHUB_ENV"
+          echo "NODE_EXTRA_CA_CERTS=$(mkcert -CAROOT)/rootCA.pem" >> "$GITHUB_ENV"
+
+      - name: Fijar *.vendi.co a 127.0.0.1
+        # vendi.co resuelve públicamente al servidor de un tercero. Sin esto,
+        # cada petición del E2E sale a Internet.
+        run: |
+          sudo tee -a /etc/hosts >/dev/null <<'EOF'
+          127.0.0.1 vendi.co
+          127.0.0.1 www.vendi.co
+          127.0.0.1 api.vendi.co
+          127.0.0.1 accounts.vendi.co
+          127.0.0.1 app.vendi.co
+          127.0.0.1 admin.vendi.co
+          127.0.0.1 grafana.vendi.co
+          127.0.0.1 mail.vendi.co
+          EOF
+
+      - name: Levantar el stack con las SPAs
+        # Sin `--profile`: los servicios `portal`, `tenant` y `admin` forman
+        # parte del compose base (no llevan `profiles:`), así que un `up`
+        # normal los construye y los levanta. Se construyen aquí, dentro de la
+        # imagen (frontend/Dockerfile multi-etapa), no en el runner.
+        run: |
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.override.dev.yml \
+            up -d --wait
+
+      - name: Migrar y sembrar
+        run: |
+          set -a; . ./.env; set +a
+          bash scripts/migrate.sh
+          bash scripts/seed.sh
+
+      - name: Esperar a que el borde sirva la API y las apps
+        # Sin `--insecure`: si la cadena no valida es que el certificado no es
+        # el nuestro, y eso hay que verlo aquí y no tres pasos más tarde.
+        run: |
+          set -euo pipefail
+          esperar() {
+            local url="$1"
+            for i in $(seq 1 60); do
+              if curl -fsS --connect-timeout 5 --max-time 10 "$url" -o /dev/null; then
+                echo "  $url sirve."
+                return 0
+              fi
+              echo "  [$i/60] $url todavía no; espero 5 s..."
+              sleep 5
+            done
+            echo "::error::$url no respondió en 5 minutos."
+            docker compose -f infra/docker-compose.yml ps
+            return 1
+          }
+          esperar https://api.vendi.co/health
+          esperar https://accounts.vendi.co/realms/vendi-co/.well-known/openid-configuration
+          esperar https://app.vendi.co/
+          esperar https://admin.vendi.co/
+
+      - name: Instalar el navegador de Playwright
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
+
+      - name: Ejecutar la suite de humo
+        env:
+          KEYCLOAK_ADMIN_USER: admin
+          KEYCLOAK_ADMIN_PASSWORD: cambiar_kc_dev
+        run: npm run e2e
+        working-directory: frontend
+
+      - name: Volcar logs del compose si algo falló
+        if: failure()
+        run: |
+          mkdir -p ci-artifacts
+          docker compose -f infra/docker-compose.yml logs --no-color > ci-artifacts/compose.log 2>&1 || true
+          docker compose -f infra/docker-compose.yml ps > ci-artifacts/compose-ps.txt 2>&1 || true
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-artefactos-${{ github.run_id }}
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+            ci-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Bajar el stack
+        if: always()
+        run: |
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.override.dev.yml \
+            down -v

@@ -1,64 +1,42 @@
-# Auth
+# @vendi/auth
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 21.2.0.
+Identidad (OIDC contra Keycloak), sesión, guards, interceptor de token y
+entitlements de plan. El login abre el navegador del sistema vía la fachada de
+`@vendi/native`, **nunca** dentro del WebView: los passkeys no funcionan ahí.
 
-## Code scaffolding
+Puede importar `@vendi/domain`, `@vendi/native` y `@vendi/data-access`. Es la
+librería más externa; ninguna otra la importa.
 
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
+El doble de Keycloak para tests vive en el punto de entrada secundario
+`@vendi/auth/testing`, no en el barril principal: exportarlo desde ahí creaba un
+ciclo con la fábrica de `vi.mock('keycloak-js', …)`.
 
-```bash
-ng generate component component-name
-```
-
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
-
-```bash
-ng generate --help
-```
-
-## Building
-
-To build the library, run:
+## Construir
 
 ```bash
-ng build auth
+npm run build:libs   # domain, native, ui-kit, data-access y auth, en orden
+ng build auth        # solo esta librería
 ```
 
-This command will compile your project, and the build artifacts will be placed in the `dist/` directory.
+El resultado va a `dist/auth`. Es una librería interna del monorepo: se consume
+por el mapeo de rutas de `tsconfig.json`, **no** se publica en npm.
 
-### Publishing the Library
+## Tests unitarios
 
-Once the project is built, you can publish your library by following these steps:
-
-1. Navigate to the `dist` directory:
-
-   ```bash
-   cd dist/auth
-   ```
-
-2. Run the `npm publish` command to publish your library to the npm registry:
-   ```bash
-   npm publish
-   ```
-
-## Running unit tests
-
-To execute unit tests with the [Karma](https://karma-runner.github.io) test runner, use the following command:
+El runner es Vitest, a través del builder `@angular/build:unit-test`. En este
+workspace no hay Karma: pasar `--browsers` aborta el comando sin ejecutar un
+solo test.
 
 ```bash
-ng test
+ng test auth --watch=false   # solo esta librería
+npm test                     # los 9 proyectos del workspace
 ```
 
-## Running end-to-end tests
+## Tests de extremo a extremo
 
-For end-to-end (e2e) testing, run:
+El login con passkey se verifica de extremo a extremo con Playwright, por el
+dominio y a través de Traefik:
 
 ```bash
-ng e2e
+npm run verificar:passkey
 ```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.

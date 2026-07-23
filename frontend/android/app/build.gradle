@@ -16,10 +16,50 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // -------------------------------------------------------------------
+    // Firma del AAB de Fase 0
+    // -------------------------------------------------------------------
+    // Fase 0 entrega un AAB DE PRUEBA: no se publica en Play, se descarga del
+    // workflow y se instala en un emulador para comprobar que arranca. La
+    // firma de publicación (App Signing de Google Play, con la clave de subida
+    // en secretos del repositorio) llega con la Fase 1.
+    //
+    // Aun así el artefacto se FIRMA, y no se deja sin firmar como propuso el
+    // borrador del plan, por una razón práctica: un AAB sin firmar no se puede
+    // instalar sin que quien lo pruebe invente una clave por su cuenta, y
+    // «descargable» sin «instalable» no demuestra el criterio 4. Con la clave
+    // desechable de abajo, `bundletool build-apks` + `install` funciona tal
+    // cual, y el APK resultante es reproducible entre ejecuciones.
+    //
+    // La clave sale de `keystore.properties` (ignorado por git, ver el
+    // .gitignore de la raíz). Si el archivo no existe —el caso de quien solo
+    // compila en depuración— la configuración de firma sencillamente no se
+    // declara y `bundleRelease` produce un AAB sin firmar, sin romper nada.
+    // Nunca hay claves en el repositorio.
+    def propiedadesDeFirma = new Properties()
+    def archivoDeFirma = rootProject.file('keystore.properties')
+    if (archivoDeFirma.exists()) {
+        archivoDeFirma.withInputStream { propiedadesDeFirma.load(it) }
+    }
+
+    signingConfigs {
+        if (archivoDeFirma.exists()) {
+            fase0 {
+                storeFile rootProject.file(propiedadesDeFirma['storeFile'])
+                storePassword propiedadesDeFirma['storePassword']
+                keyAlias propiedadesDeFirma['keyAlias']
+                keyPassword propiedadesDeFirma['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (archivoDeFirma.exists()) {
+                signingConfig signingConfigs.fase0
+            }
         }
     }
 }

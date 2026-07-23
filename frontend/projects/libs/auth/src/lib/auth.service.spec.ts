@@ -126,6 +126,57 @@ describe('AuthService', () => {
     expect(auth.requiereSeleccionDeTenant()).toBe(false);
   });
 
+  it('el perfil sale del TOKEN aunque la API de cuenta de Keycloak falle', async () => {
+    // Esto no es un caso hipotético: `loadUserProfile()` llama a
+    // `/realms/{realm}/account`, que exige la audiencia `account`. El token de
+    // Vendi no la lleva y la llamada devuelve 401 en el stack real. Antes, el
+    // `catch` solo escribía en consola y `user()` se quedaba en `null`: el
+    // shell no pintaba el nombre de nadie, con la consola llena de 401 y la
+    // interfaz muda. Los claims del scope `profile` ya venían en el token.
+    const auth = crearServicio();
+    await iniciar(auth, (_opciones, fake) => {
+      fake.profileThrows = new Error('401 Unauthorized');
+    });
+
+    expect(auth.user()).not.toBeNull();
+    expect(auth.user()?.username).toBe('dueno');
+    expect(auth.user()?.email).toBe('dueno@demo.vendi.co');
+    expect(auth.displayName()).toBe('Ana Gómez');
+  });
+
+  it('displayName cae al claim `name` cuando no hay nombre ni apellido', async () => {
+    const auth = crearServicio();
+    await iniciar(auth, (_opciones, fake) => {
+      fake.profileThrows = new Error('401 Unauthorized');
+      fake.tokenParsed = {
+        exp: Math.floor(Date.now() / 1000) + 600,
+        sub: 'usuario-falso',
+        realm_access: { roles: ['dueno'] },
+        organization: [ORG_POR_DEFECTO],
+        name: 'Carlos Pérez',
+        preferred_username: 'dueno@demo.vendi.co',
+      } as never;
+    });
+
+    expect(auth.displayName()).toBe('Carlos Pérez');
+  });
+
+  it('displayName cae al nombre de usuario cuando el token no trae ningún nombre', async () => {
+    const auth = crearServicio();
+    await iniciar(auth, (_opciones, fake) => {
+      fake.profileThrows = new Error('401 Unauthorized');
+      fake.tokenParsed = {
+        exp: Math.floor(Date.now() / 1000) + 600,
+        sub: 'usuario-falso',
+        realm_access: { roles: ['dueno'] },
+        organization: [ORG_POR_DEFECTO],
+        preferred_username: 'dueno@demo.vendi.co',
+      } as never;
+    });
+
+    expect(auth.displayName()).toBe('dueno@demo.vendi.co');
+  });
+
   it('init() devolviendo false no toca ninguna señal', async () => {
     const auth = crearServicio();
     const ctor = (await import('keycloak-js')).default as unknown as typeof KeycloakFake;

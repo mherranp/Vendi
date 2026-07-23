@@ -20,7 +20,14 @@ from fastapi.testclient import TestClient
 
 from vendi_core.auth.context import UserContext
 from vendi_core.auth.dependencies import get_current_user, require_permission, require_role
-from vendi_core.auth.policies import PERM_AUDIT_READ, PERM_TENANT_READ, ROL_CAJERO, ROL_DUENO
+from vendi_core.auth.policies import (
+    PERM_AUDIT_READ,
+    PERM_TENANT_READ,
+    PERM_TENANT_UPDATE,
+    ROL_CAJERO,
+    ROL_DUENO,
+    roles_de_realm_del_grupo,
+)
 from vendi_core.errors import ConflictError, NotFoundError
 from vendi_core.middleware.error_handler import ErrorHandlerMiddleware
 
@@ -136,13 +143,29 @@ def test_no_se_reutiliza_si_el_token_marcado_no_coincide():
 
 
 def test_require_role_deja_pasar_al_rol_correcto_y_corta_al_resto():
-    cliente, _ = _app(_usuario(groups=frozenset({ROL_DUENO})))
+    """El candado de D-08 sobre la ruta HTTP real.
+
+    Los dos usuarios se construyen con el mismo mapeo que la siembra escribe en
+    Keycloak (`roles_de_realm_del_grupo`), así que si alguien vuelve a leer el
+    rol de un claim que el realm no emite, el primer assert se pone rojo — antes
+    los DOS pasaban, el 200 por el campo `groups` que solo existía en el test y
+    el 403 por no tener nada.
+    """
+    cliente, _ = _app(_usuario(roles=frozenset(roles_de_realm_del_grupo(ROL_DUENO))))
     assert cliente.get("/solo-dueno", headers=_cabecera()).status_code == 200
 
-    cliente, _ = _app(_usuario(groups=frozenset({ROL_CAJERO})))
+    cliente, _ = _app(_usuario(roles=frozenset(roles_de_realm_del_grupo(ROL_CAJERO))))
     respuesta = cliente.get("/solo-dueno", headers=_cabecera())
     assert respuesta.status_code == 403
     assert ROL_DUENO in respuesta.json()["detail"]
+
+
+def test_require_role_corta_a_quien_solo_trae_permisos():
+    """Un usuario con permisos de sobra pero sin el rol NO entra. Distingue
+    «tiene privilegios» de «es el dueño de este negocio»."""
+    cliente, _ = _app(_usuario(roles=frozenset({PERM_TENANT_READ, PERM_AUDIT_READ, PERM_TENANT_UPDATE})))
+    respuesta = cliente.get("/solo-dueno", headers=_cabecera())
+    assert respuesta.status_code == 403
 
 
 def test_require_permission_deja_pasar_con_el_permiso_y_corta_sin_el():

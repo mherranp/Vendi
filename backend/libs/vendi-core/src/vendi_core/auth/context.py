@@ -17,6 +17,24 @@ Cosechado de `base_saas.auth.context`. Cambios de Vendi:
   aislamiento multi-tenant, así que en Fase 0 **no existe camino que produzca
   ese claim** y mantener el campo sugeriría que sí. Si la suplantación vuelve
   en alguna fase futura, vuelve con su propio diseño y su propia auditoría.
+- **Muere `groups` (Etapa 5, deuda D-08).** El campo leía el claim `groups`, que
+  el realm de Vendi **no emite**: ningún mapper de grupo está en los default
+  client scopes, así que `has_role()` y `require_role()` devolvían siempre
+  `False` — es decir, cualquier comprobación de rol de negocio pasaba o fallaba
+  por la razón equivocada. Ver la decisión completa en el ADR-015.
+
+  El arreglo NO fue añadir el mapper: la restricción global del plan dice que
+  los roles de negocio de Vendi (`dueno`, `cajero`, `almacenista`) son **roles
+  de realm**, y los roles de realm ya viajan en `realm_access.roles` con el
+  scope `roles`, que es un default client scope de fábrica. Añadir un mapper de
+  grupos habría necesitado gestionar client scopes (403 para
+  `vendi-provisioning`, medido) para acabar emitiendo por un segundo canal lo
+  mismo que ya viaja por el primero.
+
+  Consecuencia que conviene tener presente: permisos (`tenant:read`) y roles de
+  negocio (`dueno`) comparten el espacio de nombres de los roles de realm. Se
+  distinguen por forma —el permiso lleva `recurso:accion` con dos puntos, el rol
+  no— y por catálogo (`PERMISSION_CATALOG` frente a `ROLES_DE_NEGOCIO`).
 """
 
 from dataclasses import dataclass, field
@@ -26,13 +44,17 @@ from dataclasses import dataclass, field
 class UserContext:
     """Contexto inmutable del usuario autenticado.
 
-    `roles` lleva el `realm_access.roles` del token: bajo el mapeo semántico
-    heredado de BaseSaaS, son los **permisos** efectivos del usuario (heredados
-    de sus grupos de Keycloak más las asignaciones directas).
+    `roles` lleva el `realm_access.roles` del token, y lleva **las dos cosas**:
 
-    `groups` lleva el claim `groups`: son los **roles de negocio** de Vendi
-    (`dueno`, `cajero`, `almacenista`), mapeados a grupos de Keycloak. Se
-    consultan con `has_role()`.
+    - los **permisos** efectivos del usuario (`tenant:read`, `platform:admin`…),
+      heredados de sus grupos de Keycloak más las asignaciones directas, que se
+      consultan con `has_permission()`;
+    - los **roles de negocio** de Vendi (`dueno`, `cajero`, `almacenista`), que
+      son roles de realm por decisión del plan y se consultan con `has_role()`.
+
+    No hay dos claims porque no hay dos canales: `realm_access.roles` es el
+    único que el realm emite de fábrica (scope `roles`). Ver la cabecera del
+    módulo y el ADR-015 para el porqué de que `groups` ya no exista.
 
     `organizations` lleva el claim `organization` ya normalizado a
     `{alias: id_interno}`. Un diccionario vacío significa "el token no trae
@@ -46,7 +68,6 @@ class UserContext:
     username: str
     email: str = ""
     roles: frozenset[str] = field(default_factory=frozenset)
-    groups: frozenset[str] = field(default_factory=frozenset)
     realm: str = ""
     organizations: dict[str, str] = field(default_factory=dict)
     display_name: str = ""
@@ -62,8 +83,6 @@ class UserContext:
     def __post_init__(self) -> None:
         if isinstance(self.roles, list | set):
             object.__setattr__(self, "roles", frozenset(self.roles))
-        if isinstance(self.groups, list | set):
-            object.__setattr__(self, "groups", frozenset(self.groups))
 
     @property
     def permissions(self) -> frozenset[str]:
@@ -75,10 +94,18 @@ class UserContext:
         return list(self.organizations)
 
     def has_role(self, role: str) -> bool:
-        return role in self.groups
+        """¿Tiene el usuario ese rol de negocio? Se lee de `realm_access.roles`.
+
+        Nota deliberada: `is_superuser` y el comodín `*` **no** intervienen aquí,
+        a diferencia de `has_permission()`. Un permiso es «puede hacer esto»; un
+        rol de negocio es «es esto». Que un administrador de plataforma pudiera
+        pasar por `dueno` de cualquier negocio sería exactamente el cruce que el
+        producto promete que no ocurre.
+        """
+        return role in self.roles
 
     def has_any_role(self, *roles: str) -> bool:
-        return bool(self.groups & frozenset(roles))
+        return bool(self.roles & frozenset(roles))
 
     def has_permission(self, permission: str) -> bool:
         if self.is_superuser:
