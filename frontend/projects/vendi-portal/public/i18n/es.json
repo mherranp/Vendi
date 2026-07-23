@@ -1,0 +1,15 @@
+{
+  "app": {
+    "titulo": "Vendi",
+    "descripcion": "El punto de venta para las tiendas de barrio de Colombia"
+  },
+  "layout": {
+    "cargando": "Cargando…",
+    "reintentar": "Reintentar",
+    "error_inesperado": "Algo salió mal. Vuelve a intentarlo."
+  },
+  "comun": {
+    "aceptar": "Aceptar",
+    "cancelar": "Cancelar"
+  }
+}

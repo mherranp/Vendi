@@ -1,0 +1,19 @@
+{
+  "app": {
+    "titulo": "Mi negocio",
+    "descripcion": "Administra tu tienda desde el navegador"
+  },
+  "layout": {
+    "cargando": "Cargando…",
+    "reintentar": "Reintentar",
+    "cerrar_sesion": "Cerrar sesión",
+    "error_inesperado": "Algo salió mal. Vuelve a intentarlo."
+  },
+  "comun": {
+    "aceptar": "Aceptar",
+    "cancelar": "Cancelar",
+    "guardar": "Guardar",
+    "eliminar": "Eliminar",
+    "buscar": "Buscar"
+  }
+}

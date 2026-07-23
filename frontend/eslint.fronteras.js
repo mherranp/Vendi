@@ -56,6 +56,33 @@ function escaparParaSelector(fuente) {
 }
 
 /**
+ * Selectores de `no-restricted-syntax` que cierran el import estático escrito como
+ * ruta relativa (`../../node_modules/@capacitor/core`) para los patrones del grupo
+ * que llevan barra. Ver el comentario extenso en `fronteraDeCapa()`.
+ *
+ * @param {string[]} grupo patrones prohibidos
+ * @param {string} mensaje texto del diagnóstico
+ * @returns {{selector: string, message: string}[]}
+ */
+function selectoresDeRutaRelativa(grupo, mensaje) {
+  const conBarra = grupo.filter((patron) => patron.includes('/'));
+  if (conBarra.length === 0) {
+    return [];
+  }
+  const regex = escaparParaSelector(conBarra.map(patronARegex).join('|'));
+  const nodos = [
+    'ImportDeclaration > Literal',
+    'ExportNamedDeclaration > Literal',
+    'ExportAllDeclaration > Literal',
+    'TSImportEqualsDeclaration TSExternalModuleReference > Literal',
+  ];
+  return nodos.map((nodo) => ({
+    selector: `${nodo}[value=/^\\./][value=/${regex}/]`,
+    message: mensaje,
+  }));
+}
+
+/**
  * Construye el bloque de reglas que materializa una frontera de capa.
  *
  * @param {string[]} grupo patrones prohibidos (mismo formato que `no-restricted-imports`)
@@ -68,6 +95,7 @@ function fronteraDeCapa(grupo, mensaje, selectoresExtra = []) {
   const alternancia = grupo.map(patronARegex).join('|');
   const regexSelector = escaparParaSelector(alternancia);
   const mensajeDinamico = `${mensaje} (La frontera también aplica al import dinámico: import() no es una puerta trasera.)`;
+  const mensajeRelativo = `${mensaje} (La frontera también aplica escribiendo la ruta relativa a mano: rodear el nombre del paquete no la desactiva.)`;
 
   return {
     'no-restricted-imports': [
@@ -99,6 +127,20 @@ function fronteraDeCapa(grupo, mensaje, selectoresExtra = []) {
         selector: `CallExpression[callee.name='require'] > Literal[value=/${regexSelector}/]`,
         message: mensajeDinamico,
       },
+      // --- forma estática por ruta relativa, solo para patrones con barra ----
+      //
+      // `no-restricted-imports` resuelve sus patrones con semántica .gitignore.
+      // Un patrón SIN barra (`auth`, `dexie`) se compara contra cualquier segmento
+      // de la ruta, así que ya atrapa `export * from '../../libs/auth/src/public-api'`.
+      // Uno CON barra (`@capacitor/*`) queda anclado al principio del especificador
+      // y NO atrapa `import ... from '../../node_modules/@capacitor/core'`
+      // —verificado con una sonda—. Ese es el único hueco que quedaba en la forma
+      // estática, y es el que cierran los selectores de abajo.
+      //
+      // Se generan solo para los patrones con barra, y exigiendo además que el
+      // especificador sea relativo (`^\.`), para no duplicar diagnósticos sobre
+      // violaciones que `no-restricted-imports` ya reporta con su mensaje canónico.
+      ...selectoresDeRutaRelativa(grupo, mensajeRelativo),
     ],
   };
 }

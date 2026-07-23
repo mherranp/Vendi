@@ -1,0 +1,62 @@
+log:
+  level: INFO
+
+api:
+  # El dashboard va apagado por defecto. En desarrollo se enciende por CLI
+  # desde docker-compose.override.dev.yml. NUNCA insecure=true en producción:
+  # expone /api/* sin autenticación.
+  insecure: false
+  dashboard: false
+
+# Habilita /ping en el listener interno. El healthcheck del compose invoca
+# `traefik healthcheck --ping`, que sale 0 solo si Traefik está sirviendo.
+ping: {}
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    address: ":443"
+
+providers:
+  # Sin proveedor `docker` a propósito. Vendi enruta TODO por el proveedor de
+  # archivo (dynamic.yml), así que el proveedor de Docker solo aportaba dos
+  # cosas: un bucle de errores cuando el socket no es accesible
+  # («Failed to retrieve information of the docker client and server host»), y
+  # la necesidad de montar /var/run/docker.sock dentro del proceso que está
+  # expuesto a internet. Montar el socket de Docker en el borde equivale a dar
+  # root del anfitrión a quien comprometa Traefik. Si algún día hace falta
+  # descubrimiento por etiquetas, se reintroduce con un proxy de socket de
+  # solo lectura (tecnativa/docker-socket-proxy), no con el socket crudo.
+  file:
+    # Modo directorio: Traefik lee todos los *.yml de /etc/traefik/dynamic y
+    # recarga en caliente. dynamic.yml lo renderiza el entrypoint en cada
+    # arranque a partir de templates/dynamic.yml.tpl.
+    directory: /etc/traefik/dynamic
+    watch: true
+
+# Resolver ACME / Let's Encrypt para el dominio público de producción.
+#
+# NO se declara aquí: este archivo es la parte del entorno-independiente. Con
+# ACME_ENABLED=true, infra/traefik/entrypoint.sh copia este archivo a
+# `traefik-efectivo.yml` (que es el que Traefik lee) y le añade el bloque
+# `certificatesResolvers.letsencrypt.acme`, y además hace que TODOS los routers
+# del archivo dinámico lleven `certResolver: letsencrypt`.
+#
+# Ojo, cuesta un rato descubrirlo: Traefik IGNORA los flags de línea de órdenes
+# cuando se arranca con `--configFile`. Un `--certificatesResolvers...` por CLI
+# junto a `--configFile` no declara nada, y los routers que lo referencian
+# fallan con «Router uses a nonexistent certificate resolver».
+#
+# En desarrollo (ACME_ENABLED=false) no hay resolver y los certificados los
+# pone el operador con scripts/setup-certs.sh (mkcert) en /certs.
+# El camino completo se prueba con scripts/spikes/acme-pebble-spike.sh.
+#
+# Vendi NO usa dominios por tenant (a diferencia de BaseSaaS): no hay
+# generación dinámica de custom-domains.yml ni routers por cliente.

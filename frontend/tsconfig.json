@@ -30,21 +30,11 @@
      * `build:*` de package.json ya lo encadenan.
      */
     "paths": {
-      "auth": [
-        "./dist/auth"
-      ],
-      "data-access": [
-        "./dist/data-access"
-      ],
-      "domain": [
-        "./dist/domain"
-      ],
-      "native": [
-        "./dist/native"
-      ],
-      "ui-kit": [
-        "./dist/ui-kit"
-      ]
+      "auth": ["./dist/auth"],
+      "data-access": ["./dist/data-access"],
+      "domain": ["./dist/domain"],
+      "native": ["./dist/native"],
+      "ui-kit": ["./dist/ui-kit"]
     }
   },
   "angularCompilerOptions": {

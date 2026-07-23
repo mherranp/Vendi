@@ -6,4 +6,4 @@
  * Permite que la misma base de código corra como PWA y como app nativa.
  */
 
-export {};
+export { esPlataformaNativa, nombreDePlataforma } from './lib/plataforma';

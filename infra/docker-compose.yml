@@ -1,0 +1,475 @@
+name: vendi
+
+# Cosechado de /Users/maoherran/BaseSaaS/infrastructure/docker-compose.yml con
+# los renombres y recortes de la tarea 2.2 del plan de Fase 0:
+#
+#   - servicios/redes/volúmenes basesaas* → vendi*
+#   - dominios *.basesaas.dev → *.vendi.local
+#   - Keycloak 26.1 → 26.6.4 (fijada; nunca `latest`)
+#   - Postgres pgvector/pgvector:pg17 → postgres:17-alpine (Fase 0 no usa
+#     embeddings; el spike de RLS se verificó contra esta misma imagen)
+#   - fuera `storage-service` y `realtime-service` (ADR-016: el monolito
+#     modular sirve archivos y no hay tiempo real en Fase 0)
+#   - fuera `platform-service`/`mail-worker`; entran `api` y `worker`
+#   - fuera los servicios de frontend: Vendi todavía no tiene Dockerfile de
+#     frontend (las apps se sirven con `ng serve` en desarrollo). Sus routers
+#     de Traefik están preparados y comentados en el template dinámico.
+
+# Logging centralizado: todos los contenedores con rotación para que los logs
+# no llenen el disco del anfitrión.
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  # -----------------------------------------------------------------
+  # Borde
+  # -----------------------------------------------------------------
+  traefik:
+    logging: *default-logging
+    image: traefik:v3.3
+    # El resolver ACME NO se declara aquí: lo escribe infra/traefik/entrypoint.sh
+    # en la configuración estática efectiva a partir de ACME_ENABLED /
+    # ACME_STAGING / ACME_EMAIL, y el mismo entrypoint hace que los routers lo
+    # referencien (`certResolver`). Antes el resolver se declaraba siempre por
+    # CLI y ningún router lo usaba: ACME_ENABLED y ACME_STAGING eran variables
+    # muertas y el camino de producción no existía.
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    command:
+      # El archivo EFECTIVO lo escribe el entrypoint copiando traefik.yml y
+      # añadiéndole lo que dependa del entorno (ACME, dashboard). Traefik no
+      # admite mezclar `--configFile` con otros flags: los ignora en silencio.
+      - --configFile=/etc/traefik/traefik-efectivo.yml
+    environment:
+      # Renombrar el dominio de toda la flota es cambiar esta variable:
+      # el entrypoint renderiza el template dinámico con ella.
+      BASE_DOMAIN: ${BASE_DOMAIN:-vendi.local}
+      ACME_ENABLED: ${ACME_ENABLED:-false}
+      ACME_STAGING: ${ACME_STAGING:-true}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      # Solo para pruebas contra una CA ACME local (spike de Pebble).
+      ACME_CA_SERVER: ${ACME_CA_SERVER:-}
+      # Traefik usa la librería lego por debajo: esta variable le dice qué CA
+      # adicional debe confiar al hablar con el directorio ACME. Vacía en
+      # producción (Let's Encrypt ya es de confianza).
+      LEGO_CA_CERTIFICATES: ${LEGO_CA_CERTIFICATES:-}
+    # SIN `ports:` a propósito. Docker Compose **fusiona** las listas de puertos
+    # entre archivos en vez de reemplazarlas: si la base publicara
+    # 127.0.0.1:80 y el override de producción 0.0.0.0:80, el resultado sería
+    # el contenedor intentando abrir los dos y fallando con
+    #   «ports are not available: ... bind: address already in use»
+    # (medido: así reventó el primer arranque del override de producción).
+    # Por eso cada entorno declara su propio bind:
+    #   docker-compose.override.dev.yml  → ${TRAEFIK_BIND:-127.0.0.1}:80/443
+    #   docker-compose.override.prod.yml → 0.0.0.0:80/443
+    # Levantar SOLO este archivo deja el borde sin publicar (los scripts que lo
+    # usan a secas —verify-setup, reconcile— solo hacen `exec`, no HTTP).
+    volumes:
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/entrypoint.sh:/entrypoint.sh:ro
+      - ./traefik/templates:/etc/traefik/templates:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic
+      - ./certs:/certs:ro
+      - letsencrypt_data:/letsencrypt
+      # NO se monta /var/run/docker.sock: el proveedor de Docker está
+      # desactivado (ver infra/traefik/traefik.yml) y el socket en el borde es
+      # un camino directo a root del anfitrión.
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - vendi-net
+
+  # -----------------------------------------------------------------
+  # Almacenes de datos
+  # -----------------------------------------------------------------
+  postgres:
+    logging: *default-logging
+    image: postgres:17-alpine
+    environment:
+      # Superusuario del clúster: solo lo usan el init y las tareas de
+      # mantenimiento. Ni la API ni las migraciones se conectan con él.
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD es obligatorio; copia .env.example a .env}
+      # Base de mantenimiento. La base de la aplicación (`vendi`) la crea
+      # 01-roles.sh con OWNER vendi_platform — ver informe de RLS, decisión 7.
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      VENDI_PLATFORM_DB_PASSWORD: ${VENDI_PLATFORM_DB_PASSWORD:?VENDI_PLATFORM_DB_PASSWORD es obligatorio}
+      VENDI_APP_DB_PASSWORD: ${VENDI_APP_DB_PASSWORD:?VENDI_APP_DB_PASSWORD es obligatorio}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # El entrypoint oficial ejecuta *.sh y *.sql de este directorio, en
+      # orden alfabético, SOLO cuando el datadir está vacío.
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vendi-net
+
+  # Sidecar de respaldo: primer volcado inmediato (para que el operador vea
+  # un archivo en el primer minuto, no a las 24 h) y luego cada 24 h con
+  # ventana de retención de 7 volcados.
+  #
+  # POR QUÉ EL VOLCADO CONSERVA DUEÑOS Y PRIVILEGIOS (nada de --no-owner
+  # --no-privileges, que es el default de tantos tutoriales): bajo
+  # FORCE ROW LEVEL SECURITY un volcado sin privilegios se restaura en una base
+  # que la aplicación NO PUEDE USAR. Medido sobre este mismo stack:
+  #
+  #   # con --no-owner --no-privileges
+  #   psql -U vendi_platform -d restaurada -c 'SELECT count(*) FROM ventas'
+  #   ERROR:  permission denied for table ventas
+  #   psql -U vendi_app       -d restaurada -c 'SELECT count(*) FROM ventas'
+  #   ERROR:  permission denied for table ventas
+  #
+  # Los GRANT desaparecen y las tablas quedan a nombre de quien ejecutó el
+  # restore; solo un superusuario lee la copia. O sea: un respaldo que no
+  # restaura un servicio, que es la única razón por la que existe un respaldo.
+  # Conservando dueños y privilegios, la misma prueba da 2 filas para
+  # vendi_platform y 1 para vendi_app con el GUC del tenant puesto.
+  #
+  # Como el volcado referencia a los roles por nombre, se acompaña de un
+  # volcado de roles del clúster (pg_dumpall --roles-only): sin los roles
+  # creados, el restore en una máquina nueva falla en el primer ALTER OWNER.
+  # El procedimiento completo está en scripts/restore-backup.sh.
+  #
+  # POR QUÉ SE VUELCAN LAS DOS BASES, `vendi` Y `keycloak`: la identidad vive
+  # ENTERA en la base de Keycloak — realm, usuarios, credenciales,
+  # organizaciones y el secreto del cliente `vendi-backend`. Y como
+  # `alias = str(tenant_id)` y el tenant se resuelve del claim `organization`
+  # del token, una copia de `vendi` sin la de `keycloak` es una base de datos
+  # cuyas filas apuntan a organizaciones y usuarios que ya no existen en
+  # ninguna parte: nadie puede autenticarse, así que nadie puede leerla. Sería
+  # exactamente el mismo pecado que se denuncia arriba —un respaldo que no
+  # restaura un servicio— cometido en la otra mitad del sistema.
+  #
+  # El realm NO sirve como sustituto del volcado: `realm-vendi-co.json` es
+  # semilla (ver D-03), no lleva usuarios, ni credenciales, ni las
+  # organizaciones creadas en caliente por el aprovisionamiento de tenants.
+  #
+  # Qué se respalda, qué NO, y el procedimiento de recuperación completo:
+  # docs/respaldo-y-restauracion.md.
+  postgres-backup:
+    logging: *default-logging
+    image: postgres:17-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD es obligatorio}
+      # A propósito `postgres` y no `vendi`: toda orden de este sidecar dice
+      # explícitamente contra qué base va (--dbname / -d). Con PGDATABASE=vendi,
+      # un `pg_dump` al que se le olvide el --dbname vuelca la base equivocada
+      # EN SILENCIO — que es justo el defecto que dejó el respaldo sin Keycloak.
+      PGDATABASE: postgres
+    volumes:
+      - backup_data:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        # pipefail es imprescindible: sin él, `pg_dump | gzip` devuelve el
+        # código de gzip aunque pg_dump falle, y un .gz "válido" de 20 bytes
+        # pasaría el healthcheck. El ash de busybox lo soporta.
+        set -o pipefail
+        mkdir -p /backups
+        while true; do
+          ts=$$(date -u +%Y%m%dT%H%M%SZ)
+          # Las dos bases del sistema. `vendi` son los datos; `keycloak` es la
+          # identidad (usuarios, credenciales, organizaciones). Restaurar solo
+          # una deja un sistema inservible, así que se vuelcan siempre juntas
+          # y con la MISMA marca de tiempo, que es lo que las empareja después.
+          #
+          # Son dos pg_dump distintos: cada uno es consistente consigo mismo,
+          # pero el par no es un snapshot atómico. Para Fase 0 es aceptable —
+          # el aprovisionamiento de tenants es la única escritura que cruza las
+          # dos bases y reconcile-keycloak.sh detecta el desfase.
+          for db in vendi keycloak; do
+            echo "[respaldo] pg_dump de la base $${db} a las $${ts}"
+            # CON dueños y privilegios: ver el comentario largo de arriba.
+            pg_dump --clean --if-exists --dbname="$${db}" \
+                    | gzip > /backups/$${db}-$${ts}.sql.gz.parcial
+            mv /backups/$${db}-$${ts}.sql.gz.parcial /backups/$${db}-$${ts}.sql.gz
+          done
+          # Roles del clúster (con sus hashes de contraseña): sin ellos el
+          # volcado anterior no se puede restaurar en una máquina nueva.
+          pg_dumpall --roles-only \
+                  | gzip > /backups/vendi-roles-$${ts}.sql.gz.parcial
+          mv /backups/vendi-roles-$${ts}.sql.gz.parcial /backups/vendi-roles-$${ts}.sql.gz
+          echo "[respaldo] escritos vendi-$${ts}.sql.gz, keycloak-$${ts}.sql.gz y vendi-roles-$${ts}.sql.gz"
+          # Retención: 7 volcados de cada tipo. El patrón de datos de `vendi`
+          # excluye a propósito los de roles (vendi-roles-*) para no contarlos
+          # dos veces.
+          ls -1t /backups/vendi-2*.sql.gz 2>/dev/null | tail -n +8 | xargs -r rm
+          ls -1t /backups/keycloak-2*.sql.gz 2>/dev/null | tail -n +8 | xargs -r rm
+          ls -1t /backups/vendi-roles-*.sql.gz 2>/dev/null | tail -n +8 | xargs -r rm
+          sleep 86400
+        done
+    # El sidecar está sano si el volcado de `vendi` más reciente tiene menos
+    # de 25 h Y existe EL PAR con su MISMA marca de tiempo (keycloak-<ts> y
+    # vendi-roles-<ts>). Dos find independientes bendecirían dos volcados de
+    # ciclos distintos —que restore-backup.sh rechaza—; el contrato es el par,
+    # no "hay uno de cada". Un contenedor «Up» cuyo pg_dump falla en silencio
+    # cada noche es exactamente el modo de fallo que nadie descubre hasta que
+    # hace falta restaurar; y medio respaldo (datos sin identidad) no restaura
+    # el servicio, así que cuenta como fallo.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          u="$$(ls -1t /backups/vendi-2*.sql.gz 2>/dev/null | head -1)"
+          && test -n "$$u"
+          && test -n "$$(find "$$u" -mmin -1500 -size +0c 2>/dev/null)"
+          && ts="$${u#/backups/vendi-}"
+          && test -s "/backups/keycloak-$$ts"
+          && test -s "/backups/vendi-roles-$$ts"
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - vendi-net
+
+  redis:
+    logging: *default-logging
+    image: redis:7-alpine
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD es obligatorio}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD es obligatorio}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vendi-net
+
+  rabbitmq:
+    logging: *default-logging
+    image: rabbitmq:4-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-vendi}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD es obligatorio}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - vendi-net
+
+  minio:
+    logging: *default-logging
+    # Release fijada: `latest` rompe en silencio cuando aguas arriba publican
+    # un cambio incompatible.
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-vendi}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY es obligatorio}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    healthcheck:
+      # 127.0.0.1 y no localhost: busybox resuelve ::1 primero y MinIO
+      # escucha solo en IPv4.
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - vendi-net
+
+  # -----------------------------------------------------------------
+  # Identidad
+  # -----------------------------------------------------------------
+  keycloak:
+    logging: *default-logging
+    # Versión fijada por restricción global del plan. NUNCA `latest`: el
+    # comportamiento de Organizations cambió entre 26.0 y 26.6.
+    image: quay.io/keycloak/keycloak:26.6.4
+    # --import-realm importa infra/keycloak/*.json en el PRIMER arranque con
+    # la base vacía. Si el realm ya existe NO se reimporta: el drift se
+    # corrige con scripts/reconcile-keycloak.sh, no reiniciando. Ver
+    # infra/keycloak/README.md.
+    command: start-dev --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER:-postgres}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD es obligatorio}
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME: https://accounts.${BASE_DOMAIN:-vendi.local}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      # Keycloak 26 renombró KEYCLOAK_ADMIN/_PASSWORD a KC_BOOTSTRAP_ADMIN_*.
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD es obligatorio}
+      # Sustitución de ${VARIABLES} dentro del realm JSON importado. Sin este
+      # flag Keycloak deja el literal "${VENDI_BACKEND_CLIENT_SECRET}" COMO
+      # secreto del cliente (verificado contra 26.6.4, no es teoría).
+      KC_SPI_IMPORT_SINGLE_FILE_REPLACE_PLACEHOLDERS: "true"
+      VENDI_BACKEND_CLIENT_SECRET: ${VENDI_BACKEND_CLIENT_SECRET:?VENDI_BACKEND_CLIENT_SECRET es obligatorio}
+      VENDI_BASE_DOMAIN: ${BASE_DOMAIN:-vendi.local}
+    volumes:
+      - ./keycloak/realm-vendi-co.json:/opt/keycloak/data/import/realm-vendi-co.json:ro
+      - ./keycloak/vendi-theme:/opt/keycloak/themes/vendi:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # /dev/tcp contra 127.0.0.1 literal: en resolvers de doble pila
+      # localhost puede resolver a ::1 y el listener de gestión es IPv4.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q 200"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+    networks:
+      - vendi-net
+
+  # -----------------------------------------------------------------
+  # Backend
+  # -----------------------------------------------------------------
+  api:
+    logging: *default-logging
+    build:
+      context: ../backend
+      dockerfile: services/api/Dockerfile
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      BASE_DOMAIN: ${BASE_DOMAIN:-vendi.local}
+      # DSN de la API: rol vendi_app, SIN BYPASSRLS. Que la API no pueda
+      # saltarse RLS ni por accidente es la garantía central del producto.
+      DATABASE_URL: postgresql+asyncpg://vendi_app:${VENDI_APP_DB_PASSWORD:?VENDI_APP_DB_PASSWORD es obligatorio}@postgres:5432/vendi
+      # DSN de plataforma (worker, consola, migraciones): vendi_platform.
+      PLATFORM_DATABASE_URL: postgresql+asyncpg://vendi_platform:${VENDI_PLATFORM_DB_PASSWORD:?VENDI_PLATFORM_DB_PASSWORD es obligatorio}@postgres:5432/vendi
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD es obligatorio}@redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-vendi}:${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD es obligatorio}@rabbitmq:5672/
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: vendi-co
+      KEYCLOAK_BACKEND_CLIENT_ID: vendi-backend
+      KEYCLOAK_BACKEND_CLIENT_SECRET: ${VENDI_BACKEND_CLIENT_SECRET:?VENDI_BACKEND_CLIENT_SECRET es obligatorio}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-vendi}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY es obligatorio}
+      MINIO_BUCKET: ${MINIO_BUCKET:-vendi-co-media}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    # python:3.12-slim no trae curl ni wget: se usa urllib de la stdlib.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - vendi-net
+
+  worker:
+    logging: *default-logging
+    build:
+      context: ../backend
+      dockerfile: services/worker/Dockerfile
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      PLATFORM_DATABASE_URL: postgresql+asyncpg://vendi_platform:${VENDI_PLATFORM_DB_PASSWORD:?VENDI_PLATFORM_DB_PASSWORD es obligatorio}@postgres:5432/vendi
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-vendi}:${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD es obligatorio}@rabbitmq:5672/
+      WORKER_HEARTBEAT_SECONDS: ${WORKER_HEARTBEAT_SECONDS:-30}
+      WORKER_HEARTBEAT_FILE: /tmp/vendi-worker-latido
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    # El worker no sirve HTTP en Fase 0 (el endpoint de métricas llega con el
+    # dispatcher real, tarea 4.3). Mientras tanto la sonda mira el archivo de
+    # latido: comprueba que el BUCLE avanza, no solo que el proceso existe.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,sys,time; f=os.environ['WORKER_HEARTBEAT_FILE']; sys.exit(0 if os.path.exists(f) and time.time()-os.path.getmtime(f) < 3*float(os.environ.get('WORKER_HEARTBEAT_SECONDS','30')) else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - vendi-net
+
+  # -----------------------------------------------------------------
+  # Observabilidad
+  # -----------------------------------------------------------------
+  prometheus:
+    logging: *default-logging
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    networks:
+      - vendi-net
+    # Sin puerto publicado: solo se consulta desde dentro de la red del
+    # compose (Grafana habla con él por http://prometheus:9090).
+
+  grafana:
+    logging: *default-logging
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD es obligatorio}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: https://grafana.${BASE_DOMAIN:-vendi.local}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - vendi-net
+
+volumes:
+  postgres_data:
+  backup_data:
+  redis_data:
+  rabbitmq_data:
+  minio_data:
+  prometheus_data:
+  grafana_data:
+  letsencrypt_data:
+
+networks:
+  vendi-net:
+    driver: bridge

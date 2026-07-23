@@ -1,0 +1,19 @@
+{
+  "app": {
+    "titulo": "Consola de plataforma",
+    "descripcion": "Administración de los negocios de Vendi"
+  },
+  "layout": {
+    "cargando": "Cargando…",
+    "reintentar": "Reintentar",
+    "cerrar_sesion": "Cerrar sesión",
+    "error_inesperado": "Algo salió mal. Vuelve a intentarlo."
+  },
+  "comun": {
+    "aceptar": "Aceptar",
+    "cancelar": "Cancelar",
+    "guardar": "Guardar",
+    "eliminar": "Eliminar",
+    "buscar": "Buscar"
+  }
+}

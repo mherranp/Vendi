@@ -1,0 +1,19 @@
+{
+  "app": {
+    "titulo": "Vendi",
+    "descripcion": "Punto de venta para tu tienda"
+  },
+  "layout": {
+    "cargando": "Cargando…",
+    "reintentar": "Reintentar",
+    "sin_conexion": "Sin conexión: seguimos registrando las ventas y se sincronizan solas",
+    "error_inesperado": "Algo salió mal. Vuelve a intentarlo."
+  },
+  "comun": {
+    "aceptar": "Aceptar",
+    "cancelar": "Cancelar",
+    "guardar": "Guardar",
+    "eliminar": "Eliminar",
+    "buscar": "Buscar"
+  }
+}

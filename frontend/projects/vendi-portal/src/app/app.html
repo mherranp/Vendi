@@ -1,1 +1,14 @@
+<!--
+  Cascarón provisional de Fase 0. Existe para que el arranque de i18n sea
+  observable: si el catálogo no cargara, aquí se verían las claves crudas
+  (`app.titulo`) en vez del texto. La Etapa 4 lo sustituye por el layout real.
+
+  Regla de PR (README §i18n): ninguna cadena visible se escribe a mano en un
+  template; siempre pasa por el pipe `translate`.
+-->
+<header>
+  <h1>{{ 'app.titulo' | translate }}</h1>
+  <p>{{ 'app.descripcion' | translate }}</p>
+</header>
+
 <router-outlet />

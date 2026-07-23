@@ -1,0 +1,229 @@
+/*
+ * Tema de login de Vendi — capa de estilos sobre el tema `keycloak`.
+ *
+ * Cosechado de infrastructure/keycloak/basesaas-theme/login/resources/css/basesaas.css
+ * con tres diferencias deliberadas:
+ *
+ *  1. NO se oculta la cabecera (#kc-header-wrapper). En BaseSaaS se ocultaba
+ *     porque su template.ftl pintaba su propia marca; aquí no portamos
+ *     plantillas (ver theme.properties), así que la cabecera es el único
+ *     sitio donde aparece "Vendi" — se estiliza en vez de esconderse. El
+ *     contenido lo pone `displayNameHtml` del realm.
+ *  2. Paleta alineada con `mat.$azure-palette`, que es la que usan hoy las
+ *     cuatro apps Angular. La paleta definitiva la fija ui-kit (Etapa 3).
+ *  3. Estilos para la pantalla de "otra forma de iniciar sesión", que en
+ *     BaseSaaS no existía y aquí es el camino de la passkey.
+ *
+ * SOBRE LOS NOMBRES DE CLASE: el tema `keycloak` de 26.6.4 emite PatternFly
+ * v4 (`pf-c-*`) mezclado con clases heredadas de v3 (`card-pf`,
+ * `login-pf-page`, `form-group`). NO emite `pf-v5-c-*`. Medido sobre el HTML
+ * real de la pantalla de usuario:
+ *
+ *   class="card-pf"  class="login-pf-page"  class="login-pf-page-header"
+ *   class="pf-c-form__label pf-c-form__label-text"
+ *   class="pf-c-form-control"
+ *   class="pf-c-button pf-m-primary pf-m-block btn-lg"
+ *   class="form-group"  class="form-group login-pf-settings"
+ *   id="kc-page-title" id="kc-form-login" id="kc-form-buttons" id="kc-info"
+ *
+ * Este archivo solo usa selectores de esa lista. Los `pf-v5-c-*` que traía la
+ * primera versión no casaban con nada y se quitaron: cuando Keycloak migre a
+ * PatternFly 5 habrá que volver aquí, y un selector muerto solo sirve para
+ * hacer creer que el trabajo ya está hecho.
+ */
+
+:root {
+  --vd-primario: #005cbb;
+  --vd-primario-hover: #00489a;
+  --vd-superficie: #ffffff;
+  --vd-superficie-alt: #f4f7fb;
+  --vd-texto: rgba(0, 0, 0, 0.87);
+  --vd-texto-secundario: rgba(0, 0, 0, 0.6);
+  --vd-borde: rgba(0, 0, 0, 0.12);
+  --vd-error: #b3261e;
+  --vd-radio: 10px;
+  --vd-tipografia: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--vd-tipografia);
+  color: var(--vd-texto);
+  background: var(--vd-superficie-alt);
+  min-height: 100vh;
+}
+
+.login-pf-page,
+.login-pf-body {
+  background: var(--vd-superficie-alt) !important;
+}
+
+/* Cabecera: aquí aterriza realm.displayNameHtml. */
+#kc-header-wrapper,
+.login-pf-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem 0.5rem;
+}
+
+.vd-marca {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--vd-primario);
+}
+
+.vd-marca::before {
+  content: "";
+  width: 34px;
+  height: 34px;
+  background: url('../img/logo-vendi.svg') center / contain no-repeat;
+}
+
+.card-pf,
+.login-pf-page .card-pf {
+  background: var(--vd-superficie);
+  border: 1px solid var(--vd-borde);
+  border-radius: var(--vd-radio);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  padding: 2.5rem;
+  max-width: 420px;
+  margin: 1.5rem auto 3rem;
+}
+
+#kc-page-title,
+.pf-c-title {
+  font-size: 1.35rem;
+  font-weight: 600;
+  margin: 0 0 1.25rem;
+  color: var(--vd-texto);
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+.pf-c-form-control {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  border: 1px solid var(--vd-borde);
+  border-radius: var(--vd-radio);
+  background: var(--vd-superficie);
+  color: var(--vd-texto);
+  transition: border-color 150ms, box-shadow 150ms;
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+.pf-c-form-control:focus {
+  outline: none;
+  border-color: var(--vd-primario);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vd-primario) 18%, transparent);
+}
+
+label,
+.pf-c-form__label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--vd-texto-secundario);
+  margin-bottom: 0.35rem;
+}
+
+.form-group,
+.pf-c-form__group {
+  margin-bottom: 1rem;
+}
+
+.pf-c-button,
+.btn-primary,
+#kc-login {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  /* 48 px de alto mínimo: se usa con el dedo, sobre el mostrador. */
+  min-height: 48px;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  background: var(--vd-primario);
+  color: #fff;
+  border: none;
+  border-radius: var(--vd-radio);
+  cursor: pointer;
+  transition: background 150ms, transform 100ms;
+}
+
+.pf-c-button:hover,
+.btn-primary:hover,
+#kc-login:hover {
+  background: var(--vd-primario-hover);
+}
+
+.pf-c-button:active,
+#kc-login:active {
+  transform: scale(0.98);
+}
+
+a {
+  color: var(--vd-primario);
+  text-decoration: none;
+}
+
+a:hover { text-decoration: underline; }
+
+.alert-error,
+.pf-c-alert.pf-m-danger {
+  background: color-mix(in srgb, var(--vd-error) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--vd-error) 30%, transparent);
+  color: var(--vd-error);
+  padding: 0.75rem 1rem;
+  border-radius: var(--vd-radio);
+  margin-bottom: 1rem;
+  font-size: 0.95rem;
+}
+
+/* Pantalla "Seleccione el método de inicio de sesión": es el camino por el
+ * que el usuario elige la passkey cuando la contraseña es su credencial por
+ * defecto (hallazgo de UX del spike 1.1, pregunta 10). */
+#kc-select-credential-form .pf-c-button,
+#kc-select-try-another-way-form,
+.select-auth-box-parent {
+  border-radius: var(--vd-radio);
+}
+
+.select-auth-box-parent {
+  border: 1px solid var(--vd-borde);
+  margin-bottom: 0.75rem;
+  padding: 0.75rem 1rem;
+}
+
+.select-auth-box-parent:hover {
+  border-color: var(--vd-primario);
+  background: color-mix(in srgb, var(--vd-primario) 4%, transparent);
+}
+
+#kc-info,
+#kc-form-options,
+.login-pf-settings {
+  margin-top: 1.25rem;
+  font-size: 0.9rem;
+  color: var(--vd-texto-secundario);
+}
+
+@media (max-width: 480px) {
+  .card-pf,
+  .login-pf-page .card-pf {
+    margin: 1rem;
+    padding: 1.5rem;
+  }
+}

@@ -1,0 +1,12 @@
+# El entorno virtual de la máquina anfitriona nunca entra en la imagen: trae
+# binarios compilados para el host y engorda el contexto en cientos de MB.
+.venv
+**/.venv
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+htmlcov

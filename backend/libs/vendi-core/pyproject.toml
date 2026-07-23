@@ -1,0 +1,53 @@
+[project]
+name = "vendi-core"
+version = "0.1.0"
+description = "Librería transversal de Vendi: tenancy por RLS, auth, auditoría, mensajería y utilidades"
+requires-python = ">=3.12"
+# Núcleo obligatorio: lo que necesita cualquier consumidor (API o worker).
+# Réplica de las dependencias base de base_saas (cosecha de BaseSaaS).
+dependencies = [
+    "fastapi>=0.115.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.0",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30.0",
+    "httpx>=0.28.0",
+    "structlog>=24.4.0",
+    "prometheus-client>=0.21.0",
+]
+
+[project.optional-dependencies]
+# python-keycloak >= 7.1 es obligatorio: es la primera versión con la API de
+# Organizations (create_organization, organization_user_add, ...), que el realm
+# regional `vendi-co` necesita. Verificado en el spike 1.1 con 7.1.1.
+auth = ["python-keycloak>=7.1.0", "python-jose[cryptography]>=3.3.0"]
+cache = ["redis[hiredis]>=5.2.0"]
+messaging = ["aio-pika>=9.5.0"]
+storage = ["miniopy-async>=1.21.0"]
+# Mail reducido a lo que necesita `SystemMailer` (tarea 3.7): no hay SMTP por
+# tenant, ni plantillas en base de datos, ni tracking de aperturas. Por eso NO
+# se portan cryptography (secretos SMTP por tenant) ni html2text (renderer).
+mail = ["aiosmtplib>=3.0.2", "jinja2>=3.1.4"]
+tracing = [
+    "opentelemetry-sdk>=1.30.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.30.0",
+    # Las betas de instrumentación de OTel (0.Nb0) no siguen semver y han roto
+    # APIs entre bumps menores. Se fijan exactas, igual que en BaseSaaS.
+    "opentelemetry-instrumentation-fastapi==0.62b0",
+    "opentelemetry-instrumentation-sqlalchemy==0.62b0",
+    "opentelemetry-instrumentation-httpx==0.62b0",
+]
+all = ["vendi-core[auth,cache,mail,messaging,storage,tracing]"]
+dev = [
+    "vendi-core[all]",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vendi_core"]

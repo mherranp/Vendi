@@ -1,0 +1,58 @@
+[project]
+# Raíz del workspace uv del backend de Vendi. No es un paquete instalable:
+# solo agrupa a los miembros (vendi-core, services/api, services/worker) para
+# que `uv sync` resuelva un único lockfile compartido por todos.
+name = "vendi-backend"
+version = "0.1.0"
+description = "Workspace del backend de Vendi (monolito modular + worker sobre vendi-core)"
+requires-python = ">=3.12"
+dependencies = [
+    "vendi-core",
+    "vendi-api",
+    "vendi-worker",
+]
+
+[tool.uv]
+# Raíz virtual: no se construye ni se instala, solo coordina el workspace.
+package = false
+
+[tool.uv.workspace]
+members = ["libs/*", "services/*"]
+
+[tool.uv.sources]
+vendi-core = { workspace = true }
+vendi-api = { workspace = true }
+vendi-worker = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "httpx>=0.28.0",
+    "ruff>=0.8.0",
+    "mypy>=1.10",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4", "UP"]
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["vendi_core", "app", "worker"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    # Requieren el stack de docker compose (Postgres, Keycloak, RabbitMQ...).
+    # Se excluyen del run por defecto con: -m 'not integration'.
+    "integration: requiere servicios reales del compose (PG, KC, RabbitMQ)",
+]

@@ -49,6 +49,12 @@
               "serviceWorker": "projects/vendi-app/ngsw-config.json"
             },
             "development": {
+              "fileReplacements": [
+                {
+                  "replace": "projects/vendi-app/src/environments/environment.ts",
+                  "with": "projects/vendi-app/src/environments/environment.development.ts"
+                }
+              ],
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true
@@ -125,6 +131,12 @@
               "outputHashing": "all"
             },
             "development": {
+              "fileReplacements": [
+                {
+                  "replace": "projects/vendi-portal/src/environments/environment.ts",
+                  "with": "projects/vendi-portal/src/environments/environment.development.ts"
+                }
+              ],
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true
@@ -204,6 +216,12 @@
               "outputHashing": "all"
             },
             "development": {
+              "fileReplacements": [
+                {
+                  "replace": "projects/vendi-tenant/src/environments/environment.ts",
+                  "with": "projects/vendi-tenant/src/environments/environment.development.ts"
+                }
+              ],
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true
@@ -283,6 +301,12 @@
               "outputHashing": "all"
             },
             "development": {
+              "fileReplacements": [
+                {
+                  "replace": "projects/vendi-admin/src/environments/environment.ts",
+                  "with": "projects/vendi-admin/src/environments/environment.development.ts"
+                }
+              ],
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true

@@ -1,0 +1,104 @@
+# Reglas de alerta de Vendi
+# -------------------------
+# Cargadas desde prometheus.yml (`rule_files: [rules/*.yml]`). Alertmanager no
+# está cableado todavía: las alertas se ven en http://prometheus:9090/alerts y
+# en la alerta unificada de Grafana.
+#
+# Cosecha selectiva de infrastructure/prometheus/rules/basesaas-alerts.yml. NO
+# se portan las reglas de BaseSaaS que miden métricas inexistentes en Vendi
+# (`basesaas_mail_deliveries_total`, `basesaas_webhook_endpoints_auto_disabled_total`,
+# `basesaas_audit_write_failed_total`): una regla que nunca puede dispararse es
+# ruido que da falsa sensación de cobertura. Volverán, renombradas, cuando la
+# métrica correspondiente exista (auditoría en la tarea 3.2, outbox en la 4.3).
+
+groups:
+  - name: vendi-plataforma
+    interval: 30s
+    rules:
+      # -----------------------------------------------------------------
+      # Un objetivo de scraping caído. Es la alerta más barata y la que más
+      # veces acierta: si la API o el worker no responden, todo lo demás es
+      # secundario.
+      # -----------------------------------------------------------------
+      - alert: ObjetivoCaido
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "El objetivo {{ $labels.job }} lleva 2 min sin responder"
+          description: |
+            Prometheus no consigue raspar {{ $labels.job }} ({{ $labels.instance }}).
+            Revisar: `docker compose ps` y `docker compose logs {{ $labels.job }} --tail=200`.
+
+      # -----------------------------------------------------------------
+      # Tasa absoluta de 5xx. Umbral de 0,05 req/s ≈ 15 cada 5 min: suficiente
+      # para cazar una regresión real, escaso para no despertar a nadie por
+      # un error suelto.
+      # -----------------------------------------------------------------
+      - alert: TasaDeErroresAlta
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tasa de 5xx alta en {{ $labels.job }}"
+          description: |
+            {{ $labels.job }} devuelve 5xx a {{ $value | printf "%.3f" }} req/s
+            (ventana de 5 min). Umbral: 0,05.
+
+      # -----------------------------------------------------------------
+      # Proporción de 5xx: complementa a la anterior. Un servicio con poco
+      # tráfico devolviendo el 50 % de errores no dispara la regla absoluta.
+      # El guardián `> 0` mantiene la expresión definida con tráfico cero.
+      # -----------------------------------------------------------------
+      - alert: ProporcionDeErroresAlta
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m])) by (job)
+          /
+          (sum(rate(http_requests_total[5m])) by (job) > 0)
+          > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }}: más del 1 % de respuestas 5xx (5 min)"
+          description: |
+            {{ $value | humanizePercentage }} de las respuestas son 5xx.
+            Investigar aunque el número absoluto sea pequeño.
+
+      # -----------------------------------------------------------------
+      # SLO de latencia p95. 2 s es el suelo de lo "perceptible" para una
+      # acción de caja; un incumplimiento sostenido suele significar que algo
+      # aguas abajo (PostgreSQL, Keycloak, Redis) se degradó.
+      # -----------------------------------------------------------------
+      - alert: LatenciaP95Alta
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job)
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }}: p95 por encima de 2 s (5 min)"
+          description: |
+            p95 = {{ $value | printf "%.2f" }} s. Revisar planes de consulta,
+            caché de JWKS de Keycloak y despliegues recientes.
+
+      # -----------------------------------------------------------------
+      # Acumulación en RabbitMQ. Depende de que se raspe un exportador de
+      # RabbitMQ; hasta entonces la regla no evalúa nada (no hay serie) y no
+      # dispara falsos positivos.
+      # -----------------------------------------------------------------
+      - alert: ColaAcumulada
+        expr: rabbitmq_queue_messages_ready > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cola {{ $labels.queue }} con más de 1000 mensajes pendientes"
+          description: |
+            {{ $value }} mensajes listos durante 5 min. Los consumidores
+            pueden estar caídos o sin CPU: revisar el worker.

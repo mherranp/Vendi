@@ -1,0 +1,136 @@
+# Capa de producción. Se activa con:
+#   docker compose -f docker-compose.yml -f docker-compose.override.prod.yml up -d
+#
+# Los límites de recursos son conservadores y están pensados para la VM de la
+# región CO (4 vCPU / 8 GB) con todo el stack encima. Súbelos en una máquina
+# mayor; bájalos con datos de Grafana delante, no a ojo: un OOM del stack se
+# manifiesta como peticiones de tenants que fallan en silencio.
+#
+# Antes de usar este archivo, leer:
+#   - infra/keycloak/README.md (endurecimiento de Keycloak, ROPC, drift)
+#   - la sección de ACME de infra/traefik/traefik.yml
+
+services:
+  traefik:
+    # Producción con certificados de Let's Encrypt. En el .env del servidor:
+    #
+    #   ACME_ENABLED=true
+    #   ACME_STAGING=true          # ← empieza SIEMPRE aquí
+    #   ACME_EMAIL=ops@tu-dominio
+    #
+    # Con eso el entrypoint mete los flags del resolver y todos los routers
+    # pasan a `certResolver: letsencrypt` (el archivo de certificados locales
+    # ni se escribe). Cuando el primer certificado de staging se emita bien,
+    # ACME_STAGING=false, se borra el acme.json del volumen (guarda la cuenta y
+    # los certificados de la CA de pruebas) y se reinicia:
+    #
+    #   docker compose ... run --rm -T traefik sh -c 'rm -f /letsencrypt/acme.json'
+    #   docker compose ... up -d --force-recreate traefik
+    #
+    # El camino se verifica sin exponer nada a internet con
+    # scripts/spikes/acme-pebble-spike.sh (CA ACME local).
+    restart: unless-stopped
+    ports:
+      # En producción el borde SÍ escucha en todas las interfaces: es el punto
+      # de entrada del despliegue. En desarrollo el default es loopback.
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+
+  postgres:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+
+  postgres-backup:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+
+  redis:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  rabbitmq:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+
+  minio:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  keycloak:
+    # `start-dev` NO es aceptable en producción: relaja el hostname y usa
+    # almacenamiento de desarrollo. `start` a secas sí lo es (hace un build
+    # implícito en cada arranque: más lento, pero correcto).
+    #
+    # NO se pone `--optimized`: ese flag EXIGE una imagen sobre la que ya se
+    # ejecutó `kc.sh build`, y con la imagen oficial tal cual el servidor se
+    # niega a arrancar. La imagen optimizada de Vendi se construye en la
+    # Etapa 5 (release-images.yml); cuando exista, aquí van `image:` propia y
+    # `start --optimized`.
+    command: start --import-realm
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+
+  api:
+    # Fijar una etiqueta de imagen concreta publicada por release-images.yml
+    # (Etapa 5) en vez de reconstruir en la VM:
+    # image: ghcr.io/<org>/vendi-api:v0.1.0
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+
+  worker:
+    # image: ghcr.io/<org>/vendi-worker:v0.1.0
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  prometheus:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  grafana:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'

@@ -23,6 +23,9 @@
     "pretest": "npm run build:libs",
     "test": "ng test",
     "lint": "ng lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "codegen:api": "bash ../scripts/codegen-api-client.sh",
     "presync": "npm run build:libs",
     "sync": "ng build vendi-app && cap sync",
     "android": "npm run sync && cap run android",
@@ -33,6 +36,9 @@
   },
   "private": true,
   "packageManager": "npm@11.11.0",
+  "overrides": {
+    "js-yaml": "^4.3.0"
+  },
   "dependencies": {
     "@angular/cdk": "^21.2.14",
     "@angular/common": "^21.2.0",
@@ -62,6 +68,7 @@
     "eslint": "^10.3.0",
     "jsdom": "^28.0.0",
     "ng-packagr": "^21.2.0",
+    "openapi-typescript": "^7.13.0",
     "prettier": "^3.8.1",
     "typescript": "~5.9.2",
     "typescript-eslint": "8.59.2",

@@ -1,0 +1,46 @@
+# Capa de desarrollo. Se activa con:
+#   docker compose -f docker-compose.yml -f docker-compose.override.dev.yml up
+# (es lo que hace scripts/dev.sh). El sufijo `.dev.yml` es explícito a
+# propósito: un archivo llamado `docker-compose.override.yml` se cargaría solo
+# y sin que nadie lo pidiera.
+#
+# NOTA: aquí ya NO se repite el `command:` del compose base. Antes se repetía
+# «para no perder los flags», y además de duplicar mantenimiento no servía de
+# nada: Traefik ignora los flags de CLI cuando se arranca con `--configFile`
+# (medido: el dashboard devolvía 404 con --api.insecure=true puesto). Lo que
+# depende del entorno se pasa por variables y lo aplica traefik/entrypoint.sh
+# sobre la configuración estática.
+
+services:
+  traefik:
+    environment:
+      # Dashboard para depurar en local, publicado SOLO en loopback por el
+      # mapeo de puertos de abajo. NUNCA en producción.
+      TRAEFIK_DASHBOARD: "true"
+    ports:
+      # El borde, SOLO en loopback: en desarrollo el stack no tiene por qué
+      # quedar expuesto a la red del café ni a la de la oficina. Para probar
+      # desde el móvil en la LAN: TRAEFIK_BIND=0.0.0.0 en el .env.
+      - "${TRAEFIK_BIND:-127.0.0.1}:80:80"
+      - "${TRAEFIK_BIND:-127.0.0.1}:443:443"
+      # http://127.0.0.1:8088/dashboard/
+      - "127.0.0.1:8088:8080"
+
+  # Servidor SMTP de mentira para ver los correos que manda SystemMailer sin
+  # enviarlos a ninguna parte. Es una herramienta de desarrollo: no existe en
+  # el compose base para que producción no lo arrastre.
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - vendi-net
+
+  # Latido rápido para no esperar 30 s a que el healthcheck del worker se
+  # ponga verde tras un reinicio.
+  worker:
+    environment:
+      WORKER_HEARTBEAT_SECONDS: ${WORKER_HEARTBEAT_SECONDS:-10}

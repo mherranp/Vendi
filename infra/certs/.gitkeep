@@ -1,0 +1,3 @@
+Los certificados de desarrollo los genera scripts/setup-certs.sh con mkcert y
+quedan aquí como vendi.local.pem / vendi.local-key.pem. El .gitignore de la
+raíz excluye *.pem y *.key: nunca se commitean.

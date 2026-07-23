@@ -1,0 +1,7 @@
+# dynamic.yml lo genera traefik/entrypoint.sh en cada arranque a partir de
+# templates/dynamic.yml.tpl. Versionarlo garantizaría que alguien edite el
+# archivo equivocado.
+dynamic.yml
+# Lo escribe el mismo entrypoint cuando ACME está apagado (certificados de
+# mkcert). Con ACME encendido ni siquiera se crea.
+certificados-locales.yml

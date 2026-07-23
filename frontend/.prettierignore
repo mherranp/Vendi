@@ -1,0 +1,18 @@
+# Artefactos de compilación
+dist/
+out-tsc/
+.angular/
+node_modules/
+
+# Proyectos nativos de Capacitor: los generan y reescriben `cap add` y `cap sync`.
+# Formatearlos crearía ruido en cada sincronización y conflictos con Xcode y Gradle.
+android/
+ios/
+
+# Código generado: lo escribe scripts/codegen-api-client.sh y se compara con
+# `git diff --exit-code`. Si prettier lo reformateara, la comparación fallaría
+# siempre.
+projects/libs/data-access/src/lib/api-client/
+
+# Lockfile
+package-lock.json
