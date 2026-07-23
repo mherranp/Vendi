@@ -50,7 +50,8 @@ Se descartaron dos alternativas:
 
 El activo real de BaseSaaS no es `platform-service`, que es donde Vendi más diverge, sino
 la librería transversal, la infraestructura y los runbooks. Ahí el acoplamiento al modelo
-de tenancy está confinado a seis archivos.
+de tenancy está confinado a unos 14 archivos (`tenant/` 4, `auth/` 4, `db/` 2, `jobs/` 2,
+`retention/` 1, `mail/` 1), frente a los 36 del repositorio completo.
 
 ## 4. Modelo de tenancy
 
@@ -68,22 +69,41 @@ añade a `TenantModel` — el mixin que hoy solo aporta clave primaria y timesta
 ALTER TABLE ventas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ventas FORCE ROW LEVEL SECURITY;   -- el owner de la tabla tampoco escapa
 CREATE POLICY tenant_isolation ON ventas
-  USING (tenant_id = current_setting('vendi.tenant_id')::uuid);
+  USING      (tenant_id = NULLIF(current_setting('vendi.tenant_id', true), '')::uuid)
+  WITH CHECK (tenant_id = NULLIF(current_setting('vendi.tenant_id', true), '')::uuid);
 ```
+
+El `missing_ok` (`true`) y el `NULLIF` no son adorno: `current_setting('vendi.tenant_id')::uuid`
+a secas lanza `unrecognized configuration parameter` cuando la variable no existe, y el cast de
+cadena vacía a `uuid` también revienta. Sin ellos la consulta termina en 500, no en cero filas —
+es decir, *no* falla cerrado. El `WITH CHECK` es lo que impide escribir filas de otro tenant, que
+el `USING` por sí solo no cubre.
 
 **Dos roles de conexión.** `vendi_app` sin `BYPASSRLS` es el que usa la API; `vendi_platform`
 con `BYPASSRLS` queda reservado para `vendi-admin` y los jobs de plataforma. Separar los
 roles evita el patrón habitual de "la policy me estorba, conecto como superusuario".
 
-**Propagación del tenant.** El middleware ejecuta `SET LOCAL vendi.tenant_id = '<uuid>'`
-dentro de la transacción del request. `SET LOCAL` y no `SET`: el valor muere con la
-transacción y no se filtra entre requests que comparten conexión del pool.
+**Propagación del tenant.** `SET LOCAL vendi.tenant_id = '<uuid>'` dentro de la transacción del
+request. `SET LOCAL` y no `SET`: el valor muere con la transacción y no se filtra entre requests
+que comparten conexión del pool.
 
-**Red de seguridad.** Se replica el patrón que BaseSaaS ya aplica a `search_path`: un
-listener en el checkout del pool resetea `vendi.tenant_id`, de modo que un handler que
-olvide el `SET LOCAL` no herede el tenant del request anterior. Con la variable ausente la
-policy no hace match y la consulta devuelve cero filas: **falla cerrado**, que es la
-dirección correcta del error.
+Con una consecuencia que hay que manejar: **`SET LOCAL` muere en cada `commit()`**. Un handler
+que commitea a mitad de request seguiría consultando con la variable vacía y obtendría cero
+filas *en silencio*, que es peor que un error. Por eso el `SET LOCAL` no lo emite el middleware
+directamente, sino el evento `after_begin` de la sesión leyendo el tenant de un `ContextVar`:
+cada transacción nueva lo reinstala sola.
+
+**Red de seguridad.** Se replica el patrón que BaseSaaS ya aplica a `search_path`: un listener en
+el checkout del pool ejecuta `SET vendi.tenant_id = ''` —asignación explícita, no `RESET`, cuyo
+comportamiento sobre un GUC personalizado nunca seteado no está definido— de modo que un handler
+que olvide el `SET LOCAL` no herede el tenant del request anterior. Con la variable vacía la
+policy no hace match y la consulta devuelve cero filas: **falla cerrado**.
+
+**Migraciones bajo `FORCE`.** Con `FORCE ROW LEVEL SECURITY` el owner de la tabla también queda
+sujeto a las policies, así que cualquier backfill de datos en una migración vería cero filas. Las
+migraciones corren como `vendi_platform` (que es el owner y tiene `BYPASSRLS`) y la API como
+`vendi_app`, que no tiene ownership. La consecuencia es que el proceso de la API necesita **dos
+engines**, uno por rol.
 
 Consecuencias operativas:
 
@@ -94,8 +114,15 @@ Consecuencias operativas:
 
 ### 4.2 Identidad: un realm por región, cada negocio una Organization (ADR-014)
 
-Realm `vendi-co`. Cada negocio es una Organization de Keycloak 26; el `tenant_id` se resuelve
-del claim de organización del token.
+Realm `vendi-co`. Cada negocio es una Organization de Keycloak 26.
+
+**Cómo se resuelve el `tenant_id`, con más precisión de la que tenía la primera versión de este
+spec.** El claim `organization` de Keycloak 26 no es un identificador plano: es un mapa indexado
+por *alias* de organización, y el id de la organización **no viene por defecto** (hay que activar
+"Add organization id" en el mapper). Además el scope `organization` es un client scope opcional,
+no incluido salvo que se pida. La hipótesis de diseño es **alias = `str(tenant_id)`**, lo que
+permite resolver el tenant sin un lookup extra. Es una hipótesis, no un hecho: el spike 1.1 del
+plan de implementación la verifica contra la imagen 26.6.4 antes de que se escriba el middleware.
 
 BaseSaaS usa **realm por tenant**, que para Vendi falla por dos motivos independientes:
 
@@ -113,8 +140,17 @@ tenants.** Es lo que pide la persona "Andrea, minimercado ×3" del plan maestro 
 multi-tienda y compras consolidadas— y evita el caso de un usuario con roles distintos en
 organizaciones distintas, que Keycloak no modela bien.
 
-**A verificar antes de implementar:** el nombre exacto del claim de organización y el scope
-requerido en Keycloak 26.6.4.
+**Suspender un tenant cambia de mecanismo.** BaseSaaS suspende deshabilitando el realm del
+tenant. Con realm único eso desaparece, y deshabilitar una Organization *no* bloquea el login de
+sus miembros, porque son usuarios del realm. La suspensión pasa a ser obligatoriamente a nivel de
+aplicación: estado en la tabla `tenants` que la API consulta. Encaja bien con el ciclo de vida de
+`docs/monetizacion-web.md` §5, donde suspendido significa degradar a plan gratis sin perder datos,
+no cerrar la puerta.
+
+**Alternativa descartada:** Keycloak 26.6.0 (abril 2026) introdujo *Organization Groups*, que
+permiten jerarquías de grupos por organización visibles en el token. Habilitaría roles por
+organización de verdad. Se descarta igual por simplicidad, y porque el modelo de sucursales
+dentro del tenant resuelve el caso real sin esa complejidad.
 
 ## 5. Backend
 
@@ -136,8 +172,8 @@ barato hasta que el contexto acotado duela lo suficiente para extraerlo.
 
 | Categoría | LOC aprox. | Contenido |
 |---|---|---|
-| **Sin cambios** | 2.400 | `middleware` (correlation-id, error handler, security headers, secret redactor, api-version, client-ip), `audit`, `storage`, `messaging` (outbox transaccional), `tracing`, `config/secrets`, `files`, `events`, `errors`, `cache`, `logging`, `models` |
-| **Con adaptación** | 2.200 | `auth` — `jwt.py`, `dependencies.py` y `policies.py` casi intactos; `keycloak_admin.py` pasa de `create_realm()` a `create_organization()`. `jobs` y `retention` — el scope `tenant` itera `tenant_id` en vez de schemas |
+| **Sin cambios** | 2.580 | `middleware` (correlation-id, error handler, security headers, secret redactor, api-version, client-ip), `messaging` (outbox transaccional), `tracing`, `config/secrets`, `app` (bootstrap), `files`, `events`, `errors`, `cache`, `logging`, `models` |
+| **Con adaptación** | 2.200 | `auth` — `dependencies.py` y `policies.py` casi intactos; `jwt.py` debe **fijar `allowed_realms=["vendi-co"]`**, porque hoy acepta tokens de cualquier realm (correcto con realm-per-tenant, agujero con realm único: un token de `master` validaría); `keycloak_admin.py` es una **reescritura dirigida**, no una adaptación — los 797 LOC llevan `realm` como parámetro en todos los métodos. `jobs` y `retention` — el scope `tenant` itera `tenant_id`. `audit` pasa de indexar por `tenant_slug` a `tenant_id UUID`. `storage` abandona el bucket por tenant (`tenant-<slug>`), inviable con decenas de miles de negocios freemium, y pasa a **bucket único por región con prefijo `{tenant_id}/`** |
 | **Reescritura** | 450 | `tenant/` (el middleware resuelve organización y emite el `SET LOCAL`), `db/session.py`, `db/engine.py` |
 | **Reducción** | 704 → 200 | De `mail/` solo sobrevive `SystemMailer`, para facturas y dunning del portal. SMTP por tenant, plantillas en base de datos, pixel de tracking y unsubscribe no aplican: una tienda de barrio no envía correo transaccional |
 
@@ -230,7 +266,12 @@ Se porta completa y casi sin tocar, porque no tiene acoplamiento al modelo de te
 `docker-compose` con Traefik y TLS, Postgres, Redis, RabbitMQ, MinIO, Keycloak, Prometheus y
 Grafana; los scripts `dev.sh`, `migrate.sh`, `seed.sh`, `verify-setup.sh`, `setup-certs.sh`,
 `setup-dnsmasq.sh` y `codegen-api-client.sh`; el tema white-label de Keycloak; y los cuatro
-workflows de CI. `reconcile-keycloak.sh` se adapta de realms a Organizations.
+workflows de CI. `reconcile-keycloak.sh` se adapta de realms a Organizations, y `migrate.sh`
+pasa a correr como `vendi_platform` por lo dicho en §4.1.
+
+**El AAB no sale de la cosecha.** Ninguno de los cuatro workflows de BaseSaaS construye Android
+—verificado— y el criterio 4 de Fase 0 exige un pipeline que produzca un AAB de prueba. Es un
+workflow nuevo que hay que escribir, no una adaptación.
 
 **Terraform se difiere a Fase 2.** ADR-003 exige IaC parametrizado por región, y BaseSaaS solo
 llega a docker-compose. El MVP se despliega con compose sobre una sola VM en la región CO; la
@@ -248,6 +289,7 @@ IaC multi-región para una sola región es precisamente la sobre-ingeniería que
 | `plan-maestro.md:11-23` | La tabla de ADRs termina en 010 y no refleja ninguna decisión de construcción |
 | `analisis-comparativo-socios.md:5` | Las mismas dos referencias rotas |
 | `plan-tecnico.md §2, §6` | Dice "PostgreSQL (RLS)" y "Organizations" en genérico; ahora hay un diseño concreto al que apuntar |
+| `plan-maestro.md §7` y `plan-tecnico.md §8` | Ambos incluyen "IaC por región" dentro de Fase 0. Este spec lo difiere a Fase 2 (§7); la contradicción con la fuente canónica hay que resolverla en el texto, no dejarla implícita |
 
 ### 8.2 Registro de decisiones
 
