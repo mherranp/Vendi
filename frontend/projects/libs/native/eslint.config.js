@@ -33,9 +33,9 @@ module.exports = defineConfig([
         {
           patterns: [
             {
-              group: ['ui-kit', 'data-access', 'auth', 'dexie'],
+              group: ['domain', 'ui-kit', 'data-access', 'auth', 'dexie'],
               message:
-                'native solo envuelve APIs de plataforma. No conoce UI, persistencia ni sesión.',
+                'native solo envuelve APIs de plataforma. No conoce dominio, UI, persistencia ni sesión.',
             },
           ],
         },

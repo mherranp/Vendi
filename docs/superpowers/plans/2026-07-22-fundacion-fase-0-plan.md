@@ -343,7 +343,7 @@ SQL
 - [ ] **Paso 1:** entornos por app: `vendi-tenant` y `vendi-app` usan clientId `vendi-web`; `vendi-admin` usa `vendi-admin`; `vendi-portal` no usa Keycloak.
 - [ ] **Paso 2:** cosechar `codegen-api-client.sh` adaptando la ruta de salida a `data-access`. El script debe fallar con mensaje claro si la API no está arriba.
 - [ ] **Paso 3:** ngx-translate en `app.config.ts` de las 4 apps con `TranslateHttpLoader` sobre `/i18n/`, `defaultLanguage: 'es'`. Un `es.json` mínimo por app (título de la app y un par de claves del layout). Regla de PR documentada en el README del frontend: ninguna cadena visible hardcodeada en templates de las libs.
-- [ ] **Paso 4:** `npx ng build vendi-portal && npx ng build vendi-tenant && npx ng build vendi-admin && npx ng build vendi-app` — verdes. `npx ng test --watch=false` (los specs de andamiaje) — verde.
+- [ ] **Paso 4:** `npm run build:portal && npm run build:tenant && npm run build:admin && npm run build` — verdes. (Corregido al cerrar la Etapa 1: los alias del tsconfig resuelven contra `dist/`, así que un `npx ng build <app>` pelado falla con TS2307 en un árbol sin `dist/`; los scripts `npm run` encadenan `build:libs` vía hooks `pre*`.) `npm run test -- --watch=false` (los specs de andamiaje) — verde.
 - [ ] **Paso 5: commit** — `git commit -m "Entornos por app, ngx-translate con catálogo es y codegen del cliente API"`
 
 ### Superficie de ataque para QA — Etapa 2

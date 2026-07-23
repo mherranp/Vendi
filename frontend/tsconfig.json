@@ -14,21 +14,36 @@
     "importHelpers": true,
     "target": "ES2022",
     "module": "preserve",
+    /*
+     * Los alias de las librerías apuntan a `dist/`, NO al código fuente.
+     *
+     * Motivo: ng-packagr fija `rootDir` al `src/` de la librería que está
+     * compilando. Si un alias apuntara al `public-api.ts` fuente de otra
+     * librería, cualquier arista lib -> lib (p. ej. `auth` importando
+     * `data-access`, o `data-access` importando `domain`) fallaría con
+     * TS6059 "is not under 'rootDir'". Resolviendo contra el paquete ya
+     * compilado en `dist/`, la librería consumida es una dependencia
+     * externa y `rootDir` deja de ser violado.
+     *
+     * Consecuencia operativa: hay que ejecutar `npm run build:libs` antes
+     * de compilar o servir cualquier aplicación. Los scripts `start:*` y
+     * `build:*` de package.json ya lo encadenan.
+     */
     "paths": {
       "auth": [
-        "./projects/libs/auth/src/public-api.ts"
+        "./dist/auth"
       ],
       "data-access": [
-        "./projects/libs/data-access/src/public-api.ts"
+        "./dist/data-access"
       ],
       "domain": [
-        "./projects/libs/domain/src/public-api.ts"
+        "./dist/domain"
       ],
       "native": [
-        "./projects/libs/native/src/public-api.ts"
+        "./dist/native"
       ],
       "ui-kit": [
-        "./projects/libs/ui-kit/src/public-api.ts"
+        "./dist/ui-kit"
       ]
     }
   },
@@ -51,6 +66,18 @@
     },
     {
       "path": "./projects/vendi-portal/tsconfig.spec.json"
+    },
+    {
+      "path": "./projects/vendi-tenant/tsconfig.app.json"
+    },
+    {
+      "path": "./projects/vendi-tenant/tsconfig.spec.json"
+    },
+    {
+      "path": "./projects/vendi-admin/tsconfig.app.json"
+    },
+    {
+      "path": "./projects/vendi-admin/tsconfig.spec.json"
     },
     {
       "path": "./projects/libs/ui-kit/tsconfig.lib.json"

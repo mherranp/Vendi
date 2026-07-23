@@ -156,6 +156,158 @@
         }
       }
     },
+    "vendi-tenant": {
+      "projectType": "application",
+      "schematics": {
+        "@schematics/angular:component": {
+          "style": "scss"
+        }
+      },
+      "root": "projects/vendi-tenant",
+      "sourceRoot": "projects/vendi-tenant/src",
+      "prefix": "vd",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "projects/vendi-tenant/src/main.ts",
+            "tsConfig": "projects/vendi-tenant/tsconfig.app.json",
+            "inlineStyleLanguage": "scss",
+            "assets": [
+              {
+                "glob": "**/*",
+                "input": "projects/vendi-tenant/public"
+              }
+            ],
+            "styles": ["projects/vendi-tenant/src/styles.scss"]
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "500kB",
+                  "maximumError": "1MB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kB",
+                  "maximumError": "8kB"
+                }
+              ],
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "production": {
+              "buildTarget": "vendi-tenant:build:production"
+            },
+            "development": {
+              "buildTarget": "vendi-tenant:build:development"
+            }
+          },
+          "defaultConfiguration": "development"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test"
+        },
+        "lint": {
+          "builder": "@angular-eslint/builder:lint",
+          "options": {
+            "lintFilePatterns": [
+              "projects/vendi-tenant/**/*.ts",
+              "projects/vendi-tenant/**/*.html"
+            ],
+            "eslintConfig": "projects/vendi-tenant/eslint.config.js"
+          }
+        }
+      }
+    },
+    "vendi-admin": {
+      "projectType": "application",
+      "schematics": {
+        "@schematics/angular:component": {
+          "style": "scss"
+        }
+      },
+      "root": "projects/vendi-admin",
+      "sourceRoot": "projects/vendi-admin/src",
+      "prefix": "vd",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "projects/vendi-admin/src/main.ts",
+            "tsConfig": "projects/vendi-admin/tsconfig.app.json",
+            "inlineStyleLanguage": "scss",
+            "assets": [
+              {
+                "glob": "**/*",
+                "input": "projects/vendi-admin/public"
+              }
+            ],
+            "styles": ["projects/vendi-admin/src/styles.scss"]
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "500kB",
+                  "maximumError": "1MB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kB",
+                  "maximumError": "8kB"
+                }
+              ],
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "production": {
+              "buildTarget": "vendi-admin:build:production"
+            },
+            "development": {
+              "buildTarget": "vendi-admin:build:development"
+            }
+          },
+          "defaultConfiguration": "development"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test"
+        },
+        "lint": {
+          "builder": "@angular-eslint/builder:lint",
+          "options": {
+            "lintFilePatterns": [
+              "projects/vendi-admin/**/*.ts",
+              "projects/vendi-admin/**/*.html"
+            ],
+            "eslintConfig": "projects/vendi-admin/eslint.config.js"
+          }
+        }
+      }
+    },
     "ui-kit": {
       "projectType": "library",
       "root": "projects/libs/ui-kit",

@@ -33,9 +33,9 @@ module.exports = defineConfig([
         {
           patterns: [
             {
-              group: ['ui-kit', 'data-access', 'dexie', '@capacitor/*'],
+              group: ['ui-kit', 'dexie', '@capacitor/*'],
               message:
-                'auth maneja identidad y entitlements. Para abrir el navegador del sistema usa la fachada de native, no @capacitor/browser directo.',
+                'auth maneja identidad y entitlements. Puede usar data-access (la dependencia va auth → data-access). Para abrir el navegador del sistema usa la fachada de native, no @capacitor/browser directo.',
             },
           ],
         },

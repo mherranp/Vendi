@@ -1,6 +1,6 @@
 // @ts-check
 const { defineConfig } = require('eslint/config');
-const rootConfig = require('../../../eslint.config.js');
+const rootConfig = require('../../eslint.config.js');
 
 module.exports = defineConfig([
   ...rootConfig,
@@ -33,9 +33,9 @@ module.exports = defineConfig([
         {
           patterns: [
             {
-              group: ['ui-kit', 'auth', '@capacitor/*'],
+              group: ['@capacitor/*', 'dexie', 'data-access', 'native'],
               message:
-                'data-access no conoce la UI ni la sesión (la dependencia va auth → data-access, no al revés). El acceso a plataforma va por native.',
+                'La consola del tenant es web pura: sin plataforma nativa ni persistencia offline. Usa ui-kit, domain y auth.',
             },
           ],
         },
