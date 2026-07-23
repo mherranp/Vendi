@@ -54,10 +54,42 @@
   --vd-marca-950: #022c22;
 
   // -- Acentos semánticos ----------------------------------------------------
+  //
+  // Son colores de **relleno** (barras, iconos, bordes, puntos de estado): se
+  // usan como fondo o como grafismo, no como color de texto sobre un fondo
+  // claro de su mismo tono. Para eso están los pares de `--vd-insignia-*`.
   --vd-acento-exito: #10b981;
   --vd-acento-info: #0891b2;
   --vd-acento-aviso: #d97706;
   --vd-acento-error: #dc2626;
+
+  // -- Pares fondo/texto de las insignias de estado --------------------------
+  //
+  // Cada variante de `vd-status-badge` es un PAR, no un color suelto. Antes la
+  // insignia se pintaba con `color: var(--vd-acento-X)` sobre
+  // `color-mix(var(--vd-acento-X) 15%, transparent)`, es decir, el mismo tono
+  // como texto y como fondo: en claro daba **2.2:1**, menos de la mitad del
+  // 4.5:1 que exige WCAG AA para texto normal — y la insignia es texto de 12px
+  // en mayúsculas, el peor caso de legibilidad de toda la interfaz. Un tendero
+  // con presbicia y un mostrador a contraluz no lee eso.
+  //
+  // Los pares de abajo están medidos con la fórmula de WCAG 2.1 y todos superan
+  // 5:1 en ambos esquemas. La comprobación está automatizada:
+  //
+  //     cd frontend && npm run verificar:contraste
+  //
+  // Si tocas un valor de aquí, ese script te dice si sigue siendo legible antes
+  // de que lo descubra un usuario.
+  --vd-insignia-exito-fondo: #d1fae5;
+  --vd-insignia-exito-texto: #065f46; // 6.78:1
+  --vd-insignia-info-fondo: #cffafe;
+  --vd-insignia-info-texto: #155e75; // 6.49:1
+  --vd-insignia-aviso-fondo: #fef3c7;
+  --vd-insignia-aviso-texto: #92400e; // 6.37:1
+  --vd-insignia-peligro-fondo: #fee2e2;
+  --vd-insignia-peligro-texto: #991b1b; // 6.80:1
+  --vd-insignia-neutro-fondo: #e2e8f0;
+  --vd-insignia-neutro-texto: #334155; // 8.40:1
 
   // -- Superficies (derivadas de Material 3) ---------------------------------
   // El segundo valor es el respaldo para contextos donde `mat.theme()` no se
@@ -77,9 +109,14 @@
   // -- Texto -----------------------------------------------------------------
   --vd-texto-primario: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
   --vd-texto-secundario: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.6));
+  // 80%, no 70%. Al 70% el texto terciario daba **3.97:1** sobre la superficie
+  // clara de Material (#faf9fd), por debajo del 4.5:1 de WCAG AA; al 80% son
+  // 5.14:1 en claro y 7.29:1 en oscuro. Sigue siendo el nivel más tenue de la
+  // escala —que es su función— pero legible. Verificado por
+  // `npm run verificar:contraste`.
   --vd-texto-terciario: color-mix(
     in srgb,
-    var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.6)) 70%,
+    var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.6)) 80%,
     transparent
   );
   --vd-texto-marca: var(--vd-marca-700);
@@ -158,6 +195,21 @@
 
   --vd-texto-marca: var(--vd-marca-300);
   --vd-borde-marca: color-mix(in srgb, var(--vd-marca-300) 50%, transparent);
+
+  // Las insignias invierten el par: fondo profundo del mismo tono y texto
+  // claro. No basta con conmutar el fondo — un `#065f46` sobre `#064e3b` sería
+  // ilegible—, así que se conmutan los dos a la vez. Contrastes medidos, todos
+  // por encima de 5:1.
+  --vd-insignia-exito-fondo: #064e3b;
+  --vd-insignia-exito-texto: #6ee7b7; // 6.38:1
+  --vd-insignia-info-fondo: #164e63;
+  --vd-insignia-info-texto: #67e8f9; // 6.29:1
+  --vd-insignia-aviso-fondo: #78350f;
+  --vd-insignia-aviso-texto: #fcd34d; // 6.29:1
+  --vd-insignia-peligro-fondo: #7f1d1d;
+  --vd-insignia-peligro-texto: #fca5a5; // 5.28:1
+  --vd-insignia-neutro-fondo: #334155;
+  --vd-insignia-neutro-texto: #cbd5e1; // 6.97:1
 
   --vd-sombra-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --vd-sombra-md: 0 4px 12px rgba(0, 0, 0, 0.4);

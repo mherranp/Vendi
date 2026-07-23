@@ -1,0 +1,35 @@
+<section class="vd-elegir">
+  <h1>{{ 'elegir.titulo' | translate }}</h1>
+
+  @if (organizaciones().length === 0) {
+    <!--
+      Autenticado y sin ninguna organización en el token. Pasa de verdad: un
+      usuario recién creado al que nadie ha añadido todavía a un negocio, o un
+      token pedido sin el scope `organization:*`. Sin este caso, la lista
+      quedaría vacía y muda.
+    -->
+    <p>{{ 'elegir.sin_negocios' | translate }}</p>
+    <button matButton="filled" type="button" (click)="cerrarSesion()">
+      {{ 'layout.cerrar_sesion' | translate }}
+    </button>
+  } @else {
+    <p>{{ 'elegir.descripcion' | translate }}</p>
+    <!--
+      `mat-action-list` + `button`, no `mat-nav-list` + `a`: elegir un negocio
+      no navega a ninguna URL, es una acción. Con un `<a>` sin `href` el
+      elemento no es enfocable ni se activa con el teclado — quien use lector de
+      pantalla o no pueda usar el ratón se quedaría sin poder entrar a su propia
+      tienda.
+    -->
+    <mat-action-list>
+      @for (alias of organizaciones(); track alias) {
+        <button mat-list-item type="button" (click)="elegir(alias)">
+          <mat-icon matListItemIcon aria-hidden="true">storefront</mat-icon>
+          <span matListItemTitle
+            ><code>{{ alias }}</code></span
+          >
+        </button>
+      }
+    </mat-action-list>
+  }
+</section>

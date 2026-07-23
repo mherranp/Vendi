@@ -16,6 +16,7 @@ import { Observable, of } from 'rxjs';
 
 import { ApiService } from '../api.service';
 import { CATALOGO_MINIMO_ES, CatalogoTraducciones } from '../i18n/catalogo-minimo';
+import { proveerI18nVendi } from '../i18n/i18n.provider';
 import { Notificador } from '../notificaciones/notificador.service';
 import {
   SILENCIAR_AVISO_ERROR,
@@ -223,5 +224,50 @@ describe('errorInterceptor', () => {
     expect(notificador.ultimo()?.mensaje).toBe(
       'Tuvimos un problema. Vuelve a intentarlo en un momento.',
     );
+  });
+});
+
+/*
+ * Regresión: el interceptor NO puede romper la carga del catálogo.
+ *
+ * Defecto real, encontrado ejecutando `vendi-admin` en el navegador contra el
+ * stack: la consola pintaba `tenants.titulo`, `tenants.accion.crear` y
+ * `TENANTS.ESTADO.ACTIVO` crudos, y en el registro de red **no había ni una
+ * petición a `/i18n/es.json`**. Quitando este interceptor de la cadena, dos.
+ *
+ * La causa es un ciclo de inyección: `TranslateService` se construye → pide su
+ * catálogo al `TranslateLoader` → el cargador usa `HttpClient` → `HttpClient`
+ * ejecuta este interceptor → el interceptor pedía `TranslateService`, aún a
+ * medio construir. Angular corta el ciclo, la petición nunca sale y el
+ * `catchError` del cargador cae al catálogo empotrado: la app arranca "bien"
+ * pero sin las claves propias de la aplicación.
+ *
+ * Lo insidioso es que **no se ve en un spec de interceptor normal**: solo
+ * aparece cuando quien dispara la petición es el propio `TranslateService`. Por
+ * eso este test monta las dos piezas juntas.
+ */
+describe('errorInterceptor y el cargador de traducciones', () => {
+  it('la petición del catálogo llega a salir con el interceptor cableado', () => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(withInterceptors([errorInterceptor])),
+        provideHttpClientTesting(),
+        ...proveerI18nVendi(),
+      ],
+    });
+
+    const traductor = TestBed.inject(TranslateService);
+    const http = TestBed.inject(HttpTestingController);
+    traductor.use('es').subscribe();
+
+    // Antes del arreglo aquí no había ninguna petición pendiente.
+    const peticiones = http.match('/i18n/es.json');
+    expect(peticiones.length).toBeGreaterThan(0);
+    peticiones.forEach((r) => r.flush({ app: { titulo: 'Consola de plataforma' } }));
+
+    // Y el catálogo remoto se aplica de verdad, no solo el empotrado.
+    expect(traductor.instant('app.titulo')).toBe('Consola de plataforma');
+    http.verify();
   });
 });

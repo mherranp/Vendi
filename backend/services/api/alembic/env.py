@@ -25,7 +25,10 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # Importar los modelos registra sus tablas en `Base.metadata`, que es lo que
-# `--autogenerate` compara contra la base.
+# `--autogenerate` compara contra la base. Los de la propia API van también:
+# sin `Tenant` aquí, el siguiente `--autogenerate` propondría **borrar** la
+# tabla `tenants` por no encontrarla en el metadata.
+from app.modules.tenants.models import Tenant  # noqa: F401
 from vendi_core.audit.models import AuditLog  # noqa: F401
 from vendi_core.db.base import Base
 from vendi_core.files.models import File  # noqa: F401

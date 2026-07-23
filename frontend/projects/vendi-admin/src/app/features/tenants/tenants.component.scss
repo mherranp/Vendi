@@ -1,0 +1,18 @@
+:host {
+  display: block;
+}
+
+.vd-tenants__fallo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vd-espacio-4);
+  margin-bottom: var(--vd-espacio-4);
+  padding: var(--vd-espacio-3) var(--vd-espacio-4);
+  border: 1px solid var(--vd-insignia-peligro-texto);
+  border-radius: var(--vd-radio-md);
+  // Mismo par fondo/texto que la insignia de peligro: contraste verificado por
+  // `npm run verificar:contraste`, no un rojo elegido a ojo.
+  background: var(--vd-insignia-peligro-fondo);
+  color: var(--vd-insignia-peligro-texto);
+}

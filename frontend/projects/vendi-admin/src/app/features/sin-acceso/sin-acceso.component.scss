@@ -1,0 +1,21 @@
+.vd-sin-acceso {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--vd-espacio-4);
+  max-width: 32rem;
+  margin: var(--vd-espacio-16) auto;
+  text-align: center;
+
+  &__icono {
+    font-size: 3rem;
+    width: 3rem;
+    height: 3rem;
+    color: var(--vd-insignia-aviso-texto);
+  }
+
+  &__cuenta {
+    color: var(--vd-texto-terciario);
+    font-size: var(--vd-texto-sm);
+  }
+}

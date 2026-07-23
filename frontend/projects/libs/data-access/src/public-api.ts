@@ -32,6 +32,7 @@ export {
   CargadorDeTraduccionesResiliente,
   ESPERA_MAXIMA_CATALOGO_MS,
   IDIOMA_POR_DEFECTO,
+  fusionarCatalogos,
   proveerI18nVendi,
 } from './lib/i18n/i18n.provider';
 

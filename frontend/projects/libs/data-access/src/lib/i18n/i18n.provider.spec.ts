@@ -3,8 +3,24 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { TranslateService } from '@ngx-translate/core';
 
-import { CATALOGO_MINIMO_ES, textoDeRespaldo } from './catalogo-minimo';
-import { CargadorDeTraduccionesResiliente, proveerI18nVendi } from './i18n.provider';
+import { CATALOGO_MINIMO_ES, CatalogoTraducciones, textoDeRespaldo } from './catalogo-minimo';
+
+/** Lee una clave con notación de punto de un catálogo ya fusionado. */
+function enRuta(catalogo: CatalogoTraducciones, clave: string): string | null {
+  let nodo: string | CatalogoTraducciones | undefined = catalogo;
+  for (const parte of clave.split('.')) {
+    if (typeof nodo !== 'object' || nodo === null) return null;
+    nodo = nodo[parte];
+  }
+  return typeof nodo === 'string' ? nodo : null;
+}
+
+import {
+  CargadorDeTraduccionesResiliente,
+  fusionarCatalogos,
+  proveerI18nVendi,
+} from './i18n.provider';
+import { SILENCIAR_AVISO_ERROR } from '../interceptors/error.interceptor';
 import { traducir } from './traduccion';
 
 describe('textoDeRespaldo', () => {
@@ -40,13 +56,35 @@ describe('CargadorDeTraduccionesResiliente', () => {
     cargador = TestBed.inject(CargadorDeTraduccionesResiliente);
   });
 
-  it('pide el catálogo en /i18n/<idioma>.json y lo devuelve tal cual', () => {
-    let recibido: unknown;
-    cargador.getTranslation('es').subscribe((c) => (recibido = c));
+  it('pide el catálogo en /i18n/<idioma>.json y lo fusiona sobre el empotrado', () => {
+    let recibido: CatalogoTraducciones = {};
+    cargador.getTranslation('es').subscribe((c) => (recibido = c as CatalogoTraducciones));
     const req = http.expectOne('/i18n/es.json');
     expect(req.request.method).toBe('GET');
     req.flush({ app: { titulo: 'Vendi POS' } });
-    expect(recibido).toEqual({ app: { titulo: 'Vendi POS' } });
+
+    // Lo que trae el remoto manda…
+    expect(enRuta(recibido, 'app.titulo')).toBe('Vendi POS');
+    // …y lo que omite lo cubre el empotrado, en vez de desaparecer.
+    expect(enRuta(recibido, 'comun.reintentar')).toBe('Reintentar');
+    expect(enRuta(recibido, 'ui.validacion.requerido')).toBe('Este campo es obligatorio');
+  });
+
+  it('la fusión no muta el catálogo empotrado (es una constante compartida)', () => {
+    cargador.getTranslation('es').subscribe();
+    http.expectOne('/i18n/es.json').flush({ app: { titulo: 'Otro' }, nuevo: { clave: 'x' } });
+
+    expect(enRuta(CATALOGO_MINIMO_ES, 'app.titulo')).toBe('Vendi');
+    expect(CATALOGO_MINIMO_ES['nuevo']).toBeUndefined();
+  });
+
+  it('la petición del catálogo no dispara el aviso global de error', () => {
+    cargador.getTranslation('es').subscribe();
+    const req = http.expectOne('/i18n/es.json');
+    // Sin esto, un 404 del asset le saca al usuario un aviso rojo por algo que
+    // la app resuelve sola cayendo al catálogo empotrado.
+    expect(req.request.context.get(SILENCIAR_AVISO_ERROR)).toBe(true);
+    req.flush({});
   });
 
   it('ante un error de red devuelve el catálogo empotrado en vez de fallar', () => {
@@ -61,14 +99,37 @@ describe('CargadorDeTraduccionesResiliente', () => {
     http.expectOne('/i18n/es.json').error(new ProgressEvent('error'));
 
     expect(fallo).toBeUndefined();
-    expect(recibido).toBe(CATALOGO_MINIMO_ES);
+    expect(recibido).toEqual(CATALOGO_MINIMO_ES);
   });
 
   it('ante un 404 (despliegue sin el asset) también devuelve el empotrado', () => {
     let recibido: unknown;
     cargador.getTranslation('es').subscribe((c) => (recibido = c));
     http.expectOne('/i18n/es.json').flush('no such file', { status: 404, statusText: 'Not Found' });
-    expect(recibido).toBe(CATALOGO_MINIMO_ES);
+    expect(recibido).toEqual(CATALOGO_MINIMO_ES);
+  });
+});
+
+describe('fusionarCatalogos', () => {
+  it('lo de encima gana clave a clave y lo de abajo rellena', () => {
+    const base = { a: '1', anidado: { x: 'base-x', y: 'base-y' } };
+    const encima = { anidado: { y: 'nuevo-y', z: 'nuevo-z' } };
+    expect(fusionarCatalogos(base, encima)).toEqual({
+      a: '1',
+      anidado: { x: 'base-x', y: 'nuevo-y', z: 'nuevo-z' },
+    });
+  });
+
+  it('no muta ninguno de los dos operandos', () => {
+    const base = { anidado: { x: 'base-x' } };
+    const encima = { anidado: { y: 'nuevo-y' } };
+    fusionarCatalogos(base, encima);
+    expect(base).toEqual({ anidado: { x: 'base-x' } });
+    expect(encima).toEqual({ anidado: { y: 'nuevo-y' } });
+  });
+
+  it('un catálogo remoto vacío deja el empotrado intacto', () => {
+    expect(fusionarCatalogos({ a: '1' }, {})).toEqual({ a: '1' });
   });
 });
 

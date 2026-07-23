@@ -17,7 +17,8 @@
     "eliminar": "Eliminar",
     "buscar": "Buscar",
     "cerrar": "Cerrar",
-    "guardar": "Guardar"
+    "guardar": "Guardar",
+    "reintentar": "Reintentar"
   },
   "errores": {
     "sin_conexion": "Sin conexión. Revisa tu red e inténtalo de nuevo.",
@@ -54,5 +55,10 @@
       "formato": "El formato no es válido",
       "invalido": "Valor inválido"
     }
+  },
+  "portal": {
+    "lema": "El punto de venta para las tiendas de barrio de Colombia",
+    "descripcion": "Vendi te ayuda a vender más rápido y a saber siempre qué tienes en el mostrador.",
+    "entrar": "Entrar a mi negocio"
   }
 }

@@ -15,16 +15,31 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
-  # La API expone /metrics vía prometheus-fastapi-instrumentator (se cablea en
-  # la tarea 4.1). Hasta entonces este target aparece como `up == 0`, que es
-  # información honesta: el endpoint todavía no existe.
+  # La API expone /metrics CON credencial: la ruta no es pública. Estuvo en
+  # RUTAS_PUBLICAS mientras no había endpoint que montar, y montarla así habría
+  # sido un agujero — el router `api` de Traefik enruta por Host, no por path,
+  # de modo que la exposición entera habría quedado servida en
+  # https://api.<dominio>/metrics sin credencial.
+  #
+  # El archivo de credencial lo escribe el entrypoint del contenedor a partir
+  # de METRICS_TOKEN: Prometheus no expande variables de entorno en su
+  # configuración, así que la credencial tiene que llegar por archivo.
+  #
+  # El scrape va por el nombre de servicio de la red del compose, no por el
+  # dominio: es tráfico interno que no pasa por el borde. De hecho Traefik
+  # responde 403 a /metrics desde fuera a propósito (router
+  # `api-metrics-bloqueado`).
   - job_name: vendi-api
     metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /tmp/metrics-token
     static_configs:
       - targets: ["api:8000"]
 
-  # El worker publicará su servidor lateral de métricas con el dispatcher real
-  # (tarea 4.3). Mismo razonamiento que arriba.
+  # El worker publica su servidor lateral de métricas en el puerto 9090 (ver
+  # services/worker/worker/__main__.py). Sin credencial: ese puerto no lo
+  # enruta Traefik y solo existe dentro de la red del compose.
   - job_name: vendi-worker
     metrics_path: /metrics
     static_configs:

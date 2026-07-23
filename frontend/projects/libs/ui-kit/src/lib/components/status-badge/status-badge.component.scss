@@ -4,29 +4,39 @@
   padding: var(--vd-espacio-1) var(--vd-espacio-3);
   border-radius: var(--vd-radio-completo);
   font-size: var(--vd-texto-xs);
-  font-weight: 500;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   line-height: 1;
+  // Borde del mismo tono que el texto, tenue: señal redundante para WCAG 1.4.1
+  // (el color no puede ser el único portador de información) y separación de la
+  // insignia respecto al fondo cuando ambos son claros.
+  border: 1px solid currentcolor;
 
+  // Cada variante fija el PAR fondo/texto declarado en
+  // `ui-kit/theme/_tokens.scss`, que conmuta entero con el esquema de color.
+  // Antes esto era `color: var(--vd-acento-X)` sobre un `color-mix()` del mismo
+  // tono al 15%: 2.2:1 de contraste en claro, menos de la mitad del mínimo AA
+  // para un texto de 12px en mayúsculas. Ver el comentario largo junto a los
+  // tokens y `npm run verificar:contraste`.
   &--exito {
-    background: color-mix(in srgb, var(--vd-acento-exito) 15%, transparent);
-    color: var(--vd-acento-exito);
+    background: var(--vd-insignia-exito-fondo);
+    color: var(--vd-insignia-exito-texto);
   }
   &--info {
-    background: color-mix(in srgb, var(--vd-acento-info) 15%, transparent);
-    color: var(--vd-acento-info);
+    background: var(--vd-insignia-info-fondo);
+    color: var(--vd-insignia-info-texto);
   }
   &--aviso {
-    background: color-mix(in srgb, var(--vd-acento-aviso) 15%, transparent);
-    color: var(--vd-acento-aviso);
+    background: var(--vd-insignia-aviso-fondo);
+    color: var(--vd-insignia-aviso-texto);
   }
   &--peligro {
-    background: color-mix(in srgb, var(--vd-acento-error) 15%, transparent);
-    color: var(--vd-acento-error);
+    background: var(--vd-insignia-peligro-fondo);
+    color: var(--vd-insignia-peligro-texto);
   }
   &--neutro {
-    background: var(--vd-superficie-2);
-    color: var(--vd-texto-secundario);
+    background: var(--vd-insignia-neutro-fondo);
+    color: var(--vd-insignia-neutro-texto);
   }
 }

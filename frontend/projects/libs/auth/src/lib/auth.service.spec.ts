@@ -7,12 +7,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // vitest eleva `vi.mock` al principio del archivo, así que la fábrica no puede
 // depender de imports de nivel superior: se carga el doble de forma perezosa.
 vi.mock('keycloak-js', async () => {
-  const mod = await import('./keycloak.fake');
+  const mod = await import('../../testing/src/lib/keycloak.fake');
   return { default: mod.KeycloakFake };
 });
 
 import { AuthService, SCOPE_ORGANIZACIONES } from './auth.service';
-import { KeycloakFake, ORG_POR_DEFECTO } from './keycloak.fake';
+import { KeycloakFake, ORG_POR_DEFECTO } from '../../testing/src/lib/keycloak.fake';
 
 const ORG_B = '2c9f1e5f-9a4b-4d3c-8e6f-3a7b8c9d0e1f';
 

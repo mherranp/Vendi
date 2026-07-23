@@ -54,9 +54,41 @@ http:
         sourceCriterion:
           ipStrategy:
             depth: 1
+    # Deniega SIEMPRE. `ipAllowList` con un rango que ninguna dirección puede
+    # tener (240.0.0.0/4 es «reservado para uso futuro», RFC 1112 §4) responde
+    # 403 a todo el mundo sin excepción posible. Traefik no tiene un middleware
+    # «deny» explícito y este es el idiom equivalente; se documenta aquí porque
+    # el rango parece arbitrario y no lo es.
+    denegar-todo:
+      ipAllowList:
+        sourceRange:
+          - "240.0.0.0/4"
 
   routers:
     # --- API ---
+    # El router de `/metrics` va PRIMERO por claridad; el orden real lo decide
+    # Traefik por longitud de regla, y `Host(...) && PathPrefix(...)` es más
+    # larga que `Host(...)`, así que gana esta.
+    #
+    # POR QUÉ EXISTE: el router `api` enruta por Host, no por path, de modo que
+    # todo lo que sirva la aplicación queda publicado bajo
+    # `https://api.${BASE_DOMAIN}/...`, incluida la exposición de Prometheus.
+    # Esa exposición lleva el mapa de rutas internas, los contadores de error
+    # por endpoint y —en cuanto haya métricas por negocio— identificadores de
+    # negocio. Prometheus la raspa por dentro de la red del compose
+    # (`http://api:8000/metrics`), así que no necesita salir por el borde: aquí
+    # se cierra.
+    #
+    # Es la primera de dos capas. La segunda es la credencial que exige la
+    # propia ruta (`METRICS_TOKEN`, ver backend/services/api/app/metrics.py):
+    # el borde protege el perímetro, la credencial protege dentro de él.
+    api-metrics-bloqueado:
+      rule: "Host(`api.${BASE_DOMAIN}`) && PathPrefix(`/metrics`)"
+      entryPoints: [websecure]
+      service: api
+      middlewares: [denegar-todo]
+      tls: ${TLS_OPCIONES}
+
     api:
       rule: "Host(`api.${BASE_DOMAIN}`)"
       entryPoints: [websecure]

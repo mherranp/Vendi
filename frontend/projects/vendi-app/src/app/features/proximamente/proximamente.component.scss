@@ -1,0 +1,28 @@
+.vd-proximamente {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--vd-espacio-4);
+  min-height: 100dvh;
+  padding: var(--vd-espacio-8);
+  text-align: center;
+
+  &__marca {
+    margin: 0;
+    font-size: var(--vd-texto-4xl);
+    color: var(--vd-texto-marca);
+  }
+
+  &__mensaje {
+    margin: 0;
+    font-size: var(--vd-texto-xl);
+    color: var(--vd-texto-primario);
+  }
+
+  &__detalle {
+    margin: 0;
+    max-width: 32rem;
+    color: var(--vd-texto-secundario);
+  }
+}

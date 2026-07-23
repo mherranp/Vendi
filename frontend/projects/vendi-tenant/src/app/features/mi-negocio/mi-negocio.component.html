@@ -1,0 +1,56 @@
+<vd-page-header titulo="negocio.titulo" subtitulo="negocio.subtitulo" />
+
+@if (cargando()) {
+  <vd-loading-spinner />
+} @else if (fallo()) {
+  <div class="vd-negocio__fallo" role="alert">
+    <span>{{ 'negocio.fallo' | translate }}</span>
+    <button matButton type="button" (click)="cargar()">{{ 'comun.reintentar' | translate }}</button>
+  </div>
+} @else if (negocio(); as tenant) {
+  <mat-card class="vd-negocio__ficha">
+    <mat-card-header>
+      <mat-card-title>{{ tenant.nombre }}</mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      <dl class="vd-negocio__datos">
+        <dt>{{ 'negocio.campo.estado' | translate }}</dt>
+        <dd>
+          <vd-status-badge
+            [etiqueta]="etiquetaDeEstado(tenant.estado)"
+            [variante]="varianteDeEstado(tenant.estado)"
+          />
+        </dd>
+
+        <dt>{{ 'negocio.campo.id' | translate }}</dt>
+        <dd>
+          <code>{{ tenant.id }}</code>
+        </dd>
+
+        <!--
+          El identificador que trae el token, al lado del que devuelve la API.
+          Son dos fuentes distintas: si dejaran de coincidir, aquí se ve.
+        -->
+        <dt>{{ 'negocio.campo.id_del_token' | translate }}</dt>
+        <dd>
+          <code>{{ tenantDelToken() ?? '—' }}</code>
+        </dd>
+      </dl>
+
+      @if (tenant.estado === 'suspendido') {
+        <p class="vd-negocio__aviso" role="status">
+          {{ 'errores.tenant_suspendido' | translate }}
+        </p>
+      }
+    </mat-card-content>
+
+    @if (organizaciones().length > 1) {
+      <mat-card-actions>
+        <button matButton type="button" (click)="cambiarDeNegocio()">
+          <mat-icon aria-hidden="true">swap_horiz</mat-icon>
+          {{ 'negocio.cambiar' | translate }}
+        </button>
+      </mat-card-actions>
+    }
+  </mat-card>
+}

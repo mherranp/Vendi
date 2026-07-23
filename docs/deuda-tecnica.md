@@ -13,7 +13,6 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 | D-02 | `manage-realm` en Keycloak (mitigado en la Etapa 3: partido en dos clientes) | Fase 1 (o cuando Keycloak permita acotar Organizations) | backend |
 | D-03 | El realm es semilla, no estado deseado continuo | Fase 1 | backend |
 | D-04 | Keycloak arranca sin `--optimized` en producción | Etapa 5 (imagen propia) | backend |
-| D-05 | La policy de INSERT del outbox solo acota `tenant_id`; `routing_key` y `payload` van sin restringir | Tarea 4.3 (antes de arrancar el dispatcher) | backend |
 
 > Runbooks operativos relacionados: el procedimiento completo de respaldo y
 > restauración (qué se vuelca, qué NO, y cómo se promueve una copia a base
@@ -269,34 +268,97 @@ Keycloak de Vendi. Entonces aquí van `image:` propia y `start --optimized`.
 
 ---
 
-## D-05 · La policy de INSERT del outbox no restringe `routing_key` ni `payload`
+## D-06 · `alembic_version` escribible por `vendi_app` e invisible a los dos candados
 
-**Qué es.** Medido por el QA de la Etapa 3 con sonda real: una sesión de
-`vendi_app` con el GUC del negocio A puede encolar
-`routing_key='<B>.venta.creada'` y `payload={'tenant_id': '<B>'}` — la policy
-`outbox_encolado_del_tenant` pasa porque la **columna** `tenant_id` es la
-propia, pero lo que viaja al bus no lo es. `OutboxDispatcher._dispatch_batch`
-publica `msg.routing_key` y `msg.payload` literalmente, así que un consumidor
-ligado a `<B>.#` recibiría un evento originado en la sesión de A.
+**Qué es.** Medido por el QA de la Etapa 4: `vendi_app` conserva
+SELECT/INSERT/UPDATE/DELETE sobre `alembic_version` (un `UPDATE version_num`
+dentro de una transacción funcionó). Ni el candado de tablas de plataforma
+(`test_rls_coverage.py`, que enumera nombres concretos) ni el de cobertura RLS
+(que solo mira tablas con columna `tenant_id`) la ven. Es el mismo agujero que
+la migración 0002 documenta y cierra para `tenants`, dejado abierto en la tabla
+que decide qué DDL se ha aplicado.
 
-**Por qué es tolerable hoy.** No existe todavía ningún handler que encole (el
-dispatcher arranca en la tarea 4.3) y explotarlo exige código de la API
-equivocado o malicioso — el mismo nivel de confianza que ya se concede al
-handler. Pero la policy existe precisamente como defensa contra el handler
-equivocado, y un `routing_key` mal construido es tan plausible como un
-`tenant_id` mal pasado.
+**Vencimiento: Etapa 5.** REVOKE en una migración nueva + añadir
+`alembic_version` a la lista del candado (o mejor: invertir el candado para que
+enumere las tablas que `vendi_app` SÍ puede tocar y falle ante cualquier otra).
 
-**Vencimiento: tarea 4.3, antes de arrancar el `OutboxDispatcher`.** Cualquiera
-de las dos mitigaciones, ambas baratas:
+---
 
-1. El dispatcher deriva la clave de enrutado de `msg.tenant_id` (la columna, ya
-   defendida por la policy) en vez de confiar en `routing_key`. **Preferida:**
-   cierra también el payload como fuente de enrutado.
-2. Ampliar el `WITH CHECK` a `routing_key LIKE tenant_id::text || '.%'` para los
-   mensajes con `tenant_id` no nulo.
+## D-07 · La columna `exchange` del outbox sigue sin defensa (resto de D-05)
 
-Con test que encole con clave ajena y demuestre que el evento **no** llega a la
-cola del otro negocio.
+**Qué es.** La mitigación de D-05 cubre `routing_key` y `payload`, pero la
+policy tampoco acota `exchange` y el dispatcher lo usa literalmente en
+`declare_exchange`. Medido por el QA: una fila insertada con `vendi_app` y
+`exchange='amq.direct'` llevó al worker a intentar declarar ese exchange
+(PRECONDITION_FAILED ×5 → `failed`); con un nombre nuevo lo habría **creado**.
+Atenuante medido: no bloquea la cabecera de línea (el mensaje honesto posterior
+se publicó igual).
+
+**Vencimiento: Etapa 5.** Misma receta que D-05: el dispatcher ignora
+`msg.exchange` y publica siempre en el exchange configurado del worker (o
+valida contra una lista blanca), con test de dos exchanges reales.
+
+---
+
+## D-08 · El claim `groups` no se emite; `has_role()`/`require_role()` son inertes
+
+**Qué es.** Token real de `dueno@demo.vendi.co`: `groups: None`. Ningún mapper
+de grupo está en los default client scopes del realm. Los permisos llegan por
+`realm_access.roles` (funciona), pero `UserContext.groups`, `has_role()` y
+`require_role()` no ven nada. No se arregló en la Etapa 4 porque
+`vendi-provisioning` no puede gestionar client scopes (403 medido en
+`/client-scopes`) y tocar `realm-vendi-co.json` sin poder aplicarlo al realm
+vivo crea justo la deriva de D-03. Relacionado: el seed no crea los roles de
+negocio del plan (`dueno`, `cajero`, `almacenista`); el usuario demo lleva
+`tenant:read`, `tenant:update`, `audit:read`.
+
+**Vencimiento: Etapa 5** (decisión de infra: mapper de grupos en el realm JSON
++ re-import controlado, o retirar `groups` de `UserContext`).
+
+---
+
+## Cerradas en la Etapa 4
+
+### D-05 · La policy de INSERT del outbox no restringía `routing_key` ni `payload`
+
+**Qué era.** Medido por el QA de la Etapa 3 con sonda real: la policy
+`outbox_encolado_del_tenant` solo acota la **columna** `tenant_id`. Una sesión
+de `vendi_app` con el GUC del negocio A podía encolar legalmente una fila con
+`tenant_id = A` y `routing_key = '<B>.venta.creada'`, y `payload` diciendo ser
+de B. `OutboxDispatcher` publicaba `msg.routing_key` y `msg.payload`
+literalmente, así que un consumidor ligado a `<B>.#` recibía un evento originado
+en A.
+
+**Cómo se cerró.** La primera de las dos mitigaciones propuestas, que es la que
+cierra también el payload: el dispatcher **deriva** la clave de enrutado de
+`msg.tenant_id` —la columna, que sí está defendida por la policy— en vez de
+confiar en el texto almacenado, y reescribe el campo `tenant_id` del payload con
+el mismo valor. Lo que aporta el llamante es solo el sufijo (el nombre del
+evento), que no decide destinatario.
+
+El primer segmento se descarta **solo si tiene forma de prefijo** (un UUID o el
+literal `plataforma`, las dos únicas cosas que `DomainEventService.emit` puede
+haber puesto ahí). Descartarlo a ciegas convertiría `venta.creada` en
+`<tenant>.creada` y rompería el enrutado de los consumidores honestos mientras
+intenta protegerlos.
+
+Para el código correcto la derivación es un no-op; para el equivocado es un
+candado. Implementación: `vendi_core.messaging.outbox.derivar_clave_de_enrutado`
+y `_payload_saneado`. Cuando la clave almacenada y la derivada difieren, se
+registra `outbox_clave_de_enrutado_corregida` con las dos, de modo que un
+handler mal escrito se ve en el log en vez de fallar en silencio.
+
+**Candados.** `backend/tests/worker/test_outbox_dispatch.py`:
+
+- `test_la_clave_se_deriva_de_la_columna_tenant_id` — la tabla de casos.
+- `test_una_clave_de_enrutado_ajena_no_llega_al_otro_negocio` — encola con el
+  rol `vendi_app` y el GUC de A pero con la clave y el payload de B, contra el
+  PostgreSQL y el RabbitMQ del compose, con **dos colas reales**, y afirma que
+  el mensaje sale por `A.#` y nunca por `B.#`.
+
+**Resto abierto.** La columna `exchange` quedó fuera de esta mitigación:
+ver **D-07**.
+
 
 ---
 

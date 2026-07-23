@@ -46,6 +46,23 @@ export interface Tenant {
 }
 
 /**
+ * El tenant **tal como llega por el cable**, con `estado` sin estrechar.
+ *
+ * Existe porque `Tenant.estado` es una unión cerrada y el JSON de la API no lo
+ * es: el día que el backend añada `en_mora`, un `as Tenant` haría que
+ * TypeScript jurara que el valor es uno de los tres conocidos y el `switch` de
+ * la insignia caería en una rama equivocada sin que nadie se entere.
+ *
+ * La regla en las apps: se recibe `TenantDeApi`, y solo se estrecha a
+ * `EstadoTenant` pasando por `esEstadoTenant()`. Un estado desconocido se
+ * pinta en neutro con su texto crudo —que es información útil para quien
+ * administra— en vez de disfrazarse de "activo".
+ */
+export interface TenantDeApi extends Omit<Tenant, 'estado'> {
+  estado: string;
+}
+
+/**
  * ¿El estado recibido por HTTP es uno de los que conocemos?
  *
  * Guarda de tipo para no confiar en que el backend y el frontend evolucionen a

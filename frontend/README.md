@@ -46,6 +46,34 @@ npm run build:libs && npx ng test ui-kit --watch=false
 
 Cada app tiene un puerto propio para que se puedan levantar varias en paralelo.
 
+### Qué contiene cada app en Fase 0
+
+- **`vendi-admin`** — login PKCE contra el cliente `vendi-admin` del realm
+  `vendi-co`, shell con `FullLayoutComponent` y el CRUD de negocios
+  (`/negocios`). El permiso de entrada es `platform:admin`; quien entra
+  autenticado y sin él aterriza en `/sin-acceso`, **no** en una consola vacía
+  (una tabla sin filas afirmaría que la plataforma no tiene negocios).
+- **`vendi-tenant`** — login PKCE contra el cliente `vendi-web`. El realm está
+  configurado como passwordless por passkey (`browserFlow:
+browser-passwordless`), así que el flujo de passkey es del IdP y aquí no hay
+  nada que activar. Página "Mi negocio" (`GET /tenants/me`) y selector para el
+  dueño con más de un negocio (`/elegir-negocio`, al que redirige `tenantGuard`).
+- **`vendi-app`** — pantalla única "próximamente" y **sin login**. No es una
+  tarea pendiente: la auth móvil es el subproyecto 2, porque el login tiene que
+  salir al navegador del sistema (los passkeys no funcionan dentro del WebView
+  de Capacitor) y eso depende de la fachada de `native`. Lo que sí demuestra en
+  Fase 0 es el criterio 4: `ng build vendi-app && npx cap sync android &&
+./gradlew bundleDebug` produce un `.aab`. Un spec vigila que no se cuele un
+  guard de sesión antes de traer el flujo correcto.
+- **`vendi-portal`** — página pública única con el enlace a la consola del
+  negocio. Sin captación ni precios: la monetización es el subproyecto 4.
+
+Ojo: en Fase 0 las apps **no** se sirven por Traefik. Los routers de
+`infra/traefik/templates/dynamic.yml.tpl` están comentados a la espera de que
+exista `frontend/Dockerfile` (Etapa 5), así que en desarrollo se sirven con
+`ng serve` en los puertos de arriba, que son los `redirect_uri` registrados en
+el realm.
+
 ## Librerías
 
 | Lib           | Responsabilidad                                                                                       |
@@ -101,9 +129,9 @@ vuelve a probar **las cinco formas** antes de darlo por bueno.
 
 Cada app tiene dos archivos en `src/environments/`:
 
-| Archivo                      | Cuándo se usa                                   | Qué apunta      |
-| ---------------------------- | ----------------------------------------------- | --------------- |
-| `environment.ts`             | Configuración `production` (la **por defecto**) | `*.vendi.co`    |
+| Archivo                      | Cuándo se usa                                   | Qué apunta   |
+| ---------------------------- | ----------------------------------------------- | ------------ |
+| `environment.ts`             | Configuración `production` (la **por defecto**) | `*.vendi.co` |
 | `environment.development.ts` | Configuración `development` (`npm run start:*`) | `*.vendi.co` |
 
 El intercambio lo hace `fileReplacements` en la configuración `development` de
@@ -181,11 +209,40 @@ Etapa 3:
 - `traducir()` cierra el último hueco: `TranslateService.instant()` devuelve la
   **clave** cuando no la encuentra, y un tendero no debe leer `errores.servidor`.
   El helper cae al catálogo mínimo antes de rendirse.
+- **El catálogo remoto se FUSIONA sobre el empotrado, no lo sustituye** (Etapa
+  4). Antes se devolvía el `es.json` de la app tal cual, así que bastaba con que
+  a un `es.json` le faltara una clave del catálogo empotrado —el caso real de
+  `comun.reintentar` en las cuatro apps— para que el pipe `| translate` pintara
+  la clave cruda con el catálogo cargado correctamente: la red de seguridad solo
+  actuaba cuando el HTTP fallaba, que es justo cuando menos falta hacía. Con la
+  fusión, el `es.json` de cada app solo tiene que declarar **lo suyo** y lo que
+  quiera sobrescribir; el resto lo cubre `CATALOGO_MINIMO_ES` por debajo.
 
 **Regla de PR:** ninguna cadena visible se escribe a mano en un template, ni en
 las apps ni —sobre todo— en las librerías. Todo texto de interfaz pasa por el
 pipe `translate` y vive en un catálogo. Una librería que devuelva español
 literal es intraducible desde fuera y bloquea la expansión regional.
+
+### Contraste: los tokens de color están bajo candado
+
+Las insignias de estado (`vd-status-badge`) se pintaban con el mismo tono como
+texto y como fondo (`color-mix(--vd-acento-X 15%, transparent)`), lo que daba
+**2.2:1** en claro: menos de la mitad del 4.5:1 que exige WCAG 2.1 AA, y sobre
+un texto de 12 px en mayúsculas. `--vd-texto-terciario` daba 3.97:1 por el mismo
+motivo. Ahora cada variante es un **par** fondo/texto que conmuta entero con el
+esquema de color, y el texto terciario se compone al 80 % en vez del 70 %.
+
+Que no vuelva a ocurrir lo vigila `scripts/verificar-contraste.mjs`, que parsea
+`_tokens.scss` —el archivo real, no una copia— y calcula la razón de contraste
+de cada par en claro y en oscuro:
+
+```bash
+npm run verificar:contraste
+```
+
+No es un spec de vitest porque el runner (esbuild) no tiene cargador para
+`.scss`: un test solo podría llevar una copia de los valores, que es exactamente
+la segunda fuente de verdad que hace inútil al candado.
 
 ## Tema y tokens de diseño
 
@@ -269,6 +326,7 @@ npm test -- --watch=false # ejecuta la suite de los nueve proyectos
 npm run lint              # lint de los nueve proyectos, incluidas las fronteras ADR-011
 npm run format:check      # verifica el formato (prettier); `npm run format` lo corrige
 npm run codegen:api       # regenera el cliente tipado de la API
+npm run verificar:contraste  # candado WCAG AA sobre los tokens de color de ui-kit
 ```
 
 ### Móvil (Capacitor 8)

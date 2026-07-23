@@ -2,20 +2,27 @@
 # =============================================================================
 # seed.sh
 #
-# Siembra de desarrollo, idempotente. Lo que hará cuando esté completo
-# (tarea 4.4 del plan de Fase 0):
+# Siembra de desarrollo, idempotente. Deja montado:
 #
-#   - roles y grupos de realm: dueno, cajero, almacenista + los permisos de
-#     policies.py (no están en el realm como código a propósito: --import-realm
-#     no vuelve a ejecutarse sobre un realm existente, ver infra/keycloak/README.md)
-#   - usuario admin@vendi.co con el permiso platform:admin
-#   - un tenant de demostración "Tienda Don Carlos" creado VÍA LA API, para que
-#     pase por el mismo camino de provisionamiento que producción (fila en
-#     `tenants` + organización en Keycloak con alias = tenant_id)
-#   - un usuario dueno@demo.vendi.co, miembro de esa organización
+#   - los permisos de Vendi como roles de realm (policies.py) y los roles de
+#     negocio (dueno, cajero, almacenista) como grupos de Keycloak con sus
+#     permisos mapeados. NO están en el realm como código a propósito:
+#     --import-realm no se vuelve a ejecutar sobre un realm existente, así que
+#     el realm JSON es semilla y no estado deseado (D-03).
+#   - el usuario admin@vendi.co con el permiso platform:admin y SIN ninguna
+#     organización: es empleado de Vendi, no dueño de un negocio.
+#   - el negocio de demostración «Tienda Don Carlos» con su organización de
+#     Keycloak (alias = tenant_id), creado por el MISMO servicio de
+#     aprovisionamiento que usa la consola.
+#   - el usuario dueno@demo.vendi.co, en el grupo `dueno` y miembro de esa
+#     organización.
 #
-# Estado actual: el módulo `tenants` de la API no existe todavía (tarea 4.2),
-# así que este script falla limpio en vez de fingir que sembró algo.
+# CORRERLO DOS VECES ES UN NO-OP LIMPIO. Cada paso comprueba antes de crear.
+#
+# La lógica vive en backend/services/api/app/scripts/seed.py y se ejecuta
+# DENTRO del contenedor de la API: así usa exactamente el mismo código, la
+# misma configuración y los mismos DSN que sirve producción, en vez de una
+# reimplementación en bash que se desincroniza en cuanto cambie el modelo.
 # =============================================================================
 
 set -euo pipefail
@@ -48,12 +55,18 @@ if [[ -f "${REPO_ROOT}/.env" ]]; then
 fi
 BASE_DOMAIN="${BASE_DOMAIN:-vendi.co}"
 
-if [[ ! -d "${REPO_ROOT}/backend/services/api/app/modules/tenants" ]]; then
-    error "La API todavía no tiene el módulo 'tenants' (llega con la tarea 4.2 del plan de Fase 0). No hay nada que sembrar."
-fi
+: "${SEED_ADMIN_PASSWORD:?falta SEED_ADMIN_PASSWORD; copia .env.example a .env}"
+: "${SEED_DUENO_PASSWORD:?falta SEED_DUENO_PASSWORD; copia .env.example a .env}"
 
-info "Asegurando que la API y Keycloak están arriba..."
-"${COMPOSE[@]}" up -d api keycloak
+info "Asegurando que postgres, la API y Keycloak están arriba..."
+"${COMPOSE[@]}" up -d postgres api keycloak
+
+# Las migraciones son requisito, no cortesía: sin la tabla `tenants` la siembra
+# reventaría a mitad, dejando el realm sembrado y la base no.
+if ! "${COMPOSE[@]}" exec -T postgres psql -U "${POSTGRES_USER:-postgres}" -d vendi -tAc \
+        "SELECT to_regclass('public.tenants')" 2>/dev/null | grep -q '^tenants$'; then
+    error "La tabla 'tenants' no existe. Ejecuta primero: bash scripts/migrate.sh"
+fi
 
 info "Esperando a /health de la API..."
 INTENTOS=60
@@ -68,6 +81,17 @@ for i in $(seq 1 "${INTENTOS}"); do
 done
 
 info "Ejecutando la siembra..."
-"${COMPOSE[@]}" exec -T api uv run --project /src --no-sync python -m app.scripts.seed
+# Las contraseñas se pasan con -e y no viven en el entorno del servicio: el
+# contenedor de la API no tiene por qué llevarlas puestas el 100% del tiempo
+# solo para que un script las use durante un minuto.
+"${COMPOSE[@]}" exec -T \
+    -e SEED_ADMIN_PASSWORD="${SEED_ADMIN_PASSWORD}" \
+    -e SEED_DUENO_PASSWORD="${SEED_DUENO_PASSWORD}" \
+    api uv run --project /src --no-sync python -m app.scripts.seed
 
-success "Siembra completa. Entra en https://app.${BASE_DOMAIN}"
+success "Siembra completa."
+echo ""
+echo "  Consola de plataforma  : https://admin.${BASE_DOMAIN}   admin@vendi.co"
+echo "  Aplicación del negocio : https://app.${BASE_DOMAIN}     dueno@demo.vendi.co"
+echo "  Negocio de demostración: «Tienda Don Carlos»"
+echo ""

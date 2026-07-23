@@ -16,7 +16,10 @@
  * realm `vendi-co` (`alias = str(tenant_id)`).
  */
 import type { KeycloakTokenParsed } from 'keycloak-js';
-import type { ClaimOrganizacion, VendiTokenParsed } from './token';
+// Import **de solo tipos**: se borra al compilar, así que este punto de entrada
+// no adquiere ninguna dependencia en tiempo de ejecución con el barril `auth`
+// —que es precisamente lo que crearía el ciclo con `keycloak-js`—.
+import type { ClaimOrganizacion, VendiTokenParsed } from 'auth';
 
 export interface PerfilFalso {
   username?: string;
@@ -41,6 +44,22 @@ export class KeycloakFake {
    * el prototipo solo para capturar `this`.
    */
   static ultimaInstancia: KeycloakFake | undefined = undefined;
+
+  /**
+   * Token que recibirá la **próxima** instancia construida, y perfil que
+   * devolverá su `loadUserProfile()`.
+   *
+   * `AuthService` construye el `Keycloak` dentro de `init()`, así que un spec
+   * no tiene ningún hueco entre el `new` y la lectura del claim donde meter el
+   * token que quiere probar. Sembrarlo antes de llamar a `init()` evita que
+   * cada app tenga que parchear el prototipo para conseguirlo, que era el
+   * motivo por el que las consolas acabaron escribiendo dobles de
+   * `AuthService` a mano en vez de usar éste.
+   *
+   * Se consume en el constructor: cada siembra vale para un solo arranque.
+   */
+  static siguienteToken: VendiTokenParsed | undefined = undefined;
+  static siguientePerfil: PerfilFalso | undefined = undefined;
 
   // ---------- Superficie que lee AuthService ----------
   authenticated = false;
@@ -96,6 +115,16 @@ export class KeycloakFake {
   constructor(configuracion: unknown) {
     // El constructor real guarda configuración y no hace E/S: se imita.
     this.configuracion = configuracion;
+    // Se consume la siembra: vale para un solo arranque, así que un segundo
+    // `init()` en el mismo spec no hereda en silencio el token del anterior.
+    if (KeycloakFake.siguienteToken) {
+      this.tokenParsed = KeycloakFake.siguienteToken;
+      KeycloakFake.siguienteToken = undefined;
+    }
+    if (KeycloakFake.siguientePerfil) {
+      this.profile = KeycloakFake.siguientePerfil;
+      KeycloakFake.siguientePerfil = undefined;
+    }
     KeycloakFake.ultimaInstancia = this;
   }
 
@@ -175,6 +204,13 @@ export class KeycloakFake {
     return this.updateReturns;
   }
 
+  /** Deja el doble como recién cargado. Va en el `beforeEach` de cada spec. */
+  static reiniciar(): void {
+    KeycloakFake.ultimaInstancia = undefined;
+    KeycloakFake.siguienteToken = undefined;
+    KeycloakFake.siguientePerfil = undefined;
+  }
+
   private tokenPorDefecto(): VendiTokenParsed {
     return {
       exp: Math.floor(Date.now() / 1000) + 600,
@@ -185,4 +221,72 @@ export class KeycloakFake {
       organization: [ORG_POR_DEFECTO],
     } as KeycloakTokenParsed & VendiTokenParsed;
   }
+}
+
+/** Configuración de realm que usan los specs. Es la real de `vendi-co`. */
+export const CONFIG_AUTH_DE_PRUEBA = {
+  url: 'https://accounts.vendi.co',
+  realm: 'vendi-co',
+  clientId: 'vendi-web',
+} as const;
+
+export interface OpcionesDeSesionFalsa {
+  /** Alias del claim `organization`. Por defecto, una sola organización. */
+  organizaciones?: string[];
+  /** Roles de realm del token. */
+  roles?: string[];
+  /** Perfil que devolverá `loadUserProfile()`. */
+  perfil?: PerfilFalso;
+  /** `sub` del token. */
+  sub?: string;
+}
+
+/**
+ * Superficie de `AuthService` que necesita `arrancarSesionFalsa`.
+ *
+ * Se tipa estructuralmente en vez de importar `AuthService` para que este
+ * archivo siga sin depender del servicio al que sustituye la dependencia.
+ */
+export interface ServicioAuthArrancable {
+  init(config: { url: string; realm: string; clientId: string }): Promise<boolean>;
+}
+
+/**
+ * Arranca un `AuthService` **real** contra el doble, con el token indicado.
+ *
+ * Es el reemplazo de los dobles de `AuthService` escritos a mano en las apps.
+ * La diferencia importa: un doble a mano vuelve a implementar las reglas que
+ * vive en `AuthService` —el filtro de `selectTenant`, el comodín `*` de
+ * `hasPermission`, el efecto de `limpiarSeleccionDeTenant` sobre `tenantId`—
+ * y entonces el spec afirma cosas sobre la copia, no sobre el código que se
+ * despliega. Con esto, si la regla real se rompe, el spec de la app se cae.
+ *
+ * Requiere que el spec haya hecho antes:
+ *
+ *     vi.mock('keycloak-js', async () => ({
+ *       default: (await import('auth/testing')).KeycloakFake,
+ *     }));
+ *
+ * OJO: siempre `auth/testing`, nunca el barril `auth`: importar el barril desde
+ * la fábrica de `vi.mock('keycloak-js', …)` cierra un ciclo (auth → AuthService
+ * → keycloak-js, el módulo que se está resolviendo) que CUELGA el ejecutor en
+ * vez de fallar. Ese ciclo es la razón de que exista este punto de entrada
+ * secundario.
+ */
+export async function arrancarSesionFalsa(
+  auth: ServicioAuthArrancable,
+  opciones: OpcionesDeSesionFalsa = {},
+): Promise<void> {
+  const ahora = Math.floor(Date.now() / 1000);
+  KeycloakFake.siguienteToken = {
+    exp: ahora + 600,
+    iat: ahora,
+    sub: opciones.sub ?? 'usuario-falso',
+    realm_access: { roles: opciones.roles ?? ['dueno'] },
+    organization: opciones.organizaciones ?? [ORG_POR_DEFECTO],
+  } as VendiTokenParsed;
+  if (opciones.perfil) {
+    KeycloakFake.siguientePerfil = opciones.perfil;
+  }
+  await auth.init({ ...CONFIG_AUTH_DE_PRUEBA });
 }

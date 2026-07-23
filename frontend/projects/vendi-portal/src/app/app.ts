@@ -1,10 +1,10 @@
 import { Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
-import { TranslatePipe } from '@ngx-translate/core';
 
+/** Raíz de `vendi-portal`. Solo hospeda el enrutador. */
 @Component({
   selector: 'vd-root',
-  imports: [RouterOutlet, TranslatePipe],
+  imports: [RouterOutlet],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })

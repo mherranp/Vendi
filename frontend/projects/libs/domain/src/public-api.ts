@@ -12,6 +12,6 @@
 
 export type { ApiError, ApiResponse, PagedList } from './lib/models/api-response.model';
 export type { UserProfile } from './lib/models/user.model';
-export type { EstadoTenant, Tenant } from './lib/models/tenant.model';
+export type { EstadoTenant, Tenant, TenantDeApi } from './lib/models/tenant.model';
 export { ESTADOS_TENANT, esEstadoTenant } from './lib/models/tenant.model';
 export { esEstadoVisible, esIdDeTenant, esTenantOperativo } from './lib/reglas/tenant.reglas';

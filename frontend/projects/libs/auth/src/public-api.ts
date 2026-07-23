@@ -14,8 +14,9 @@ export { HasPermissionDirective } from './lib/has-permission.directive';
 export { aliasDeOrganizaciones, rolesDeRealm } from './lib/token';
 export type { ClaimOrganizacion, VendiTokenParsed } from './lib/token';
 
-// El doble de Keycloak se exporta a propósito: las apps lo necesitan en sus
-// propios specs (`vi.mock('keycloak-js', …)`) y duplicarlo en cada una sería
-// garantizar que se desincronicen del claim real.
-export { KeycloakFake, ORG_POR_DEFECTO } from './lib/keycloak.fake';
-export type { PerfilFalso } from './lib/keycloak.fake';
+// El doble de Keycloak vive en el punto de entrada secundario `auth/testing`,
+// no aquí. Las apps lo necesitan en sus propios specs y duplicarlo en cada una
+// sería garantizar que se desincronicen del claim real, pero exportarlo desde
+// este barril creaba un ciclo: la fábrica de `vi.mock('keycloak-js', …)`
+// importaría `auth` → `AuthService` → `keycloak-js`, el módulo que está
+// resolviendo. Ver `testing/src/public-api.ts`.

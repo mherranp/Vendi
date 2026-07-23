@@ -64,11 +64,16 @@ def _fabrica(sesion: _SesionDoblada):
 
 
 def _mensaje(**kwargs) -> OutboxMessage:
+    tenant_id = kwargs.pop("tenant_id", None) or uuid.uuid4()
     datos = {
         "id": uuid.uuid4(),
-        "tenant_id": uuid.uuid4(),
+        "tenant_id": tenant_id,
         "exchange": "events.tenant",
-        "routing_key": "x.venta.creada",
+        # Clave coherente con la columna: es la que produce `emit` en el camino
+        # honesto, y por tanto la que el dispatcher deja intacta. Los mensajes
+        # con clave incoherente —el caso de D-05— se prueban en
+        # `tests/worker/test_outbox_dispatch.py` contra colas reales.
+        "routing_key": f"{tenant_id}.venta.creada",
         "payload": {"total": 1},
         "status": STATUS_PENDING,
         "retry_count": 0,

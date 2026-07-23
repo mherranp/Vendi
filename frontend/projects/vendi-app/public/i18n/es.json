@@ -18,7 +18,8 @@
     "guardar": "Guardar",
     "eliminar": "Eliminar",
     "buscar": "Buscar",
-    "cerrar": "Cerrar"
+    "cerrar": "Cerrar",
+    "reintentar": "Reintentar"
   },
   "errores": {
     "sin_conexion": "Sin conexión. Revisa tu red e inténtalo de nuevo.",
@@ -55,5 +56,9 @@
       "formato": "El formato no es válido",
       "invalido": "Valor inválido"
     }
+  },
+  "proximamente": {
+    "titulo": "Muy pronto en tu bolsillo",
+    "descripcion": "Estamos terminando la aplicación para tu tienda. Mientras tanto, puedes administrar tu negocio desde el navegador."
   }
 }

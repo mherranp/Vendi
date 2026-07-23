@@ -1,0 +1,80 @@
+<vd-page-header titulo="tenants.titulo" subtitulo="tenants.subtitulo">
+  <div slot="acciones">
+    <mat-slide-toggle [checked]="incluirEliminados()" (change)="alternarEliminados($event.checked)">
+      {{ 'tenants.ver_eliminados' | translate }}
+    </mat-slide-toggle>
+    <button matButton="filled" type="button" [disabled]="cargando()" (click)="crear()">
+      <mat-icon aria-hidden="true">add_business</mat-icon>
+      {{ 'tenants.accion.crear' | translate }}
+    </button>
+  </div>
+</vd-page-header>
+
+@if (fallo()) {
+  <!--
+    Salida del callejón sin salida: cuando el listado falla, el aviso del
+    interceptor se desvanece y sin esto la pantalla queda vacía y muda. El botón
+    de reintentar es lo que convierte "se rompió" en "vuelve a intentarlo".
+  -->
+  <div class="vd-tenants__fallo" role="alert">
+    <span>{{ 'tenants.fallo_listado' | translate }}</span>
+    <button matButton type="button" (click)="recargar()">
+      {{ 'comun.reintentar' | translate }}
+    </button>
+  </div>
+}
+
+<vd-data-table
+  [columnas]="columnas()"
+  [filas]="filas()"
+  [total]="total()"
+  [cargando]="cargando()"
+  [indicePagina]="indicePagina()"
+  [tamanoPagina]="tamanoPagina()"
+  iconoVacio="storefront"
+  tituloVacio="tenants.vacio.titulo"
+  descripcionVacio="tenants.vacio.descripcion"
+  (paginaCambia)="alPaginar($event)"
+/>
+
+<ng-template #celdaEstado let-tenant>
+  <vd-status-badge
+    [etiqueta]="etiquetaDeEstado(tenant.estado)"
+    [variante]="varianteDeEstado(tenant.estado)"
+  />
+</ng-template>
+
+<ng-template #celdaAcciones let-tenant>
+  <button
+    matIconButton
+    type="button"
+    [matMenuTriggerFor]="menuFila"
+    [attr.aria-label]="'tenants.accion.menu' | translate"
+  >
+    <mat-icon aria-hidden="true">more_vert</mat-icon>
+  </button>
+  <mat-menu #menuFila="matMenu">
+    <button mat-menu-item type="button" (click)="renombrar(tenant)">
+      <mat-icon aria-hidden="true">edit</mat-icon>
+      <span>{{ 'tenants.accion.renombrar' | translate }}</span>
+    </button>
+    @if (puedeSuspender(tenant)) {
+      <button mat-menu-item type="button" (click)="suspender(tenant)">
+        <mat-icon aria-hidden="true">pause_circle</mat-icon>
+        <span>{{ 'tenants.accion.suspender' | translate }}</span>
+      </button>
+    }
+    @if (puedeReactivar(tenant)) {
+      <button mat-menu-item type="button" (click)="reactivar(tenant)">
+        <mat-icon aria-hidden="true">play_circle</mat-icon>
+        <span>{{ 'tenants.accion.reactivar' | translate }}</span>
+      </button>
+    }
+    @if (puedeEliminar(tenant)) {
+      <button mat-menu-item type="button" (click)="eliminar(tenant)">
+        <mat-icon aria-hidden="true">delete</mat-icon>
+        <span>{{ 'comun.eliminar' | translate }}</span>
+      </button>
+    }
+  </mat-menu>
+</ng-template>

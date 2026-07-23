@@ -1,5 +1,5 @@
 import { HttpContextToken, HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
-import { inject } from '@angular/core';
+import { Injector, inject } from '@angular/core';
 import { TranslateService } from '@ngx-translate/core';
 import { catchError, throwError } from 'rxjs';
 import { traducir } from '../i18n/traduccion';
@@ -106,10 +106,28 @@ export function claveDeError(status: number): string {
  *  - 4xx: se prefiere el mensaje del backend —que ya viene en español, es quien
  *    conoce la regla de negocio violada— y se cae al genérico si no hay ninguno
  *    aprovechable.
+ *
+ * ## Por qué las dependencias se resuelven tarde, y no con `inject()` arriba
+ *
+ * Porque resolverlas arriba **rompía la carga del catálogo de traducciones**, en
+ * silencio y solo en las apps que cablean este interceptor.
+ *
+ * La cadena es circular: `TranslateService` se construye → pide su catálogo al
+ * `TranslateLoader` → el cargador usa `HttpClient` → `HttpClient` ejecuta este
+ * interceptor → el interceptor pide `TranslateService`, que **todavía se está
+ * construyendo**. Angular corta el ciclo con un error, la petición a
+ * `/i18n/es.json` no llega a salir nunca, y como el cargador tiene un
+ * `catchError` que cae al catálogo empotrado, la app arranca sin ruido y con
+ * las claves de la app —`tenants.titulo`, `negocio.campo.estado`— pintadas
+ * crudas en pantalla. Verificado en el navegador: con el interceptor cableado,
+ * cero peticiones a `/i18n/es.json`; sin él, dos.
+ *
+ * Capturando el `Injector` —que no participa del ciclo— y pidiendo el resto
+ * dentro del `catchError`, la resolución ocurre cuando hay un error que
+ * notificar, momento en el que todo el grafo lleva mucho rato construido.
  */
 export const errorInterceptor: HttpInterceptorFn = (req, next) => {
-  const notificador = inject(Notificador);
-  const traductor = inject(TranslateService);
+  const inyector = inject(Injector);
   const silenciar = req.context.get(SILENCIAR_AVISO_ERROR);
 
   return next(req).pipe(
@@ -117,6 +135,9 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
       if (silenciar) {
         return throwError(() => err);
       }
+
+      const notificador = inyector.get(Notificador);
+      const traductor = inyector.get(TranslateService);
 
       const clave = claveDeError(err.status);
       const generico = traducir(traductor, clave);

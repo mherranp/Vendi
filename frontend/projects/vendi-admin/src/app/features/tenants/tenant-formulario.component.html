@@ -1,0 +1,14 @@
+<h2 mat-dialog-title>
+  {{ (esEdicion ? 'tenants.dialogo.editar' : 'tenants.dialogo.crear') | translate }}
+</h2>
+
+<mat-dialog-content>
+  <vd-form-renderer
+    [configuracion]="configuracion"
+    [formulario]="formulario"
+    textoEnviar="comun.guardar"
+    textoCancelar="comun.cancelar"
+    (enviado)="alEnviar($event)"
+    (cancelado)="cancelar()"
+  />
+</mat-dialog-content>

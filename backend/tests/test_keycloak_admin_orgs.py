@@ -250,9 +250,7 @@ async def test_el_cliente_de_la_api_no_alcanza_organizations(api_general):
 @pytest.mark.asyncio
 async def test_keycloak_inalcanzable_da_error_tipado():
     """Un Keycloak caído no puede subir como traza cruda del cliente HTTP."""
-    admin = VendiKeycloakAprovisionamiento(
-        "https://accounts-que-no-existe.vendi.co", "vendi-provisioning", "loquesea"
-    )
+    admin = VendiKeycloakAprovisionamiento("https://accounts-que-no-existe.vendi.co", "vendi-provisioning", "loquesea")
     with pytest.raises((ExternalServiceError, PermissionDeniedError, Exception)) as exc:
         await admin.list_organizations()
     # Lo único inaceptable es un fallo que no diga nada útil.

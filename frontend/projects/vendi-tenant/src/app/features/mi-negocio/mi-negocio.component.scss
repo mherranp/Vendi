@@ -1,0 +1,51 @@
+:host {
+  display: block;
+}
+
+.vd-negocio__ficha {
+  max-width: 40rem;
+}
+
+.vd-negocio__datos {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--vd-espacio-2) var(--vd-espacio-6);
+  margin: 0;
+
+  dt {
+    color: var(--vd-texto-secundario);
+    font-size: var(--vd-texto-sm);
+  }
+
+  dd {
+    margin: 0;
+  }
+
+  code {
+    font-family: var(--vd-fuente-mono);
+    font-size: var(--vd-texto-sm);
+    color: var(--vd-texto-terciario);
+    word-break: break-all;
+  }
+}
+
+.vd-negocio__aviso {
+  margin-top: var(--vd-espacio-4);
+  padding: var(--vd-espacio-3);
+  border-radius: var(--vd-radio-md);
+  background: var(--vd-insignia-aviso-fondo);
+  color: var(--vd-insignia-aviso-texto);
+}
+
+.vd-negocio__fallo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vd-espacio-4);
+  max-width: 40rem;
+  padding: var(--vd-espacio-3) var(--vd-espacio-4);
+  border: 1px solid var(--vd-insignia-peligro-texto);
+  border-radius: var(--vd-radio-md);
+  background: var(--vd-insignia-peligro-fondo);
+  color: var(--vd-insignia-peligro-texto);
+}

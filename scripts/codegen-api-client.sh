@@ -30,6 +30,9 @@
 #   CODEGEN_API_URL      base de la API      (por defecto https://api.${BASE_DOMAIN})
 #   CODEGEN_SCHEMA_FILE  esquema congelado   (si se define, no se toca la red)
 #   CODEGEN_TOKEN        bearer para /openapi.json si queda tras autenticación
+#   CODEGEN_RESOLVE_IP   IP a la que se ancla la resolución de api.${BASE_DOMAIN}
+#                        (por defecto 127.0.0.1). Vaciarla usa el DNS público,
+#                        que para vendi.co es el servidor de un TERCERO.
 #   CODEGEN_DRY_RUN      imprime lo que haría y sale 0, sin escribir nada
 #   CODEGEN_INSECURE     apaga la verificación TLS. Rara vez es lo que quieres:
 #                        el script ya ancla a la CA de mkcert por defecto, así
@@ -70,7 +73,15 @@ API_URL="${CODEGEN_API_URL:-https://api.${BASE_DOMAIN}}"
 API_URL="${API_URL%/}"
 ESQUEMA_FILE="${CODEGEN_SCHEMA_FILE:-}"
 
-CURL_OPTS="-sS --connect-timeout 5 --max-time 30"
+# Array, no cadena. Era una cadena expandida sin comillas (`curl ${CURL_OPTS}`),
+# y el CAROOT por defecto de mkcert en macOS es
+# `~/Library/Application Support/mkcert`: el espacio partía el argumento en dos y
+# curl recibía `--cacert .../Application` + `Support/mkcert/rootCA.pem` como URL.
+# Resultado: el script fallaba SIEMPRE en macOS con el mensaje "la API no
+# responde", que apunta al sitio equivocado. Con un array cada elemento se cita
+# por separado. `bash 3.2` —el de macOS— soporta arrays indexados; solo los
+# asociativos exigen bash 4.
+CURL_OPTS=(-sS --connect-timeout 5 --max-time 30)
 
 # Anclar a la CA de mkcert por defecto. El certificado del borde lo emite esa CA,
 # así que esto hace que el camino normal valide sin que nadie tenga que recurrir
@@ -84,10 +95,61 @@ for _RAIZ_CA in \
     "${HOME}/Library/Application Support/mkcert" \
     "${HOME}/.local/share/mkcert"; do
     if [ -n "${_RAIZ_CA}" ] && [ -f "${_RAIZ_CA}/rootCA.pem" ]; then
-        CURL_OPTS="${CURL_OPTS} --cacert ${_RAIZ_CA}/rootCA.pem"
+        CURL_OPTS+=(--cacert "${_RAIZ_CA}/rootCA.pem")
         break
     fi
 done
+
+# --------------------------------------------- anclaje de la resolución DNS --
+#
+# `${BASE_DOMAIN}` (vendi.co) **no nos pertenece**: está registrado por un
+# tercero desde 2010 y resuelve públicamente a una IP suya. El stack local se
+# alcanza porque `/etc/resolver/${BASE_DOMAIN}` reescribe esa resolución a
+# 127.0.0.1 — y ese archivo exige sudo, así que puede no existir (es el caso hoy
+# en la máquina de desarrollo).
+#
+# Sin anclar la resolución, este script abría una conexión a un servidor ajeno y,
+# con `CODEGEN_TOKEN` definido, le mandaba un bearer de administrador de
+# plataforma. Que hasta ahora fallara antes de enviarlo era suerte: el
+# `--cacert` de mkcert aborta el TLS con un certificado público. Basta un
+# `CODEGEN_INSECURE=1` —la escotilla documentada tres líneas más abajo— para que
+# esa suerte se acabe.
+#
+# Por eso el anclaje es el comportamiento POR DEFECTO y no una opción:
+# `CODEGEN_RESOLVE_IP` vale 127.0.0.1 salvo que se vacíe explícitamente para
+# apuntar a una API remota de verdad.
+API_HOST="$(printf '%s' "${API_URL}" | sed -e 's#^[a-z]*://##' -e 's#[:/].*$##')"
+API_PUERTO="$(printf '%s' "${API_URL}" | sed -n 's#^[a-z]*://[^:/]*:\([0-9]*\).*$#\1#p')"
+case "${API_URL}" in
+    https://*) API_PUERTO="${API_PUERTO:-443}" ;;
+    *)         API_PUERTO="${API_PUERTO:-80}" ;;
+esac
+
+RESOLUCION_ANCLADA=""
+CODEGEN_RESOLVE_IP="${CODEGEN_RESOLVE_IP-127.0.0.1}"
+case "${API_HOST}" in
+    *".${BASE_DOMAIN}"|"${BASE_DOMAIN}")
+        if [ -n "${CODEGEN_RESOLVE_IP}" ]; then
+            CURL_OPTS+=(--resolve "${API_HOST}:${API_PUERTO}:${CODEGEN_RESOLVE_IP}")
+            RESOLUCION_ANCLADA="si"
+            info "Resolución anclada: ${API_HOST}:${API_PUERTO} -> ${CODEGEN_RESOLVE_IP}"
+        else
+            avisa "CODEGEN_RESOLVE_IP vacío: ${API_HOST} se resolverá por DNS público."
+            avisa "${BASE_DOMAIN} pertenece a un tercero; asegúrate de que es lo que quieres."
+        fi
+        ;;
+esac
+
+# Un bearer solo sale hacia un destino cuya resolución controlamos. Es la regla
+# que se saltó una vez y costó rotar los secretos de dos clientes de Keycloak.
+if [ -n "${CODEGEN_TOKEN:-}" ] && [ -z "${RESOLUCION_ANCLADA}" ]; then
+    falla "CODEGEN_TOKEN está definido y la resolución de ${API_HOST} NO está anclada.
+       Este script no envía credenciales a un host cuya IP no controla.
+       Opciones:
+         1. Deja CODEGEN_RESOLVE_IP en su valor por defecto (127.0.0.1).
+         2. Si la API es remota de verdad, quita CODEGEN_TOKEN o usa un esquema
+            congelado: CODEGEN_SCHEMA_FILE=docs/api/openapi-fase0.json"
+fi
 
 if [ -n "${CODEGEN_INSECURE:-}" ]; then
     # Se conserva como escotilla, pero deja rastro: apagar la verificación aquí
@@ -95,7 +157,7 @@ if [ -n "${CODEGEN_INSECURE:-}" ]; then
     avisa "CODEGEN_INSECURE=1: se DESACTIVA la verificación TLS. El esquema se aceptará"
     avisa "venga de donde venga. Si es por el certificado local, lo correcto es"
     avisa "'mkcert -install' y no esta variable."
-    CURL_OPTS="${CURL_OPTS} -k"
+    CURL_OPTS+=(-k)
 fi
 
 # ---------------------------------------------------------------- preflight --
@@ -154,8 +216,7 @@ if [ -n "${ESQUEMA_FILE}" ]; then
     cp "${ESQUEMA_FILE}" "${TMP_ESQUEMA}"
 else
     info "Comprobando que la API responde en ${API_URL}/health ..."
-    # shellcheck disable=SC2086
-    if ! curl ${CURL_OPTS} -f -o /dev/null "${API_URL}/health" 2>/dev/null; then
+    if ! curl "${CURL_OPTS[@]}" -f -o /dev/null "${API_URL}/health" 2>/dev/null; then
         falla "La API no responde en ${API_URL}/health.
        El cliente se genera desde el esquema que sirve la API: sin API no hay
        nada que generar y este script NO inventa tipos ni reutiliza en silencio
@@ -172,14 +233,13 @@ else
     ok "La API responde."
 
     info "Descargando ${API_URL}/openapi.json ..."
-    # shellcheck disable=SC2086
     if [ -n "${CODEGEN_TOKEN:-}" ]; then
-        curl ${CURL_OPTS} -f -H "Accept: application/json" \
+        curl "${CURL_OPTS[@]}" -f -H "Accept: application/json" \
              -H "Authorization: Bearer ${CODEGEN_TOKEN}" \
              -o "${TMP_ESQUEMA}" "${API_URL}/openapi.json" \
             || falla "No se pudo descargar ${API_URL}/openapi.json (¿token inválido o expirado?)."
     else
-        curl ${CURL_OPTS} -f -H "Accept: application/json" \
+        curl "${CURL_OPTS[@]}" -f -H "Accept: application/json" \
              -o "${TMP_ESQUEMA}" "${API_URL}/openapi.json" \
             || falla "No se pudo descargar ${API_URL}/openapi.json.
        Si el endpoint está detrás de autenticación, exporta CODEGEN_TOKEN con un

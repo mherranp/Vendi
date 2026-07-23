@@ -64,10 +64,20 @@ async def test_toda_tabla_de_negocio_tiene_rls_forzado_y_policy(pg_platform_url)
                         WHERE n.nspname = 'public'
                           AND c.relkind = 'r'
                           AND EXISTS (
-                              SELECT 1 FROM information_schema.columns col
-                              WHERE col.table_schema = 'public'
-                                AND col.table_name = c.relname
-                                AND col.column_name = 'tenant_id'
+                              -- `pg_attribute` y NO `information_schema.columns`.
+                              -- La vista del information_schema solo muestra las
+                              -- columnas sobre las que el usuario que consulta
+                              -- tiene algún privilegio: una tabla creada por
+                              -- otro rol —un superusuario haciendo una
+                              -- reparación a mano, por ejemplo— es INVISIBLE
+                              -- para el candado, que daría verde sin haberla
+                              -- mirado. `pg_attribute` es el catálogo crudo y no
+                              -- filtra por privilegios.
+                              SELECT 1 FROM pg_attribute a
+                              WHERE a.attrelid = c.oid
+                                AND a.attname = 'tenant_id'
+                                AND a.attnum > 0
+                                AND NOT a.attisdropped
                           )
                         ORDER BY c.relname
                         """
@@ -102,13 +112,19 @@ async def test_toda_tabla_de_negocio_tiene_indice_que_empieza_por_tenant_id(pg_p
                     await conn.execute(
                         text(
                             """
-                        SELECT DISTINCT col.table_name
-                        FROM information_schema.columns col
-                        JOIN pg_class c ON c.relname = col.table_name
+                        -- Mismo motivo que arriba: `pg_attribute`, no
+                        -- `information_schema.columns`. La vista oculta las
+                        -- columnas sobre las que el usuario no tiene privilegios
+                        -- y el candado dejaría de ver justo las tablas creadas
+                        -- fuera del camino normal.
+                        SELECT DISTINCT c.relname AS table_name
+                        FROM pg_class c
                         JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
-                        WHERE col.table_schema = 'public'
-                          AND col.column_name = 'tenant_id'
-                          AND c.relkind = 'r'
+                        JOIN pg_attribute a ON a.attrelid = c.oid
+                        WHERE c.relkind = 'r'
+                          AND a.attname = 'tenant_id'
+                          AND a.attnum > 0
+                          AND NOT a.attisdropped
                         """
                         )
                     )
@@ -169,7 +185,12 @@ async def test_vendi_app_no_alcanza_las_tablas_de_plataforma(pg_app_url):
     engine = create_async_engine(pg_app_url)
     try:
         async with engine.connect() as conn:
-            for tabla in ("audit_events", "outbox_messages"):
+            # `tenants` entra en la lista desde la Etapa 4, y es la que más
+            # duele: sin policy y con SELECT, cualquier handler podría listar
+            # todos los negocios de la región —nombres, estados, ids de
+            # organización—, que es exactamente el dato que el producto promete
+            # no cruzar. La migración 0002 se lo revoca entero.
+            for tabla in ("audit_events", "outbox_messages", "tenants"):
                 with pytest.raises((DBAPIError, ProgrammingError), match="permission denied"):
                     await conn.execute(text(f"SELECT count(*) FROM {tabla}"))
                 await conn.rollback()

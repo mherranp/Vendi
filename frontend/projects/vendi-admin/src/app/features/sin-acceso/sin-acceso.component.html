@@ -1,0 +1,13 @@
+<section class="vd-sin-acceso">
+  <mat-icon class="vd-sin-acceso__icono" aria-hidden="true">lock_person</mat-icon>
+  <h1>{{ 'sin_acceso.titulo' | translate }}</h1>
+  <p>{{ 'sin_acceso.descripcion' | translate }}</p>
+  @if (correo()?.email) {
+    <p class="vd-sin-acceso__cuenta">
+      {{ 'sin_acceso.sesion_actual' | translate: { correo: correo()?.email } }}
+    </p>
+  }
+  <button matButton="filled" type="button" (click)="cerrarSesion()">
+    {{ 'layout.cerrar_sesion' | translate }}
+  </button>
+</section>

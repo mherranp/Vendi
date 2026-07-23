@@ -12,7 +12,12 @@
 #      corrección de configuración la aplica el operador (ver
 #      scripts/lib/kc_deriva_config.py).
 #   2. Deriva de DATOS: organizaciones de Keycloak contra la tabla `tenants`.
-#      Es la que sabrá corregir la API con RECONCILE_APLICAR=1 (tarea 4.2).
+#      Con RECONCILE_APLICAR=1 se corrige llamando al MISMO servicio de
+#      aprovisionamiento que usa la consola (app.scripts.reconciliar, dentro
+#      del contenedor de la API): crea las organizaciones que falten y reenlaza
+#      las que existan con otro id. Las organizaciones huérfanas solo se
+#      informan; borrarlas exige además RECONCILE_BORRAR_HUERFANAS=1, porque es
+#      irreversible y se lleva la membresía de sus usuarios.
 #
 # Por qué existe (y por qué no basta con reiniciar Keycloak): `--import-realm`
 # importa el realm SOLO si no existe. Verificado contra 26.6.4:
@@ -32,6 +37,9 @@
 #                             el puerto que el compose publica en loopback)
 #   KEYCLOAK_ADMIN_USER/_PASSWORD
 #   RECONCILE_APLICAR=1       aplica las correcciones en vez de solo informar
+#   RECONCILE_BORRAR_HUERFANAS=1
+#                             además, borra las organizaciones sin negocio vivo
+#                             (destructivo e irreversible)
 # =============================================================================
 
 set -euo pipefail
@@ -129,21 +137,21 @@ N_KC=$(printf '%s' "${ALIAS_KC}" | grep -c . || true)
 success "${N_KC} organización(es) en Keycloak"
 
 # ---------------------------------------------------------------------------
-# 2. Tenants de la base de datos. La tabla llega con la tarea 4.2; hasta
-#    entonces el script informa y sale sin fingir que reconcilió nada.
+# 2. Tenants de la base de datos. Sin la tabla no hay nada contra qué comparar,
+#    y el script lo dice en vez de fingir que reconcilió algo.
 # ---------------------------------------------------------------------------
 EXISTE_TABLA="$("${COMPOSE[@]}" exec -T postgres psql -U "${POSTGRES_USER:-postgres}" -d vendi -tAc \
     "SELECT to_regclass('public.tenants') IS NOT NULL" 2>/dev/null | tr -d '[:space:]')"
 
 if [[ "${EXISTE_TABLA}" != "t" ]]; then
-    warn "La tabla 'tenants' todavía no existe (llega con la tarea 4.2 del plan de Fase 0)."
+    warn "La tabla 'tenants' no existe: faltan las migraciones (bash scripts/migrate.sh)."
     # Solo tiene sentido listar organizaciones si las hay: con el realm recién
     # sembrado (0 organizaciones) el mensaje afirmaría un hecho falso.
     if [[ "${N_KC}" -gt 0 ]]; then
         warn "Organizaciones encontradas en Keycloak, sin nada contra qué compararlas:"
-        printf '%s' "${ALIAS_KC}" | sed 's/^/    /'
+        printf '%s\n' "${ALIAS_KC}" | sed 's/^/    /'
     fi
-    error "Reconciliación imposible: la API aún no tiene el módulo tenants."
+    error "Reconciliación imposible sin la tabla 'tenants'."
 fi
 
 info "Listando los tenants activos de la base de datos..."
@@ -160,8 +168,15 @@ success "${N_BD} tenant(s) en la base de datos"
 #      alguien la creó a mano (huérfana, ocupa un alias).
 # ---------------------------------------------------------------------------
 TMP_KC="$(mktemp)"; TMP_BD="$(mktemp)"
-printf '%s' "${ALIAS_KC}" | grep . | sort > "${TMP_KC}"
-printf '%s' "${ALIAS_BD}" | grep . | sort > "${TMP_BD}"
+# El `|| true` NO es decorativo. Con `set -e` + `pipefail`, un `grep` sin
+# coincidencias devuelve 1 y **mata el script aquí mismo, en silencio**: el
+# operador veía «1 tenant(s) en la base de datos» y nada más, sin ninguna línea
+# de aviso, con código de salida 1. Y ocurría exactamente en el caso que este
+# script existe para detectar —cero organizaciones y tenants pendientes—, que
+# es la peor combinación posible: el detector se apagaba justo cuando había
+# algo que detectar. Medido borrando a mano la organización del negocio demo.
+printf '%s' "${ALIAS_KC}" | grep . | sort > "${TMP_KC}" || true
+printf '%s' "${ALIAS_BD}" | grep . | sort > "${TMP_BD}" || true
 
 SIN_ORG="$(comm -23 "${TMP_BD}" "${TMP_KC}")"
 SIN_TENANT="$(comm -13 "${TMP_BD}" "${TMP_KC}")"
@@ -171,12 +186,12 @@ DERIVA=0
 if [[ -n "${SIN_ORG}" ]]; then
     DERIVA=1
     warn "Tenants SIN organización en Keycloak (sus usuarios no pueden entrar):"
-    printf '%s' "${SIN_ORG}" | sed 's/^/    /'
+    printf '%s\n' "${SIN_ORG}" | sed 's/^/    /'
 fi
 if [[ -n "${SIN_TENANT}" ]]; then
     DERIVA=1
     warn "Organizaciones HUÉRFANAS en Keycloak (sin tenant en la base de datos):"
-    printf '%s' "${SIN_TENANT}" | sed 's/^/    /'
+    printf '%s\n' "${SIN_TENANT}" | sed 's/^/    /'
 fi
 
 # La deriva de CONFIGURACIÓN pesa igual que la de organizaciones. Antes se
@@ -196,10 +211,32 @@ fi
 
 if [[ "${RECONCILE_APLICAR:-0}" != "1" ]]; then
     warn "Modo informe. Para aplicar las correcciones: RECONCILE_APLICAR=1 $0"
+    warn "  (añade RECONCILE_BORRAR_HUERFANAS=1 para borrar también las organizaciones sin negocio;"
+    warn "   es destructivo e irreversible: se lleva la membresía de sus usuarios)"
     exit 1
 fi
 
-# La corrección crea organizaciones faltantes vía la API (no directamente en
-# Keycloak) para que pase por el mismo código de provisionamiento, con su
-# auditoría y su compensación. Ese endpoint llega con la tarea 4.2.
-error "La aplicación automática de correcciones necesita el endpoint de reconciliación de la API (tarea 4.2)."
+# La corrección corre DENTRO del contenedor de la API, con el mismo
+# `TenantService` que usa la consola: mismo código de aprovisionamiento, misma
+# auditoría, mismo candado de sesión de plataforma. Una reimplementación en
+# bash contra la Admin API se desincronizaría del servicio en la primera
+# semana, y además tendría que duplicar la decisión de qué `name` y qué alias
+# lleva una organización.
+info "Aplicando correcciones con el servicio de aprovisionamiento de la API..."
+ARGS_RECONCILE=()
+if [[ "${RECONCILE_BORRAR_HUERFANAS:-0}" == "1" ]]; then
+    warn "Se borrarán las organizaciones huérfanas: es destructivo e irreversible."
+    ARGS_RECONCILE+=(--borrar-huerfanas)
+fi
+# El `|| RC=$?` es obligatorio: con `set -e`, un exit code distinto de 0 del
+# exec (p. ej. 2 = quedan huérfanas pendientes) abortaría el script AQUÍ y el
+# aviso final nunca se imprimiría. Misma clase de fallo que el `grep` de arriba.
+RC=0
+"${COMPOSE[@]}" exec -T api \
+    uv run --project /src --no-sync python -m app.scripts.reconciliar "${ARGS_RECONCILE[@]+"${ARGS_RECONCILE[@]}"}" || RC=$?
+if [[ ${RC} -eq 0 ]]; then
+    success "Correcciones aplicadas. Vuelve a ejecutar el script para confirmar que no queda deriva."
+    exit 0
+fi
+warn "Quedan organizaciones huérfanas pendientes de decisión (ver arriba)."
+exit 1

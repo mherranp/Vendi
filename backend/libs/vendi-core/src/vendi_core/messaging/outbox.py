@@ -134,6 +134,83 @@ class OutboxService:
         return message
 
 
+# Prefijo de enrutado de los mensajes que no pertenecen a ningún negocio.
+# Idéntico a `vendi_core.events.service.CLAVE_PLATAFORMA`; se repite aquí en vez
+# de importarlo porque `events` depende de `messaging` y no al revés, y una
+# importación cruzada por una constante de siete letras no vale un ciclo.
+PREFIJO_PLATAFORMA = "plataforma"
+
+
+def derivar_clave_de_enrutado(tenant_id: uuid.UUID | None, clave_guardada: str) -> str:
+    """Reconstruye la clave de enrutado a partir de la COLUMNA `tenant_id`.
+
+    Cierre de la deuda D-05. El agujero, medido por el QA de la Etapa 3 con
+    sonda real: la policy `outbox_encolado_del_tenant` solo acota la **columna**
+    `tenant_id`, no el texto de `routing_key`. Una sesión de `vendi_app` con el
+    GUC del negocio A podía encolar legalmente una fila con `tenant_id = A` y
+    `routing_key = '<B>.venta.creada'`; el dispatcher publicaba esa clave literal
+    y un consumidor ligado a `<B>.#` recibía un evento originado en A.
+
+    La mitigación es no confiar en el texto: el prefijo lo pone el dispatcher a
+    partir del único campo que la policy defiende. Lo que aporta el llamante es
+    solo el **sufijo** —el nombre del evento—, que no decide destinatario.
+
+    - `<uuid ajeno>.venta.creada` con `tenant_id=A` → `A.venta.creada`
+    - `plataforma.tenant.creado` con `tenant_id=A` → `A.tenant.creado`
+    - `venta.creada` (sin prefijo) con `tenant_id=A` → `A.venta.creada`
+    - cualquier clave con `tenant_id=None` → `plataforma.<sufijo>`
+
+    El primer segmento se descarta **solo si tiene forma de prefijo**: un UUID o
+    el literal `plataforma`, que son las dos únicas cosas que `emit` puede haber
+    puesto ahí. Cualquier otra cosa nunca fue un prefijo y forma parte del
+    nombre del evento; descartarla a ciegas convertiría `venta.creada` en
+    `A.creada` y rompería el enrutado de los consumidores honestos mientras
+    intenta protegerlos.
+
+    Nótese que el resultado coincide exactamente con lo que produce
+    `DomainEventService.emit` en el camino honesto: para el código correcto esto
+    es un no-op, y para el código equivocado es un candado.
+    """
+    prefijo = str(tenant_id) if tenant_id is not None else PREFIJO_PLATAFORMA
+    cabeza, sep, resto = clave_guardada.partition(".")
+    sufijo = resto if sep and _parece_prefijo(cabeza) else clave_guardada
+    return f"{prefijo}.{sufijo}" if sufijo else prefijo
+
+
+def _parece_prefijo(segmento: str) -> bool:
+    """¿Ese primer segmento es un prefijo de enrutado y no parte del evento?"""
+    if segmento == PREFIJO_PLATAFORMA:
+        return True
+    try:
+        uuid.UUID(segmento)
+    except (ValueError, AttributeError, TypeError):
+        return False
+    return True
+
+
+def _payload_saneado(tenant_id: uuid.UUID | None, payload: dict) -> dict:
+    """Devuelve el payload con `tenant_id` reescrito desde la columna.
+
+    La otra mitad de D-05. El sobre de `DomainEventService` lleva un campo
+    `tenant_id` dentro del JSON, y un consumidor que enrute o autorice por ese
+    campo estaría confiando en un texto que la policy no mira. Se reescribe con
+    el valor de la columna —el que sí está defendido— antes de publicar.
+
+    Solo se toca esa clave. El resto del payload es del dominio y el dispatcher
+    no tiene criterio para juzgarlo.
+    """
+    if not isinstance(payload, dict):
+        return payload
+    if "tenant_id" not in payload:
+        return payload
+    esperado = str(tenant_id) if tenant_id is not None else None
+    if payload["tenant_id"] == esperado:
+        return payload
+    saneado = dict(payload)
+    saneado["tenant_id"] = esperado
+    return saneado
+
+
 class OutboxDispatcher:
     """Polls outbox and publishes pending messages. Run as background task."""
 
@@ -181,8 +258,21 @@ class OutboxDispatcher:
                 return
 
             for msg in messages:
+                # La clave de enrutado y el `tenant_id` del payload se DERIVAN
+                # de la columna `tenant_id`, que es lo único que la policy de
+                # INSERT defiende. Ver `derivar_clave_de_enrutado` (deuda D-05).
+                clave = derivar_clave_de_enrutado(msg.tenant_id, msg.routing_key)
+                if clave != msg.routing_key:
+                    logger.warning(
+                        "outbox_clave_de_enrutado_corregida",
+                        message_id=str(msg.id),
+                        tenant_id=str(msg.tenant_id) if msg.tenant_id else None,
+                        clave_guardada=msg.routing_key,
+                        clave_publicada=clave,
+                    )
+                cuerpo = _payload_saneado(msg.tenant_id, msg.payload)
                 try:
-                    await self._publisher.publish(msg.exchange, msg.routing_key, msg.payload)
+                    await self._publisher.publish(msg.exchange, clave, cuerpo)
                     await session.execute(
                         update(OutboxMessage)
                         .where(OutboxMessage.id == msg.id)
@@ -193,7 +283,7 @@ class OutboxDispatcher:
                         "outbox_publish_failed",
                         message_id=str(msg.id),
                         exchange=msg.exchange,
-                        routing_key=msg.routing_key,
+                        routing_key=clave,
                         error=str(exc),
                     )
                     retry = msg.retry_count + 1

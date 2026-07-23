@@ -427,13 +427,82 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 15-16. Checks que dependen de código que aún no existe. OMITIDOS con motivo.
+# 15. Sonda de disponibilidad: /health/ready con PostgreSQL, Redis y Keycloak.
+#
+#     Se pide POR EL DOMINIO, a través de Traefik, con --resolve fijando el
+#     nombre a esta máquina. Es una sonda pública: si pidiera credenciales, el
+#     orquestador no podría usarla.
 # ---------------------------------------------------------------------------
-info "15. Sonda de disponibilidad de la API (/health/ready con PG, Redis y KC)"
-omite "15: /health/ready llega con la tarea 4.1 del plan de Fase 0"
+info "15. La API reporta disponibilidad en https://api.${BASE_DOMAIN}/health/ready"
+# shellcheck disable=SC2086
+CUERPO_READY="$(curl -s ${FIJA_DNS} "${CURL_TOPES[@]}" "https://api.${BASE_DOMAIN}/health/ready" 2>/dev/null)"
+# shellcheck disable=SC2086
+CODIGO_READY="$(curl -s ${FIJA_DNS} "${CURL_TOPES[@]}" -o /dev/null -w '%{http_code}' "https://api.${BASE_DOMAIN}/health/ready" 2>/dev/null)"
+CODIGO_READY="${CODIGO_READY:-000}"
+if [ "${CODIGO_READY}" = "200" ]; then
+    ok "/health/ready devuelve 200: PostgreSQL, Redis y Keycloak responden"
+elif [ "${CODIGO_READY}" = "503" ]; then
+    CAIDAS="$(echo "${CUERPO_READY}" | sed -n 's/.*"caidas":\[\([^]]*\)\].*/\1/p')"
+    falla "/health/ready devuelve 503; dependencias caídas: ${CAIDAS:-(no reportadas)}"
+else
+    falla "/health/ready devolvió ${CODIGO_READY} (esperaba 200 o 503). ¿Responde la API por el borde? Mira el check 11."
+fi
 
-info "16. Tenant de demostración provisionado"
-omite "16: el módulo tenants y seed.sh llegan con las tareas 4.2 y 4.4"
+# ---------------------------------------------------------------------------
+# 15b. /metrics NO es alcanzable sin credenciales desde fuera.
+#
+#      La exposición de Prometheus lleva el mapa de rutas internas, los
+#      contadores de error por endpoint y —en cuanto haya métricas por
+#      negocio— identificadores de negocio. El router `api` de Traefik enruta
+#      por Host y no por path, así que sin una defensa explícita quedaría
+#      servida en https://api.<dominio>/metrics a cualquiera.
+#
+#      Dos capas: el borde responde 403 (router `api-metrics-bloqueado`) y la
+#      ruta exige su propia credencial (METRICS_TOKEN). Aquí se comprueba que
+#      NINGUNA de las dos deja pasar; 401 y 403 son los dos desenlaces
+#      aceptables, 200 es el fallo.
+# ---------------------------------------------------------------------------
+info "15b. /metrics no es alcanzable sin credenciales desde fuera"
+# shellcheck disable=SC2086
+CODIGO_METRICS="$(curl -s ${FIJA_DNS} "${CURL_TOPES[@]}" -o /dev/null -w '%{http_code}' "https://api.${BASE_DOMAIN}/metrics" 2>/dev/null)"
+CODIGO_METRICS="${CODIGO_METRICS:-000}"
+case "${CODIGO_METRICS}" in
+    403) ok "el borde bloquea /metrics (403): la exposición de Prometheus no sale del perímetro" ;;
+    401) ok "/metrics exige credencial (401). El bloqueo del borde no está activo: reinicia traefik para que re-renderice el dinámico" ;;
+    200) falla "¡https://api.${BASE_DOMAIN}/metrics responde 200 SIN credenciales! Revisa el router api-metrics-bloqueado y METRICS_TOKEN" ;;
+    *)   falla "/metrics devolvió ${CODIGO_METRICS}; esperaba 403 (borde) o 401 (credencial)" ;;
+esac
+
+# ---------------------------------------------------------------------------
+# 16. El negocio de demostración existe, con su organización en Keycloak.
+#
+#     Se comprueban las DOS mitades, y por separado: la fila en `tenants` y la
+#     Organization cuyo alias es su id. Comprobar solo una daría verde
+#     exactamente en el estado que `reconcile-keycloak.sh` existe para
+#     detectar — un negocio cuyos usuarios no pueden entrar, o una
+#     organización huérfana.
+# ---------------------------------------------------------------------------
+info "16. Negocio de demostración provisionado (fila en 'tenants' + Organization en Keycloak)"
+ID_DEMO="$(en_servicio postgres psql -U "${POSTGRES_USER}" -d vendi -tAc \
+    "SELECT id::text FROM tenants WHERE nombre = 'Tienda Don Carlos' AND deleted_at IS NULL LIMIT 1" | tr -d '[:space:]')"
+if [ -z "${ID_DEMO}" ]; then
+    falla "no hay negocio de demostración en la base de datos. Ejecuta: bash scripts/migrate.sh && bash scripts/seed.sh"
+elif [ -z "${KC_TOKEN:-}" ]; then
+    falla "16: hay negocio demo (${ID_DEMO}) pero no pude comprobar su organización sin token de admin de Keycloak (ver check 8)"
+else
+    ALIAS_DEMO="$(curl -fs "${CURL_TOPES[@]}" -H "Authorization: Bearer ${KC_TOKEN}" \
+        "${KC_LOCAL}/admin/realms/vendi-co/organizations?search=${ID_DEMO}" 2>/dev/null \
+        | python3 -c 'import sys,json
+try:
+    print("\n".join(o.get("alias","") for o in json.load(sys.stdin)))
+except Exception:
+    pass' 2>/dev/null | grep -Fx "${ID_DEMO}" || true)"
+    if [ -n "${ALIAS_DEMO}" ]; then
+        ok "«Tienda Don Carlos» = ${ID_DEMO}, con Organization de alias idéntico"
+    else
+        falla "el negocio demo ${ID_DEMO} NO tiene organización en Keycloak: sus usuarios no pueden entrar. Ejecuta: RECONCILE_APLICAR=1 bash scripts/reconcile-keycloak.sh"
+    fi
+fi
 
 # ---------------------------------------------------------------------------
 # 17. Secretos: en producción, ningún valor puede ser el del .env.example.
@@ -443,7 +512,8 @@ if [ "${APP_ENV}" = "production" ]; then
     SOSPECHOSAS=""
     for VAR in POSTGRES_PASSWORD VENDI_PLATFORM_DB_PASSWORD VENDI_APP_DB_PASSWORD \
                REDIS_PASSWORD RABBITMQ_PASSWORD MINIO_SECRET_KEY \
-               KEYCLOAK_ADMIN_PASSWORD VENDI_BACKEND_CLIENT_SECRET GRAFANA_ADMIN_PASSWORD; do
+               KEYCLOAK_ADMIN_PASSWORD VENDI_BACKEND_CLIENT_SECRET \
+               VENDI_PROVISIONING_CLIENT_SECRET METRICS_TOKEN GRAFANA_ADMIN_PASSWORD; do
         eval "VALOR=\${${VAR}:-}"
         case "${VALOR}" in
             cambiar_*|admin|admin_dev|"") SOSPECHOSAS="${SOSPECHOSAS} ${VAR}" ;;

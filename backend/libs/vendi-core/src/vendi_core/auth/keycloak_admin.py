@@ -387,6 +387,30 @@ class VendiKeycloakAdmin:
         except KeycloakError as exc:
             raise _traducir(exc, "set_group_realm_roles", group_id=group_id) from exc
 
+    async def add_user_realm_roles(self, user_id: str, role_names: list[str]) -> None:
+        """Añade roles de realm (= permisos de Vendi) directamente al usuario.
+
+        Se **añade**, no se sincroniza. Un `set` que quitara lo que sobra
+        borraría también `default-roles-vendi-co`, que es el rol compuesto del
+        que cuelgan `offline_access`, `uma_authorization` y los roles de cliente
+        de `account`. Un usuario sin él sigue autenticándose, pero pierde la
+        consola de cuenta —donde se registra la passkey—, y el síntoma aparece
+        muy lejos de la causa.
+
+        Lo usa la siembra para dar `platform:admin` al administrador de la
+        consola. El camino normal de un usuario de negocio es heredar sus
+        permisos del grupo, no tenerlos directos.
+        """
+        try:
+            actuales = {r["name"] for r in await self._kc.a_get_realm_roles_of_user(user_id)}
+            faltan = [n for n in role_names if n not in actuales]
+            if not faltan:
+                return
+            roles = [await self._kc.a_get_realm_role(n) for n in faltan]
+            await self._kc.a_assign_realm_roles(user_id, roles)
+        except KeycloakError as exc:
+            raise _traducir(exc, "add_user_realm_roles", user_id=user_id) from exc
+
     async def set_user_groups(self, user_id: str, group_names: list[str]) -> None:
         """Diff: añade y quita membresías hasta que el usuario esté exactamente en `group_names`."""
         try:
@@ -428,10 +452,43 @@ class VendiKeycloakAprovisionamiento(VendiKeycloakAdmin):
         Un alias duplicado da 409 limpio (medido), que aquí sale como
         `ConflictError`: el servicio de alta puede tratarlo como "ya existe" sin
         parsear trazas.
+
+        ## El `name` de la Organization es el tenant_id, NO el nombre del negocio
+
+        Hallazgo medido contra 26.6.4 en la Etapa 4, y no estaba en el plan:
+        **Keycloak exige que el `name` de una Organization sea único en el
+        realm.** Dos altas con el mismo nombre y alias distintos:
+
+            POST /admin/realms/vendi-co/organizations  {"name":"Sonda", "alias":"...0001"} → 201
+            POST /admin/realms/vendi-co/organizations  {"name":"Sonda", "alias":"...0002"} → 409
+            {"errorMessage":"A organization with the same name already exists."}
+
+        Si el `name` de la organización fuera el nombre del negocio, Vendi
+        heredaría esa unicidad: el segundo «Tienda Don Carlos» de Colombia no
+        podría darse de alta. Eso no es una restricción del producto —el negocio
+        se identifica por su UUID— sino de una tabla del IdP, y además filtra
+        información entre inquilinos: por los 409 se podría enumerar qué nombres
+        de negocio existen ya en la región.
+
+        Así que el `name` de la organización es `str(tenant_id)`, único por
+        construcción, y el nombre legible viaja en `description`, que Keycloak
+        no obliga a que sea único (medido: acepta 300 caracteres y los devuelve
+        completos). Consecuencias que hay que saber:
+
+        - La consola de Keycloak lista organizaciones por UUID; el nombre del
+          negocio se ve en la columna de descripción.
+        - Renombrar un negocio en Vendi **no toca Keycloak**. Es una propiedad
+          buscada: el rename no puede fallar porque el IdP esté caído.
         """
         payload = {
-            "name": name,
+            "name": str(tenant_id),
             "alias": str(tenant_id),
+            # 255 por prudencia: es el ancho del `description` de un *cliente*
+            # de Keycloak (varchar(255)), donde pasarse revienta el import con
+            # un 500 de JDBC. El de las organizaciones aguanta más (medido:
+            # 300), pero no hay motivo para acercarse al borde: los nombres de
+            # negocio los valida la API en 120 caracteres.
+            "description": (name or "")[:255],
             "domains": [{"name": self.dominio_de(tenant_id), "verified": True}],
         }
         try:

@@ -17,7 +17,8 @@
     "guardar": "Guardar",
     "eliminar": "Eliminar",
     "buscar": "Buscar",
-    "cerrar": "Cerrar"
+    "cerrar": "Cerrar",
+    "reintentar": "Reintentar"
   },
   "errores": {
     "sin_conexion": "Sin conexión. Revisa tu red e inténtalo de nuevo.",
@@ -64,5 +65,55 @@
     "titulo": "Estás viendo la cuenta de {{usuario}}",
     "expira_en": "Expira en {{segundos}} s",
     "detener": "Salir de la suplantación"
+  },
+  "tenants": {
+    "titulo": "Negocios",
+    "subtitulo": "Alta, suspensión y baja de los negocios de la plataforma",
+    "fallo_listado": "No pudimos cargar los negocios.",
+    "columna": {
+      "nombre": "Nombre",
+      "estado": "Estado",
+      "id": "Identificador",
+      "acciones": "Acciones"
+    },
+    "estado": {
+      "activo": "Activo",
+      "suspendido": "Suspendido",
+      "eliminado": "Eliminado"
+    },
+    "accion": {
+      "crear": "Nuevo negocio",
+      "renombrar": "Cambiar el nombre",
+      "suspender": "Suspender",
+      "reactivar": "Reactivar",
+      "menu": "Acciones del negocio"
+    },
+    "campo": {
+      "nombre": "Nombre del negocio",
+      "nombre_marcador": "Tienda Don Carlos",
+      "nombre_ayuda": "Es el nombre que verá el dueño al entrar. Se puede cambiar después."
+    },
+    "dialogo": {
+      "crear": "Nuevo negocio",
+      "editar": "Cambiar el nombre del negocio"
+    },
+    "confirmar": {
+      "suspender_titulo": "¿Suspender este negocio?",
+      "suspender_mensaje": "Sus usuarios podrán entrar, pero la aplicación dejará de responderles hasta que lo reactives. Los datos no se tocan.",
+      "reactivar_titulo": "¿Reactivar este negocio?",
+      "reactivar_mensaje": "Volverá a operar con normalidad de inmediato.",
+      "eliminar_titulo": "¿Eliminar este negocio?",
+      "eliminar_mensaje": "Es una baja lógica: los datos se conservan para auditoría, pero el negocio deja de operar y desaparece del listado."
+    },
+    "vacio": {
+      "titulo": "Todavía no hay negocios",
+      "descripcion": "Crea el primero con el botón «Nuevo negocio»."
+    },
+    "ver_eliminados": "Ver también los eliminados"
+  },
+  "sin_acceso": {
+    "titulo": "Esta consola no es para tu cuenta",
+    "descripcion": "La consola de plataforma es para el equipo de Vendi. Si administras una tienda, entra por la aplicación de tu negocio.",
+    "sesion_actual": "Sesión iniciada como {{correo}}"
   }
 }

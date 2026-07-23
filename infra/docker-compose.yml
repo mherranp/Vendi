@@ -386,6 +386,20 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY es obligatorio}
       MINIO_BUCKET: ${MINIO_BUCKET:-vendi-co-media}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # Credencial de /metrics. Sin ella la ruta responde 503 (falla cerrado);
+      # nunca se abre. Ver backend/services/api/app/metrics.py.
+      METRICS_TOKEN: ${METRICS_TOKEN:?METRICS_TOKEN es obligatorio; copia .env.example a .env}
+      # CIDR de los proxies de confianza para X-Forwarded-For. En el compose el
+      # peer de la API es siempre Traefik dentro de la red de Docker; con la
+      # lista vacía, `trusted_client_ip` ignora la cabecera y devuelve el peer
+      # —falla cerrado— y el rastro de auditoría registraría la IP de Traefik en
+      # vez de la del cliente.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12,10.0.0.0/8,192.168.0.0/16}
+      # CORS lo termina Traefik (middleware `cors-api`). Declarar aquí un origen
+      # SIN quitarlo de Traefik produce la cabecera Access-Control-Allow-Origin
+      # DUPLICADA y el navegador rechaza la respuesta entera. Ver la cabecera de
+      # backend/services/api/app/factory.py.
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -414,6 +428,13 @@ services:
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-vendi}:${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD es obligatorio}@rabbitmq:5672/
       WORKER_HEARTBEAT_SECONDS: ${WORKER_HEARTBEAT_SECONDS:-30}
       WORKER_HEARTBEAT_FILE: /tmp/vendi-worker-latido
+      # Necesario para el hook de purga de `files`: sin almacén, la retención
+      # borra la FILA y deja el objeto en el bucket para siempre — una fuga de
+      # almacenamiento que nadie ve porque ya no queda fila que la señale.
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-vendi}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY es obligatorio}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -437,9 +458,22 @@ services:
   prometheus:
     logging: *default-logging
     image: prom/prometheus:v2.55.1
+    environment:
+      METRICS_TOKEN: ${METRICS_TOKEN:?METRICS_TOKEN es obligatorio; copia .env.example a .env}
+    # Prometheus NO expande variables de entorno en su configuración (solo
+    # `${}` en external_labels, y detrás de un feature flag), así que la
+    # credencial se materializa en un archivo al arrancar y el scrape la lee
+    # con `authorization.credentials_file`. Se escribe en /tmp porque el
+    # proceso corre como `nobody` y /etc/prometheus es de solo lectura.
+    entrypoint: ["/bin/sh", "-c"]
     command:
-      - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.retention.time=15d
+      - |
+        set -eu
+        umask 077
+        printf '%s' "$${METRICS_TOKEN}" > /tmp/metrics-token
+        exec /bin/prometheus \
+          --config.file=/etc/prometheus/prometheus.yml \
+          --storage.tsdb.retention.time=15d
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/rules:/etc/prometheus/rules:ro

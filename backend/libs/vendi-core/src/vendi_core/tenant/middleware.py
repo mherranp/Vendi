@@ -62,9 +62,26 @@ from vendi_core.tracing.context import bind_tenant_id
 logger = structlog.get_logger()
 
 # Rutas que no necesitan token de ninguna clase.
+#
+# `/metrics` NO está aquí, y su ausencia es deliberada. Estuvo, y era un
+# agujero: la exposición de Prometheus incluye nombres de negocio en las
+# etiquetas, rutas internas y contadores de error, y el router `api` de Traefik
+# enruta por Host —no por path—, así que `/metrics` quedaba servido en
+# `https://api.<dominio>/metrics` sin credencial ninguna. Ahora vive en
+# `RUTAS_CON_CREDENCIAL_PROPIA`: el middleware sigue sin exigirle un JWT (el
+# scrapper de Prometheus no tiene usuario), pero la ruta exige **su propia**
+# credencial en el handler. Ver `app.metrics` en `services/api`.
 RUTAS_PUBLICAS: frozenset[str] = frozenset(
-    {"/health", "/health/ready", "/health/live", "/docs", "/redoc", "/openapi.json", "/metrics"}
+    {"/health", "/health/ready", "/health/live", "/docs", "/redoc", "/openapi.json"}
 )
+
+# Rutas que el middleware deja pasar **porque comprueban su propia credencial**,
+# no porque sean públicas. La distinción importa: quien añada algo aquí está
+# afirmando que el handler autentica por su cuenta, y un test lo comprueba
+# (`tests/api/test_metrics_protegido.py`). Meter una ruta en `RUTAS_PUBLICAS`
+# significa otra cosa muy distinta —cualquiera puede llamarla— y por eso son
+# dos conjuntos y no uno con un comentario.
+RUTAS_CON_CREDENCIAL_PROPIA: frozenset[str] = frozenset({"/metrics"})
 
 # Prefijo de las rutas de plataforma: exigen token válido pero **no** tenant.
 # Son las de la consola de Vendi, que trabaja cross-tenant por definición.
@@ -72,6 +89,11 @@ PREFIJO_PLATAFORMA = "/api/v1/platform"
 
 # Header con el que un usuario multi-organización elige negocio.
 HEADER_TENANT = "X-Tenant-Id"
+
+# Cabecera que un navegador manda SOLO en el preflight de CORS. Su presencia en
+# un OPTIONS es la firma exacta del preflight y lo que lo distingue de un
+# OPTIONS de aplicación.
+HEADER_PREFLIGHT = "Access-Control-Request-Method"
 
 
 def _error(status: int, mensaje: str, codigo: str) -> JSONResponse:
@@ -102,7 +124,28 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         ruta = request.url.path.rstrip("/") or "/"
-        if ruta in RUTAS_PUBLICAS:
+        if ruta in RUTAS_PUBLICAS or ruta in RUTAS_CON_CREDENCIAL_PROPIA:
+            return await call_next(request)
+
+        # --- Preflight de CORS: jamás se le pide token ----------------------
+        #
+        # Un preflight es un `OPTIONS` que el navegador emite POR SU CUENTA
+        # antes del request real, y la especificación de Fetch prohíbe
+        # explícitamente que lleve credenciales: no viaja la cabecera
+        # `Authorization` ni ninguna cookie. Contestarle 401 significa que el
+        # navegador nunca llega a hacer el request real y que, además, la
+        # respuesta de error no lleva cabeceras `Access-Control-Allow-*`, así
+        # que el fallo que ve el desarrollador del SPA es «CORS error», sin
+        # rastro del 401 en ninguna parte. Es decir: las cuatro aplicaciones
+        # web mueren y el mensaje apunta al sitio equivocado.
+        #
+        # Defensa en profundidad, no la primaria: en el despliegue real es
+        # Traefik quien termina el preflight (middleware `cors-api`) y este
+        # código no llega a ejecutarse. Pero el aislamiento de la API no puede
+        # depender de que haya un proxy delante — quien la levante a pelo,
+        # quien la pruebe con TestClient o quien la despliegue detrás de otro
+        # borde tiene que obtener el mismo comportamiento.
+        if request.method == "OPTIONS" and HEADER_PREFLIGHT in request.headers:
             return await call_next(request)
 
         es_plataforma = ruta == PREFIJO_PLATAFORMA or ruta.startswith(PREFIJO_PLATAFORMA + "/")

@@ -30,7 +30,7 @@ Origen: `/Users/maoherran/BaseSaaS/frontend/projects/{ui-core,ui-components,ui-d
 | --- | --- | --- |
 | `domain/src/lib/models/api-response.model.ts` | `ui-core/src/lib/models/api-response.model.ts` | Se elimina `PaginatedResponse` (ya estaba `@deprecated`); `Tenant` se muda a su propio archivo; se añade `ApiError` |
 | `domain/src/lib/models/user.model.ts` | `ui-core/src/lib/models/user.model.ts` + el `UserProfile` embebido en `ui-core/src/lib/auth/auth.service.ts` | Se fusionan los dos perfiles duplicados y se conserva el derivado del token; el slug de tenant pasa a `tenantId: string \| null` |
-| `domain/src/lib/models/tenant.model.ts` | (nuevo) | Alineado con el contrato de la Tarea 4.2: `{id, nombre, estado}`; `plan` opcional porque la API de Fase 0 no lo emite |
+| `domain/src/lib/models/tenant.model.ts` | (nuevo) | Alineado con el contrato congelado en `docs/api/openapi-fase0.json`: `{id, nombre, estado, kc_org_id?, created_at?}`; `plan` opcional porque la API de Fase 0 no lo emite |
 | `domain/src/lib/reglas/tenant.reglas.ts` | (nuevo) | `esIdDeTenant` (alias = UUID), `esTenantOperativo`, `esEstadoVisible` |
 | `data-access/src/lib/api.service.ts` | `ui-core/src/lib/services/api.service.ts` | Sin cambios de fondo; opciones renombradas al español |
 | `data-access/src/lib/interceptors/correlation-id.interceptor.ts` | ídem en `ui-core` | Sin cambios de fondo |
@@ -117,7 +117,7 @@ Todo lo cosechado lleva el renombre `base_saas` → `vendi_core` en imports y
 | --- | --- |
 | `storage/policy.py` | Política de bucket-por-tenant. Fase 0 usa un bucket por región con prefijo `{tenant_id}/` (ADR-016): decenas de miles de buckets del plan gratuito no escalan en S3, y con bucket compartido el aislamiento lo da el prefijo y la firma de URLs |
 | `tenant/schema.py` | `tenant_schema_name`, `set_search_path_sql`. No hay schema por inquilino |
-| `tenant/freeze_middleware.py` | El congelado de workspace no existe; la suspensión es app-level (tarea 4.2) |
+| `tenant/freeze_middleware.py` | El congelado de workspace no existe; la suspensión es app-level: la comprueba la dependencia `exigir_negocio_activo` contra la columna `estado` de `tenants`, con cache Redis de 60 s |
 | `auth/passwords.py` | Las contraseñas las guarda Keycloak; la API nunca las ve |
 | `mail/mailer.py` | Mailer por tenant: escribía en `email_messages` dentro del schema del inquilino |
 | `mail/renderer.py` | Plantillas en base de datos, editables por inquilino. Aquí el catálogo es Jinja en el paquete, versionado con el código |
@@ -152,7 +152,7 @@ devuelven **cero filas sin error**, así que un token expirado se convertiría e
 
 #### Tablas de plataforma (sin RLS) y por qué
 
-`audit_events`, `outbox_messages`, `tenants` (tarea 4.2) y `alembic_version`.
+`audit_events`, `outbox_messages`, `tenants` y `alembic_version`.
 La lista vive en `vendi_core.db.base.TABLAS_DE_PLATAFORMA` y la leen los dos
 candados. «Sin RLS» significa aquí, con precisión, «sin la policy de aislamiento
 `tenant_isolation`»: la consulta y el drenado de estas tablas son cross-tenant
@@ -167,6 +167,23 @@ Postgres, y no es la misma para las dos tablas.
 |-------------------|-----------------------------|------------------|
 | `audit_events`    | nada                        | todo             |
 | `outbox_messages` | **solo `INSERT`**, y acotado por policy | todo, salta la policy por `BYPASSRLS` |
+| `tenants`         | nada                        | todo             |
+
+**`tenants`: nada, por el mismo motivo que `audit_events` y con más urgencia.**
+Es la única tabla del sistema que enumera **todos** los negocios de la región
+—nombres, estados, ids de organización— y no lleva policy de aislamiento porque
+no tiene columna `tenant_id` que comparar: no pertenece a un negocio, *es* el
+negocio. Con `SELECT` para el rol de la API, cualquier handler podría listarla
+entera, que es exactamente el dato que el producto promete no cruzar. Los
+privilegios por defecto de `01-roles.sh` la habrían dejado accesible (dan CRUD
+sobre toda tabla nueva creada por `vendi_platform`), así que la migración `0002`
+hace `REVOKE ALL ON tenants FROM vendi_app` explícitamente.
+
+El único camino de lectura es la sesión de plataforma: `/api/v1/platform/*`
+—que exige `platform:admin`— y `GET /api/v1/tenants/me`, que filtra en Python
+por el `tenant_id` que salió del claim firmado por Keycloak. Lo defiende
+`test_rls_coverage.py::test_vendi_app_no_alcanza_las_tablas_de_plataforma` y
+`test_aislamiento_end_to_end.py::test_el_rol_de_la_api_no_alcanza_la_tabla_de_negocios`.
 
 **`audit_events`: nada, y no es un olvido simétrico.** `AuditService` no recibe
 una sesión, recibe una `async_sessionmaker` y abre la suya
@@ -206,6 +223,21 @@ CREATE POLICY outbox_encolado_del_tenant ON outbox_messages
 entera y que los eventos de plataforma con `tenant_id NULL` puedan encolarse—;
 `vendi_app` no. Sin ella, un `INSERT` con `tenant_id` ajeno pasaría y el
 dispatcher publicaría el evento con la clave de enrutado del otro negocio.
+
+**Lo que la policy NO acota, y quién lo acota (cierre de D-05).** La policy mira
+la *columna* `tenant_id` y nada más: el texto de `routing_key` y el contenido de
+`payload` pasan sin revisar. Una sesión de `vendi_app` con el GUC del negocio A
+podía encolar legalmente una fila con `tenant_id = A` y
+`routing_key = '<B>.venta.creada'`, y el dispatcher la publicaba literal.
+
+Lo cierra el dispatcher, no la base: `OutboxDispatcher` **deriva** la clave de
+enrutado de `msg.tenant_id` (`derivar_clave_de_enrutado`) y reescribe el campo
+`tenant_id` del payload con el mismo valor. Lo que aporta el llamante es solo el
+sufijo —el nombre del evento—, que no decide destinatario. Para el código
+correcto es un no-op; para el equivocado es un candado, y la corrección se
+registra como `outbox_clave_de_enrutado_corregida` con las dos claves. El
+candado con dos colas reales de RabbitMQ está en
+`tests/worker/test_outbox_dispatch.py`.
 
 Detalle de implementación con nombre y apellidos: `OutboxMessage` declara
 `__mapper_args__ = {"eager_defaults": False}`. SQLAlchemy 2 emite por defecto

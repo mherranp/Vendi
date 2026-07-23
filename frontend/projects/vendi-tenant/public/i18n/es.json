@@ -17,7 +17,8 @@
     "guardar": "Guardar",
     "eliminar": "Eliminar",
     "buscar": "Buscar",
-    "cerrar": "Cerrar"
+    "cerrar": "Cerrar",
+    "reintentar": "Reintentar"
   },
   "errores": {
     "sin_conexion": "Sin conexión. Revisa tu red e inténtalo de nuevo.",
@@ -59,5 +60,26 @@
     "titulo": "Notificaciones",
     "marcar_leidas": "Marcar todas como leídas",
     "vacio": "No hay notificaciones"
+  },
+  "negocio": {
+    "titulo": "Mi negocio",
+    "subtitulo": "Los datos de tu tienda tal como los tiene Vendi",
+    "fallo": "No pudimos cargar los datos de tu negocio.",
+    "cambiar": "Cambiar de negocio",
+    "campo": {
+      "estado": "Estado",
+      "id": "Identificador del negocio",
+      "id_del_token": "Identificador en tu sesión"
+    },
+    "estado": {
+      "activo": "Activo",
+      "suspendido": "Suspendido",
+      "eliminado": "Eliminado"
+    }
+  },
+  "elegir": {
+    "titulo": "¿Con cuál de tus negocios quieres trabajar?",
+    "descripcion": "Tu cuenta administra más de un negocio. Elige uno para continuar; puedes cambiar cuando quieras.",
+    "sin_negocios": "Tu cuenta todavía no está asociada a ningún negocio. Pídele al administrador que te agregue."
   }
 }
