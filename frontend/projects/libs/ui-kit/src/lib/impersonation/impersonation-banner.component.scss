@@ -1,0 +1,43 @@
+.vd-suplantacion {
+  display: flex;
+  align-items: center;
+  gap: var(--vd-espacio-3);
+  padding: var(--vd-espacio-2) var(--vd-espacio-4);
+  background: var(--vd-acento-error);
+  color: #fff;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.2);
+  position: sticky;
+  top: 0;
+  // Por encima de la barra superior y del cajón lateral de Material.
+  z-index: 1100;
+  font-size: var(--vd-texto-sm);
+
+  mat-icon {
+    color: #fff;
+  }
+
+  button {
+    // Contraste legible sobre el rojo: chip oscuro semitransparente.
+    --mat-button-filled-container-color: rgba(0, 0, 0, 0.35);
+    --mat-button-filled-label-text-color: #fff;
+  }
+}
+
+.vd-suplantacion__texto {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+
+  strong {
+    font-weight: 600;
+  }
+}
+
+.vd-suplantacion__expira {
+  font-size: var(--vd-texto-xs);
+  opacity: 0.85;
+}
+
+.vd-suplantacion__espaciador {
+  flex: 1;
+}

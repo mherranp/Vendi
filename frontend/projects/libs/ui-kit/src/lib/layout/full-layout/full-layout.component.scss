@@ -1,0 +1,47 @@
+.vd-shell {
+  height: 100vh;
+}
+
+.vd-shell__lateral {
+  width: var(--vd-ancho-lateral);
+  background: var(--vd-superficie-1);
+  border-right: 1px solid var(--vd-borde-sutil);
+}
+
+.vd-shell__marca {
+  padding: var(--vd-espacio-6) var(--vd-espacio-6) var(--vd-espacio-4);
+
+  h2 {
+    margin: 0;
+    font-family: var(--vd-fuente);
+    font-size: var(--vd-texto-xl);
+    font-weight: 700;
+    color: var(--vd-texto-marca);
+    letter-spacing: -0.01em;
+  }
+}
+
+.vd-shell__barra {
+  position: sticky;
+  top: 0;
+  z-index: var(--vd-z-elevado);
+  background: var(--vd-superficie-1);
+  border-bottom: 1px solid var(--vd-borde-sutil);
+  box-shadow: var(--vd-sombra-sm);
+}
+
+.vd-shell__espaciador {
+  flex: 1;
+}
+
+.vd-shell__usuario {
+  margin-left: var(--vd-espacio-2);
+  font-size: var(--vd-texto-sm);
+  color: var(--vd-texto-secundario);
+}
+
+.vd-shell__principal {
+  padding: var(--vd-espacio-8);
+  min-height: calc(100vh - var(--vd-alto-barra));
+  background: var(--vd-superficie-0);
+}

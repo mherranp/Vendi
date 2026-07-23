@@ -5,7 +5,8 @@ Angular CLI 21.2.17.
 
 ## Requisito previo: compilar las librerías
 
-**`ng serve` y `ng build` pelados no funcionan en un árbol recién clonado.** Los
+**`ng serve`, `ng build` y `ng test` pelados no funcionan en un árbol recién
+clonado.** Los
 alias de `tsconfig.json` (`auth`, `data-access`, `domain`, `native`, `ui-kit`)
 apuntan a `dist/`, no al código fuente: es la única forma de que las librerías se
 compilen como paquetes independientes con ng-packagr sin violar `rootDir`. Si
@@ -22,6 +23,17 @@ encadenan con hooks `pre*`, así que **usa siempre los scripts de npm, no `ng`
 directamente**. Solo cuando trabajes sobre una librería y no sobre una app
 necesitarás volver a lanzar `npm run build:libs` a mano para que las apps vean
 el cambio.
+
+Esto **también aplica a los tests de las librerías**: `npx ng test auth` o
+`npx ng test ui-kit` fallan en un árbol limpio, porque sus specs resuelven
+`data-access` y `domain` por los mismos alias hacia `dist/`. Si quieres lanzar
+un proyecto suelto, compila primero:
+
+```bash
+npm run build:libs && npx ng test ui-kit --watch=false
+```
+
+`npm test` lo hace por ti (`pretest → build:libs`) y corre los nueve proyectos.
 
 ## Aplicaciones
 
@@ -133,13 +145,99 @@ Colombia y no existe `en.json`. Un navegador en inglés no debe poder provocar u
 404 del catálogo y una pantalla llena de claves crudas. Cuando llegue el segundo
 país se añade el catálogo y se activa la detección.
 
-Un `provideAppInitializer` espera a que el catálogo esté cargado antes de
-arrancar la aplicación; sin eso el primer render pinta literalmente `app.titulo`.
+Las cuatro apps lo arrancan con **un solo proveedor**, `proveerI18nVendi()` de
+`data-access`, en lugar del bloque de ~20 líneas que la Etapa 2 duplicó en cada
+`app.config.ts`. Ese bloque era **fail-hard** y ese es el defecto que cierra la
+Etapa 3:
+
+- El `provideAppInitializer` esperaba a `use('es')`. Si `/i18n/es.json` no se
+  podía descargar —sin red, PWA instalada, 404 tras un despliegue a medias— la
+  promesa **rechazaba**, Angular abortaba el bootstrap y el usuario veía una
+  **pantalla en blanco**. Para un POS que promete funcionar sin conexión eso no
+  es aceptable.
+- Ahora el cargador (`CargadorDeTraduccionesResiliente`) no puede fallar: ante
+  error o timeout de 5 s devuelve `CATALOGO_MINIMO_ES`, un catálogo empotrado en
+  el bundle. El peor caso pasa de "pantalla en blanco" a "arranca en español".
+- `CATALOGO_MINIMO_ES` es **completo, no mínimo**, y esto es una invariante que
+  se rompió una vez: mientras solo traía `app`/`comun`/`layout`/`errores`, la
+  app degradada arrancaba pintando `ui.404.titulo` y un `ui.validacion.requerido`
+  debajo de cada campo obligatorio, porque los componentes de `ui-kit` usan el
+  pipe `| translate` directo (que devuelve la clave) y no `traducir()`.
+  **Toda clave que pueda pintar un componente tiene que estar en el catálogo
+  empotrado.** Lo vigilan dos tests: `i18n.provider.spec.ts` (`instant()` tras un
+  arranque degradado no devuelve ninguna clave cruda) y
+  `ui-kit/src/lib/testing/respaldo-i18n.spec.ts`, que monta los componentes con
+  ese mismo catálogo y barre el DOM. Además, `CATALOGO_DE_PRUEBA` de
+  `ui-kit/testing` **es** `CATALOGO_MINIMO_ES` —no una copia—, así que toda la
+  suite de `ui-kit` se ejecuta contra la ruta degradada de producción y la
+  deriva entre los dos catálogos no puede volver a ocurrir. Es el único motivo
+  por el que `eslint.config.js` de `ui-kit` abre `data-access` en
+  `src/lib/testing/` (directorio que `tsconfig.lib.json` excluye del paquete).
+- Y para que ni siquiera se degrade, `ngsw-config.json` de `vendi-app` precarga
+  `/i18n/*.json` en un `assetGroup` propio con `installMode: prefetch`. Los dos
+  mecanismos son complementarios: el service worker evita el degradado, el
+  catálogo empotrado evita la pantalla en blanco cuando no hay service worker
+  (primera visita, WebView de Capacitor, navegador que lo bloquea).
+- `traducir()` cierra el último hueco: `TranslateService.instant()` devuelve la
+  **clave** cuando no la encuentra, y un tendero no debe leer `errores.servidor`.
+  El helper cae al catálogo mínimo antes de rendirse.
 
 **Regla de PR:** ninguna cadena visible se escribe a mano en un template, ni en
 las apps ni —sobre todo— en las librerías. Todo texto de interfaz pasa por el
 pipe `translate` y vive en un catálogo. Una librería que devuelva español
 literal es intraducible desde fuera y bloquea la expansión regional.
+
+## Tema y tokens de diseño
+
+El tema vive en `projects/libs/ui-kit/src/lib/theme/` (`tema.scss` →
+`_tokens.scss` + `_utilidades.scss`) y se consume desde el `styles.scss` de cada
+app **después** de `mat.theme()`:
+
+```scss
+@use '@angular/material' as mat;
+html {
+  @include mat.theme((...));
+}
+@use 'tema' as *;
+```
+
+`tema` se resuelve por `stylePreprocessorOptions.includePaths` contra
+`dist/ui-kit/src/lib/theme`, así que —igual que los alias de TypeScript— hay que
+haber ejecutado `npm run build:libs` antes.
+
+Los tokens de superficie y texto **no declaran colores propios**: se derivan de
+las variables de sistema de Material 3 (`--mat-sys-*`). Mantener dos paletas
+paralelas es exactamente lo que hace que un componente de Material y uno propio
+se vean distintos en modo oscuro. El tema de Vendi solo aporta lo suyo: la rampa
+de marca, los acentos semánticos, la escala tipográfica, el espaciado y el
+objetivo táctil de 48 px (Vendi se usa con el dedo, de pie, detrás de un
+mostrador).
+
+### Modo oscuro: `color-scheme` se declara en un solo sitio
+
+`mat.theme()` emite sus variables como `light-dark(claro, oscuro)`, que se
+resuelve con el `color-scheme` calculado del elemento. Por eso **`color-scheme`
+se declara únicamente en `:root`, dentro de `ui-kit/theme/_tokens.scss`**, junto
+a los overrides `--vd-*` del modo oscuro:
+
+| Situación          | Selector                                                              | `color-scheme`   |
+| ------------------ | --------------------------------------------------------------------- | ---------------- |
+| Por defecto        | `:root`                                                               | `light dark`     |
+| Sistema en oscuro  | `@media (prefers-color-scheme: dark) :root:not([data-theme='light'])` | `dark`           |
+| Forzado por la app | `:root[data-theme='dark'] / [data-theme='light']`                     | `dark` / `light` |
+
+Los `styles.scss` de las apps **no** deben declarar `color-scheme` (lo que
+genera `ng new` es `body { color-scheme: light }`, y hay que borrarlo). Cuando
+estuvo declarado en los dos sitios, Material quedaba clavado en claro mientras
+los tokens `--vd-*` sí conmutaban con la preferencia del sistema: en cualquier
+dispositivo en modo oscuro salían superficies blancas con el texto de marca en
+`--vd-marca-300`, ~1.5:1 de contraste, muy por debajo del 4.5:1 de WCAG AA.
+Verificado sobre el CSS compilado: en modo oscuro `--vd-superficie-1` resuelve a
+`#121316` y `--vd-texto-marca` a `#6ee7b7` (12.1:1); en claro, `#faf9fd` y
+`#047857` (5.2:1).
+
+La rampa de marca es **provisional** hasta que exista manual de identidad;
+cambiarla es tocar un solo bloque de `_tokens.scss`.
 
 ## Cliente generado de la API
 

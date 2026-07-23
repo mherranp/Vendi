@@ -6,4 +6,37 @@
  * El acceso a plataforma va por native.
  */
 
-export {};
+// --- Cliente HTTP ---------------------------------------------------------
+export { API_BASE_URL, ApiService } from './lib/api.service';
+export type { OpcionesDeLlamada } from './lib/api.service';
+
+// --- Interceptores --------------------------------------------------------
+export { correlationIdInterceptor } from './lib/interceptors/correlation-id.interceptor';
+export {
+  SILENCIAR_AVISO_ERROR,
+  claveDeError,
+  errorInterceptor,
+  extraerMensajeDeError,
+} from './lib/interceptors/error.interceptor';
+
+// --- Avisos al usuario ----------------------------------------------------
+export { Notificador } from './lib/notificaciones/notificador.service';
+export type { Aviso, TipoDeAviso } from './lib/notificaciones/notificador.service';
+
+// --- i18n -----------------------------------------------------------------
+export { CATALOGO_MINIMO_ES, textoDeRespaldo } from './lib/i18n/catalogo-minimo';
+export type { CatalogoTraducciones } from './lib/i18n/catalogo-minimo';
+export { traducir } from './lib/i18n/traduccion';
+export {
+  CATALOGO_DE_RESPALDO,
+  CargadorDeTraduccionesResiliente,
+  ESPERA_MAXIMA_CATALOGO_MS,
+  IDIOMA_POR_DEFECTO,
+  proveerI18nVendi,
+} from './lib/i18n/i18n.provider';
+
+// --- Servicios ------------------------------------------------------------
+export { FeatureFlagsService } from './lib/services/feature-flags.service';
+
+// --- Cliente generado desde el OpenAPI de la API --------------------------
+export * from './lib/api-client';

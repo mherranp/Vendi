@@ -1,0 +1,10 @@
+.vd-tabla {
+  background: var(--vd-superficie-1);
+  border-radius: var(--vd-radio-lg);
+  box-shadow: var(--vd-sombra-sm);
+  overflow-x: auto;
+}
+
+.vd-tabla__grid {
+  width: 100%;
+}

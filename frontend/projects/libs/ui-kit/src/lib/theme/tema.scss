@@ -1,0 +1,13 @@
+// Punto de entrada del tema de Vendi.
+//
+// Las apps lo consumen desde su `styles.scss`, después de `mat.theme()`:
+//
+//   @use '@angular/material' as mat;
+//   html { @include mat.theme(( ... )); }
+//   @use 'tema' as *;   // resuelto por stylePreprocessorOptions.includePaths
+//
+// El orden importa: los tokens de Vendi leen las variables `--mat-sys-*` que
+// genera `mat.theme()`, así que el tema de Material tiene que declararse antes.
+
+@forward 'tokens';
+@forward 'utilidades';

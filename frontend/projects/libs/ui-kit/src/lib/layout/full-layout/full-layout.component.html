@@ -1,0 +1,56 @@
+<mat-sidenav-container class="vd-shell">
+  <mat-sidenav [opened]="lateralAbierto()" mode="side" class="vd-shell__lateral">
+    @if (marca()) {
+      <div class="vd-shell__marca">
+        <h2>{{ marca() }}</h2>
+      </div>
+    }
+    <mat-nav-list>
+      @for (item of navegacion(); track item.ruta) {
+        <a mat-list-item [routerLink]="item.ruta" routerLinkActive="activo">
+          <mat-icon matListItemIcon aria-hidden="true">{{ item.icono }}</mat-icon>
+          <span matListItemTitle>{{ item.etiqueta | translate }}</span>
+        </a>
+      }
+    </mat-nav-list>
+  </mat-sidenav>
+
+  <mat-sidenav-content class="vd-shell__contenido">
+    <ng-content select="[slot=aviso-superior]" />
+
+    <mat-toolbar class="vd-shell__barra">
+      <button
+        matIconButton
+        (click)="alternarLateral()"
+        [attr.aria-label]="'layout.menu' | translate"
+      >
+        <mat-icon aria-hidden="true">menu</mat-icon>
+      </button>
+      <span class="vd-shell__espaciador"></span>
+
+      <ng-content select="[slot=acciones]" />
+
+      <button matButton [matMenuTriggerFor]="menuUsuario">
+        <mat-icon aria-hidden="true">account_circle</mat-icon>
+        <span class="vd-shell__usuario">{{ nombreUsuario() }}</span>
+      </button>
+      <mat-menu #menuUsuario="matMenu">
+        @if (rutaCuenta()) {
+          <a mat-menu-item [routerLink]="rutaCuenta()">
+            <mat-icon aria-hidden="true">person</mat-icon>
+            <span>{{ 'layout.cuenta' | translate }}</span>
+          </a>
+          <mat-divider />
+        }
+        <button mat-menu-item (click)="cerrarSesion.emit()">
+          <mat-icon aria-hidden="true">logout</mat-icon>
+          <span>{{ 'layout.cerrar_sesion' | translate }}</span>
+        </button>
+      </mat-menu>
+    </mat-toolbar>
+
+    <main class="vd-shell__principal">
+      <router-outlet />
+    </main>
+  </mat-sidenav-content>
+</mat-sidenav-container>

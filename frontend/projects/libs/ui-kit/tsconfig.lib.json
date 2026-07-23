@@ -9,5 +9,7 @@
     "types": []
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["**/*.spec.ts"]
+  // `src/lib/testing/` son utilidades de prueba (catálogo de traducción
+  // síncrono para los specs de componentes). No se publican en el paquete.
+  "exclude": ["**/*.spec.ts", "src/lib/testing/**"]
 }

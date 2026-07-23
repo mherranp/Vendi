@@ -1,0 +1,10 @@
+<div class="vd-404" role="alert" aria-live="polite">
+  <mat-icon class="vd-404__icono" aria-hidden="true">explore_off</mat-icon>
+  <p class="vd-404__codigo">404</p>
+  <h1 class="vd-404__titulo">{{ titulo() | translate }}</h1>
+  <p class="vd-404__descripcion">{{ descripcion() | translate }}</p>
+  <a matButton="filled" [routerLink]="enlaceInicio()" class="vd-404__accion">
+    <mat-icon aria-hidden="true">arrow_back</mat-icon>
+    <span>{{ textoInicio() | translate }}</span>
+  </a>
+</div>

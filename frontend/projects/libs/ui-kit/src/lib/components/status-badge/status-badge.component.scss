@@ -1,0 +1,32 @@
+.vd-insignia {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--vd-espacio-1) var(--vd-espacio-3);
+  border-radius: var(--vd-radio-completo);
+  font-size: var(--vd-texto-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1;
+
+  &--exito {
+    background: color-mix(in srgb, var(--vd-acento-exito) 15%, transparent);
+    color: var(--vd-acento-exito);
+  }
+  &--info {
+    background: color-mix(in srgb, var(--vd-acento-info) 15%, transparent);
+    color: var(--vd-acento-info);
+  }
+  &--aviso {
+    background: color-mix(in srgb, var(--vd-acento-aviso) 15%, transparent);
+    color: var(--vd-acento-aviso);
+  }
+  &--peligro {
+    background: color-mix(in srgb, var(--vd-acento-error) 15%, transparent);
+    color: var(--vd-acento-error);
+  }
+  &--neutro {
+    background: var(--vd-superficie-2);
+    color: var(--vd-texto-secundario);
+  }
+}

@@ -1,0 +1,18 @@
+@if (actor()) {
+  <div class="vd-suplantacion" role="alert" aria-live="assertive">
+    <mat-icon aria-hidden="true">visibility</mat-icon>
+    <div class="vd-suplantacion__texto">
+      <strong>{{ 'suplantacion.titulo' | translate: { usuario: actor() } }}</strong>
+      @if (expiraEnSegundos() !== null) {
+        <span class="vd-suplantacion__expira">
+          {{ 'suplantacion.expira_en' | translate: { segundos: expiraEnSegundos() } }}
+        </span>
+      }
+    </div>
+    <span class="vd-suplantacion__espaciador"></span>
+    <button matButton="filled" (click)="detener.emit()">
+      <mat-icon aria-hidden="true">logout</mat-icon>
+      {{ 'suplantacion.detener' | translate }}
+    </button>
+  </div>
+}

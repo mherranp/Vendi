@@ -1,0 +1,126 @@
+<form
+  [formGroup]="formulario()"
+  (ngSubmit)="alEnviar()"
+  class="vd-form"
+  [class]="'vd-form--' + (configuracion().disposicion ?? 'una-columna')"
+>
+  <div class="vd-form__rejilla" [style.grid-template-columns]="plantillaRejilla()">
+    @for (campo of configuracion().campos; track campo.clave) {
+      <div class="vd-form__campo" [style.grid-column]="'span ' + (campo.columnas ?? 1)">
+        @switch (campo.tipo) {
+          @case ('textarea') {
+            <mat-form-field appearance="outline">
+              <mat-label>{{ campo.etiqueta | translate }}</mat-label>
+              <textarea
+                matInput
+                rows="4"
+                [formControlName]="campo.clave"
+                [placeholder]="campo.marcador ? (campo.marcador | translate) : ''"
+                [readonly]="campo.soloLectura"
+              ></textarea>
+              @if (campo.ayuda) {
+                <mat-hint>{{ campo.ayuda | translate }}</mat-hint>
+              }
+              @if (claveDeError(campo)) {
+                <mat-error>{{ claveDeError(campo) | translate }}</mat-error>
+              }
+            </mat-form-field>
+          }
+          @case ('select') {
+            <mat-form-field appearance="outline">
+              <mat-label>{{ campo.etiqueta | translate }}</mat-label>
+              <mat-select [formControlName]="campo.clave">
+                @for (opcion of campo.opciones ?? []; track opcion.valor) {
+                  <mat-option [value]="opcion.valor">{{ opcion.etiqueta | translate }}</mat-option>
+                }
+              </mat-select>
+              @if (campo.ayuda) {
+                <mat-hint>{{ campo.ayuda | translate }}</mat-hint>
+              }
+              @if (claveDeError(campo)) {
+                <mat-error>{{ claveDeError(campo) | translate }}</mat-error>
+              }
+            </mat-form-field>
+          }
+          @case ('multiselect') {
+            <mat-form-field appearance="outline">
+              <mat-label>{{ campo.etiqueta | translate }}</mat-label>
+              <mat-select [formControlName]="campo.clave" multiple>
+                @for (opcion of campo.opciones ?? []; track opcion.valor) {
+                  <mat-option [value]="opcion.valor">{{ opcion.etiqueta | translate }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+          }
+          @case ('radio') {
+            <span class="vd-form__etiqueta">{{ campo.etiqueta | translate }}</span>
+            <mat-radio-group [formControlName]="campo.clave">
+              @for (opcion of campo.opciones ?? []; track opcion.valor) {
+                <mat-radio-button [value]="opcion.valor">
+                  {{ opcion.etiqueta | translate }}
+                </mat-radio-button>
+              }
+            </mat-radio-group>
+          }
+          @case ('checkbox') {
+            <mat-checkbox [formControlName]="campo.clave">
+              {{ campo.etiqueta | translate }}
+            </mat-checkbox>
+          }
+          @case ('date') {
+            <mat-form-field appearance="outline">
+              <mat-label>{{ campo.etiqueta | translate }}</mat-label>
+              <input matInput [matDatepicker]="selector" [formControlName]="campo.clave" />
+              <mat-datepicker-toggle matIconSuffix [for]="selector" />
+              <mat-datepicker #selector />
+              @if (claveDeError(campo)) {
+                <mat-error>{{ claveDeError(campo) | translate }}</mat-error>
+              }
+            </mat-form-field>
+          }
+          @case ('file') {
+            <label class="vd-form__etiqueta" [for]="'archivo-' + campo.clave">
+              {{ campo.etiqueta | translate }}
+            </label>
+            <input
+              [id]="'archivo-' + campo.clave"
+              type="file"
+              [accept]="campo.acepta ?? '*/*'"
+              [multiple]="campo.multiple ?? false"
+              (change)="alElegirArchivo(campo.clave, $event)"
+            />
+          }
+          @default {
+            <mat-form-field appearance="outline">
+              <mat-label>{{ campo.etiqueta | translate }}</mat-label>
+              <input
+                matInput
+                [type]="tipoDeInput(campo.tipo)"
+                [formControlName]="campo.clave"
+                [placeholder]="campo.marcador ? (campo.marcador | translate) : ''"
+                [readonly]="campo.soloLectura"
+              />
+              @if (campo.ayuda) {
+                <mat-hint>{{ campo.ayuda | translate }}</mat-hint>
+              }
+              @if (claveDeError(campo)) {
+                <mat-error>{{ claveDeError(campo) | translate }}</mat-error>
+              }
+            </mat-form-field>
+          }
+        }
+      </div>
+    }
+  </div>
+
+  <div class="vd-form__acciones">
+    @if (mostrarCancelar()) {
+      <button matButton type="button" (click)="cancelado.emit()">
+        {{ textoCancelar() | translate }}
+      </button>
+    }
+    <button matButton="filled" type="submit" [disabled]="formulario().invalid">
+      {{ textoEnviar() | translate }}
+    </button>
+  </div>
+</form>

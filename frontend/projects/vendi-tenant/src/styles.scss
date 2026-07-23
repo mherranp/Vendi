@@ -5,6 +5,11 @@
 // custom components at https://material.angular.dev/guide/theming
 @use '@angular/material' as mat;
 
+// Tokens y utilidades de Vendi (`ui-kit/src/lib/theme`), resueltos por
+// `stylePreprocessorOptions.includePaths` contra `dist/ui-kit`. Van DESPUÉS de
+// `mat.theme()` porque leen las variables `--mat-sys-*` que éste genera.
+@use 'tema' as *;
+
 html {
   height: 100%;
   @include mat.theme(
@@ -20,10 +25,16 @@ html {
 }
 
 body {
-  // Default the application to a light color theme. This can be changed to
-  // `dark` to enable the dark color theme, or to `light dark` to defer to the
-  // user's system settings.
-  color-scheme: light;
+  // El `color-scheme` NO se declara aquí. Lo fija `:root` en
+  // `ui-kit/theme/_tokens.scss` (`light dark`, con override por `data-theme`),
+  // que es el mismo sitio donde conmutan los tokens `--vd-*`.
+  //
+  // Cuando esto decía `color-scheme: light` —lo que genera `ng new`— Material
+  // resolvía todos sus `light-dark()` a la rama clara mientras los tokens de
+  // Vendi sí conmutaban con `prefers-color-scheme: dark`: en cualquier
+  // dispositivo en modo oscuro salían superficies blancas con texto de marca
+  // claro, ~1.5:1 de contraste. Declararlo en dos sitios distintos era el
+  // defecto; ahora hay uno solo.
 
   // Set a default background, font and text colors for the application using
   // Angular Material's system-level CSS variables. Learn more about these

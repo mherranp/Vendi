@@ -1,0 +1,38 @@
+.vd-soltar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--vd-espacio-2);
+  padding: var(--vd-espacio-10) var(--vd-espacio-6);
+  border: 2px dashed var(--vd-borde-normal);
+  border-radius: var(--vd-radio-lg);
+  background: var(--vd-superficie-1);
+  transition:
+    border-color var(--vd-transicion-rapida),
+    background var(--vd-transicion-rapida);
+  text-align: center;
+}
+
+.vd-soltar--activo {
+  border-color: var(--vd-marca-500);
+  background: color-mix(in srgb, var(--vd-marca-500) 8%, transparent);
+}
+
+.vd-soltar__icono {
+  font-size: 48px;
+  width: 48px;
+  height: 48px;
+  color: var(--vd-texto-terciario);
+}
+
+.vd-soltar__texto {
+  margin: 0;
+  font-size: var(--vd-texto-base);
+  color: var(--vd-texto-secundario);
+}
+
+.vd-soltar__ayuda {
+  margin: 0;
+  font-size: var(--vd-texto-xs);
+  color: var(--vd-texto-terciario);
+}

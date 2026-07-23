@@ -1,0 +1,27 @@
+.vd-cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--vd-espacio-4);
+  margin-bottom: var(--vd-espacio-6);
+  flex-wrap: wrap;
+}
+
+.vd-cabecera__titulo {
+  margin: 0 0 var(--vd-espacio-1);
+  font-size: var(--vd-texto-3xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--vd-texto-primario);
+}
+
+.vd-cabecera__subtitulo {
+  margin: 0;
+  font-size: var(--vd-texto-base);
+  color: var(--vd-texto-secundario);
+}
+
+.vd-cabecera__acciones {
+  display: flex;
+  gap: var(--vd-espacio-2);
+}

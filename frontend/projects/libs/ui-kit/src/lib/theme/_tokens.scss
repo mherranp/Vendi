@@ -1,0 +1,185 @@
+// Tokens de diseño de Vendi
+//
+// Cosecha de `ui-theme/src/styles/_tokens.scss` de BaseSaaS con tres cambios de
+// fondo:
+//
+//  1. Prefijo `--bs-` → `--vd-`.
+//  2. Las superficies y los textos ya **no** se declaran con valores propios:
+//     se derivan de las variables de sistema de Angular Material 3
+//     (`--mat-sys-*`), que las apps ya generan con `mat.theme()` en su
+//     `styles.scss`. Mantener dos paletas paralelas —la de Material y la de la
+//     librería— es lo que hace que un componente de Material y uno propio se
+//     vean distintos en modo oscuro. Con esto, el tema oscuro se reduce a
+//     conmutar `color-scheme` y a ajustar lo que es propio de Vendi.
+//  3. Desaparece el token de acento por tenant (`--bs-accent` que
+//     `BrandingThemeService` reescribía en caliente): Vendi no es white-label
+//     y el plan excluye `branding/*` de la cosecha.
+//
+// La rampa de marca es **provisional**: no hay manual de identidad todavía. Es
+// un verde de comercio, legible sobre blanco y sobre oscuro. Cambiarla es
+// tocar solo este bloque.
+
+:root {
+  // -- Esquema de color ------------------------------------------------------
+  //
+  // Esta declaración es la que hace que el tema oscuro funcione, y vive aquí a
+  // propósito: es la MISMA condición que dispara `vd-tokens-oscuros` más abajo.
+  //
+  // `mat.theme()` emite las variables de sistema como
+  // `--mat-sys-surface: light-dark(#faf9fd, #121316)`, y `light-dark()` se
+  // resuelve con el `color-scheme` calculado del elemento. Mientras las apps
+  // llevaban `body { color-scheme: light }` —lo que genera `ng new`— Material
+  // quedaba clavado en claro, pero los tokens `--vd-*` sí conmutaban con
+  // `prefers-color-scheme: dark`. El resultado en cualquier dispositivo con
+  // preferencia oscura era una mezcla ilegible: superficies blancas de Material
+  // con el texto de marca en `--vd-marca-300` (#6ee7b7 sobre #faf9fd ≈ 1.5:1,
+  // muy por debajo del 4.5:1 de WCAG AA).
+  //
+  // Declarándolo en `:root` las dos mitades comparten una única fuente de
+  // verdad, y el atributo `data-theme` deja de ser código muerto: fuerza el
+  // esquema tanto para Material como para Vendi.
+  color-scheme: light dark;
+
+  // -- Rampa de marca --------------------------------------------------------
+  --vd-marca-50: #ecfdf5;
+  --vd-marca-100: #d1fae5;
+  --vd-marca-200: #a7f3d0;
+  --vd-marca-300: #6ee7b7;
+  --vd-marca-400: #34d399;
+  --vd-marca-500: #10b981; // principal
+  --vd-marca-600: #059669;
+  --vd-marca-700: #047857;
+  --vd-marca-800: #065f46;
+  --vd-marca-900: #064e3b;
+  --vd-marca-950: #022c22;
+
+  // -- Acentos semánticos ----------------------------------------------------
+  --vd-acento-exito: #10b981;
+  --vd-acento-info: #0891b2;
+  --vd-acento-aviso: #d97706;
+  --vd-acento-error: #dc2626;
+
+  // -- Superficies (derivadas de Material 3) ---------------------------------
+  // El segundo valor es el respaldo para contextos donde `mat.theme()` no se
+  // aplicó (una historia de Storybook, un test de componente aislado).
+  --vd-superficie-0: var(--mat-sys-surface-container-lowest, #ffffff);
+  --vd-superficie-1: var(--mat-sys-surface, #ffffff);
+  --vd-superficie-2: var(--mat-sys-surface-container, #f1f5f9);
+  --vd-superficie-3: var(--mat-sys-surface-container-high, #e2e8f0);
+  --vd-superficie-4: var(--mat-sys-surface-container-highest, #cbd5e1);
+
+  // -- Bordes ----------------------------------------------------------------
+  --vd-borde-sutil: color-mix(in srgb, var(--mat-sys-outline, #79747e) 25%, transparent);
+  --vd-borde-normal: color-mix(in srgb, var(--mat-sys-outline, #79747e) 50%, transparent);
+  --vd-borde-fuerte: var(--mat-sys-outline, #79747e);
+  --vd-borde-marca: color-mix(in srgb, var(--vd-marca-500) 50%, transparent);
+
+  // -- Texto -----------------------------------------------------------------
+  --vd-texto-primario: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+  --vd-texto-secundario: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.6));
+  --vd-texto-terciario: color-mix(
+    in srgb,
+    var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.6)) 70%,
+    transparent
+  );
+  --vd-texto-marca: var(--vd-marca-700);
+
+  // -- Tipografía ------------------------------------------------------------
+  --vd-fuente: var(--mat-sys-body-medium-font, Roboto, system-ui, -apple-system, sans-serif);
+  --vd-fuente-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+
+  // Escala (tercera mayor, 1.25)
+  --vd-texto-xs: 0.75rem; // 12px
+  --vd-texto-sm: 0.875rem; // 14px
+  --vd-texto-base: 1rem; // 16px
+  --vd-texto-lg: 1.125rem; // 18px
+  --vd-texto-xl: 1.25rem; // 20px
+  --vd-texto-2xl: 1.5rem; // 24px
+  --vd-texto-3xl: 1.875rem; // 30px
+  --vd-texto-4xl: 2.25rem; // 36px
+
+  // -- Espaciado (base 4px) --------------------------------------------------
+  --vd-espacio-1: 0.25rem;
+  --vd-espacio-2: 0.5rem;
+  --vd-espacio-3: 0.75rem;
+  --vd-espacio-4: 1rem;
+  --vd-espacio-5: 1.25rem;
+  --vd-espacio-6: 1.5rem;
+  --vd-espacio-8: 2rem;
+  --vd-espacio-10: 2.5rem;
+  --vd-espacio-12: 3rem;
+  --vd-espacio-16: 4rem;
+
+  // -- Radios ----------------------------------------------------------------
+  --vd-radio-sm: 4px;
+  --vd-radio-md: 8px;
+  --vd-radio-lg: 12px;
+  --vd-radio-xl: 16px;
+  --vd-radio-completo: 9999px;
+
+  // -- Sombras ---------------------------------------------------------------
+  --vd-sombra-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --vd-sombra-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --vd-sombra-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+
+  // -- Transiciones ----------------------------------------------------------
+  --vd-transicion-rapida: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --vd-transicion-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --vd-transicion-lenta: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  // -- Layout ----------------------------------------------------------------
+  --vd-ancho-lateral: 260px;
+  --vd-alto-barra: 64px;
+  // Objetivo táctil mínimo. Vendi se usa con el dedo, de pie, detrás de un
+  // mostrador: 48px es el mínimo de accesibilidad, no un adorno.
+  --vd-objetivo-tactil: 48px;
+
+  // -- Capas -----------------------------------------------------------------
+  --vd-z-base: 0;
+  --vd-z-elevado: 10;
+  --vd-z-superpuesto: 100;
+  --vd-z-modal: 200;
+  --vd-z-aviso: 300;
+}
+
+// -- Modo oscuro --------------------------------------------------------------
+//
+// Casi todo el trabajo lo hace Material 3 al resolver `light-dark()` con el
+// `color-scheme` de `:root`. Aquí solo se ajusta lo que es propio de Vendi: la
+// marca (que en oscuro necesita subir de luminosidad para conservar contraste)
+// y las sombras.
+//
+// **Invariante**: cada regla que aplique `vd-tokens-oscuros` tiene que aplicar
+// también `color-scheme: dark`, y viceversa. Si las dos mitades se desincronizan
+// —que es exactamente el defecto que había— salen superficies claras de Material
+// con texto de marca pensado para fondo oscuro.
+@mixin vd-tokens-oscuros {
+  color-scheme: dark;
+
+  --vd-texto-marca: var(--vd-marca-300);
+  --vd-borde-marca: color-mix(in srgb, var(--vd-marca-300) 50%, transparent);
+
+  --vd-sombra-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --vd-sombra-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --vd-sombra-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+// Forzado explícito por atributo en `<html>`. Hoy nada lo escribe (Fase 0 no
+// tiene selector de tema), pero es el gancho para cuando lo haya: ya no es
+// código muerto, porque también conmuta `color-scheme` y con él Material.
+:root[data-theme='dark'] {
+  @include vd-tokens-oscuros;
+}
+
+// Preferencia del sistema, salvo que la app haya forzado el claro.
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    @include vd-tokens-oscuros;
+  }
+}
+
+// Forzado del claro: `color-scheme: light` deja `light-dark()` en la rama clara
+// y los tokens `--vd-*` se quedan con los valores base de `:root`.
+:root[data-theme='light'] {
+  color-scheme: light;
+}

@@ -1,0 +1,12 @@
+<div class="vd-vacio">
+  <mat-icon class="vd-vacio__icono" aria-hidden="true">{{ icono() }}</mat-icon>
+  <h3 class="vd-vacio__titulo">{{ titulo() | translate }}</h3>
+  @if (descripcion()) {
+    <p class="vd-vacio__descripcion">{{ descripcion() | translate }}</p>
+  }
+  @if (textoAccion()) {
+    <button matButton="filled" (click)="accion.emit()">
+      {{ textoAccion() | translate }}
+    </button>
+  }
+</div>

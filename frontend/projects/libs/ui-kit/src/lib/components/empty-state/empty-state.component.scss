@@ -1,0 +1,29 @@
+.vd-vacio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--vd-espacio-12) var(--vd-espacio-6);
+  text-align: center;
+  color: var(--vd-texto-secundario);
+}
+
+.vd-vacio__icono {
+  font-size: 64px;
+  width: 64px;
+  height: 64px;
+  color: var(--vd-texto-terciario);
+  margin-bottom: var(--vd-espacio-4);
+}
+
+.vd-vacio__titulo {
+  margin: 0 0 var(--vd-espacio-2);
+  font-size: var(--vd-texto-lg);
+  font-weight: 600;
+  color: var(--vd-texto-primario);
+}
+
+.vd-vacio__descripcion {
+  margin: 0 0 var(--vd-espacio-6);
+  font-size: var(--vd-texto-sm);
+  max-width: 420px;
+}

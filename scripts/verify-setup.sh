@@ -413,12 +413,23 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 21. La cuenta de servicio de vendi-backend lleva los roles mínimos medidos
-#     en scripts/spikes/kc-sa-roles-spike.sh, y ni uno más. `impersonation`
-#     aquí significa que el backend puede suplantar a cualquier usuario del
-#     realm; `manage-clients` o `realm-admin`, que puede reescribir el IdP.
+# 21. Las DOS cuentas de servicio llevan sus roles mínimos y ni uno más.
+#
+#     El privilegio está partido en dos credenciales (mitigación de D-02,
+#     Etapa 3):
+#       · vendi-backend      → manage-users. Es el cliente de la API general.
+#       · vendi-provisioning → manage-realm + manage-users. Solo el camino de
+#         alta y baja de negocios, que es el único que necesita Organizations.
+#
+#     Un rol de más en `vendi-backend` deshace la separación entera: con
+#     `manage-realm`, quien comprometa el secreto de la API puede crear flujos
+#     de autenticación, reenlazar el browserFlow (sacando la passkey), apagar
+#     la protección de fuerza bruta y abrir el auto-registro. `impersonation`
+#     en cualquiera de las dos significa poder suplantar a cualquier usuario de
+#     cualquier negocio de la región; `manage-clients` o `realm-admin`,
+#     reescribir el IdP.
 # ---------------------------------------------------------------------------
-info "21. La cuenta de servicio de vendi-backend tiene solo manage-realm y manage-users"
+info "21. Las cuentas de servicio de Keycloak tienen sus roles mínimos (split de D-02)"
 if [ -n "${KC_TOKEN:-}" ]; then
     ROLES_SA="$(KC_LOCAL="${KC_LOCAL}" KC_TOKEN="${KC_TOKEN}" python3 - <<'PY' 2>/dev/null
 import json, os, urllib.request
@@ -426,23 +437,36 @@ import json, os, urllib.request
 kc = os.environ["KC_LOCAL"]
 cab = {"Authorization": "Bearer " + os.environ["KC_TOKEN"]}
 
+ESPERADO = {
+    "vendi-backend": "manage-users",
+    "vendi-provisioning": "manage-realm,manage-users",
+}
+
 
 def get(ruta):
     return json.load(urllib.request.urlopen(urllib.request.Request(kc + ruta, headers=cab), timeout=8))
 
 
 clientes = {c["clientId"]: c["id"] for c in get("/admin/realms/vendi-co/clients")}
-sa = get(f"/admin/realms/vendi-co/clients/{clientes['vendi-backend']}/service-account-user")["id"]
-roles = get(f"/admin/realms/vendi-co/users/{sa}/role-mappings/clients/{clientes['realm-management']}")
-print(",".join(sorted(r["name"] for r in roles)))
+problemas = []
+for cid, esperado in ESPERADO.items():
+    if cid not in clientes:
+        problemas.append(f"{cid}: el cliente no existe en el realm")
+        continue
+    sa = get(f"/admin/realms/vendi-co/clients/{clientes[cid]}/service-account-user")["id"]
+    roles = get(f"/admin/realms/vendi-co/users/{sa}/role-mappings/clients/{clientes['realm-management']}")
+    real = ",".join(sorted(r["name"] for r in roles))
+    if real != esperado:
+        problemas.append(f"{cid}: {real or '(ninguno)'} (esperaba {esperado})")
+print("OK" if not problemas else " · ".join(problemas))
 PY
 )"
-    if [ "${ROLES_SA}" = "manage-realm,manage-users" ]; then
-        ok "roles de la cuenta de servicio: ${ROLES_SA}"
+    if [ "${ROLES_SA}" = "OK" ]; then
+        ok "vendi-backend=manage-users · vendi-provisioning=manage-realm,manage-users"
     elif [ -z "${ROLES_SA}" ]; then
-        falla "no pude leer los roles de la cuenta de servicio de vendi-backend"
+        falla "no pude leer los roles de las cuentas de servicio de Keycloak"
     else
-        falla "roles inesperados en la cuenta de servicio: ${ROLES_SA} (esperaba manage-realm,manage-users). Mira scripts/reconcile-keycloak.sh"
+        falla "roles inesperados: ${ROLES_SA}. Mira scripts/reconcile-keycloak.sh y D-02 en docs/deuda-tecnica.md"
     fi
 else
     omite "21: sin token de admin de Keycloak (ver check 8)"

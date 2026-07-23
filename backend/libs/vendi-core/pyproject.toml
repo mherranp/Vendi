@@ -14,6 +14,11 @@ dependencies = [
     "httpx>=0.28.0",
     "structlog>=24.4.0",
     "prometheus-client>=0.21.0",
+    # `croniter` lo necesita `jobs/scheduler.py` para interpretar las
+    # expresiones cron de los trabajos programados. En BaseSaaS era una
+    # dependencia del backend, no del paquete; aquí es del núcleo porque
+    # `vendi_core.jobs` no importa sin ella.
+    "croniter>=6.0.0",
 ]
 
 [project.optional-dependencies]

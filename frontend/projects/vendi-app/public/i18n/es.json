@@ -7,13 +7,53 @@
     "cargando": "Cargando…",
     "reintentar": "Reintentar",
     "sin_conexion": "Sin conexión: seguimos registrando las ventas y se sincronizan solas",
-    "error_inesperado": "Algo salió mal. Vuelve a intentarlo."
+    "error_inesperado": "Algo salió mal. Vuelve a intentarlo.",
+    "menu": "Menú",
+    "cuenta": "Mi cuenta",
+    "cerrar_sesion": "Cerrar sesión"
   },
   "comun": {
     "aceptar": "Aceptar",
     "cancelar": "Cancelar",
     "guardar": "Guardar",
     "eliminar": "Eliminar",
-    "buscar": "Buscar"
+    "buscar": "Buscar",
+    "cerrar": "Cerrar"
+  },
+  "errores": {
+    "sin_conexion": "Sin conexión. Revisa tu red e inténtalo de nuevo.",
+    "sesion_expirada": "Tu sesión expiró. Vuelve a iniciar sesión.",
+    "sin_permiso": "No tienes permiso para hacer esto.",
+    "no_encontrado": "No encontramos lo que buscabas.",
+    "servidor": "Tuvimos un problema. Vuelve a intentarlo en un momento.",
+    "solicitud": "No pudimos completar la operación.",
+    "tenant_suspendido": "La cuenta del negocio está suspendida. Contáctanos para reactivarla."
+  },
+  "ui": {
+    "vacio": {
+      "titulo": "Nada por aquí todavía"
+    },
+    "tabla": {
+      "vacia": "Sin registros"
+    },
+    "archivos": {
+      "suelta_aqui": "Suelta los archivos aquí",
+      "buscar": "Buscar archivo"
+    },
+    "404": {
+      "titulo": "No encontramos esta página",
+      "descripcion": "La página que buscas no existe o cambió de sitio.",
+      "volver": "Volver al inicio"
+    },
+    "validacion": {
+      "requerido": "Este campo es obligatorio",
+      "correo": "Escribe un correo válido",
+      "minimo": "El valor es muy pequeño",
+      "maximo": "El valor es muy grande",
+      "muy_corto": "Es demasiado corto",
+      "muy_largo": "Es demasiado largo",
+      "formato": "El formato no es válido",
+      "invalido": "Valor inválido"
+    }
   }
 }

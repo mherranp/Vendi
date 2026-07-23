@@ -376,6 +376,11 @@ services:
       KEYCLOAK_REALM: vendi-co
       KEYCLOAK_BACKEND_CLIENT_ID: vendi-backend
       KEYCLOAK_BACKEND_CLIENT_SECRET: ${VENDI_BACKEND_CLIENT_SECRET:?VENDI_BACKEND_CLIENT_SECRET es obligatorio}
+      # Segunda credencial de Keycloak, la única con manage-realm. La usa solo
+      # el camino de alta y baja de negocios (Organizations). Mitigación de
+      # D-02: ver docs/deuda-tecnica.md.
+      KEYCLOAK_PROVISIONING_CLIENT_ID: vendi-provisioning
+      KEYCLOAK_PROVISIONING_CLIENT_SECRET: ${VENDI_PROVISIONING_CLIENT_SECRET:?VENDI_PROVISIONING_CLIENT_SECRET es obligatorio}
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-vendi}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY es obligatorio}

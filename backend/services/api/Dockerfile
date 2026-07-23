@@ -18,6 +18,11 @@ COPY services/worker/pyproject.toml services/worker/
 # construir los editables durante `uv sync`.
 COPY services/api/app/ services/api/app/
 COPY services/worker/worker/ services/worker/worker/
+# Alembic: `scripts/migrate.sh` ejecuta `alembic upgrade head` dentro de esta
+# imagen desde /src/services/api, así que el .ini y las revisiones tienen que
+# viajar en ella. Sin esto, migrate.sh falla con "No config file 'alembic.ini'".
+COPY services/api/alembic.ini services/api/
+COPY services/api/alembic/ services/api/alembic/
 
 RUN uv sync --frozen --no-dev
 

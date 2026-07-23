@@ -1955,9 +1955,10 @@
         "email",
         "profile",
         "roles",
+        "service_account",
         "web-origins"
       ],
-      "description": "Cliente confidencial que usa la API para administrar organizaciones y usuarios.",
+      "description": "API general. Cuenta de servicio con SOLO manage-users: no llega a Organizations ni a los ajustes del realm. Ver D-02 en docs/deuda-tecnica.md.",
       "directAccessGrantsEnabled": false,
       "enabled": true,
       "fullScopeAllowed": true,
@@ -1968,6 +1969,33 @@
       "publicClient": false,
       "redirectUris": [],
       "secret": "${VENDI_BACKEND_CLIENT_SECRET}",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "webOrigins": []
+    },
+    {
+      "clientAuthenticatorType": "client-secret",
+      "clientId": "vendi-provisioning",
+      "defaultClientScopes": [
+        "acr",
+        "basic",
+        "email",
+        "profile",
+        "roles",
+        "service_account",
+        "web-origins"
+      ],
+      "description": "Alta y baja de negocios (Organizations) y reconciliador. Unica cuenta con manage-realm, separada de la API general. Ver D-02 en docs/deuda-tecnica.md.",
+      "directAccessGrantsEnabled": false,
+      "enabled": true,
+      "fullScopeAllowed": true,
+      "implicitFlowEnabled": false,
+      "name": "Vendi — aprovisionamiento de negocios (cuenta de servicio)",
+      "optionalClientScopes": [],
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "redirectUris": [],
+      "secret": "${VENDI_PROVISIONING_CLIENT_SECRET}",
       "serviceAccountsEnabled": true,
       "standardFlowEnabled": false,
       "webOrigins": []
@@ -2664,13 +2692,23 @@
     {
       "clientRoles": {
         "realm-management": [
-          "manage-realm",
           "manage-users"
         ]
       },
       "enabled": true,
       "serviceAccountClientId": "vendi-backend",
       "username": "service-account-vendi-backend"
+    },
+    {
+      "clientRoles": {
+        "realm-management": [
+          "manage-realm",
+          "manage-users"
+        ]
+      },
+      "enabled": true,
+      "serviceAccountClientId": "vendi-provisioning",
+      "username": "service-account-vendi-provisioning"
     }
   ],
   "verifiableCredentialsEnabled": false,

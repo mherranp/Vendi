@@ -1,0 +1,24 @@
+<div
+  class="vd-soltar"
+  [class.vd-soltar--activo]="arrastrando()"
+  (dragover)="alArrastrarEncima($event)"
+  (dragleave)="alSalirDelArrastre($event)"
+  (drop)="alSoltar($event)"
+>
+  <mat-icon class="vd-soltar__icono" aria-hidden="true">cloud_upload</mat-icon>
+  <p class="vd-soltar__texto">{{ 'ui.archivos.suelta_aqui' | translate }}</p>
+  <button matButton="outlined" type="button" (click)="entrada.click()">
+    {{ 'ui.archivos.buscar' | translate }}
+  </button>
+  @if (ayuda()) {
+    <p class="vd-soltar__ayuda">{{ ayuda() | translate }}</p>
+  }
+  <input
+    #entrada
+    type="file"
+    hidden
+    [multiple]="multiple()"
+    [accept]="acepta()"
+    (change)="alElegir(entrada.files)"
+  />
+</div>

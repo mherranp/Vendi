@@ -1,0 +1,11 @@
+<header class="vd-cabecera">
+  <div class="vd-cabecera__texto">
+    <h1 class="vd-cabecera__titulo">{{ titulo() | translate }}</h1>
+    @if (subtitulo()) {
+      <p class="vd-cabecera__subtitulo">{{ subtitulo() | translate }}</p>
+    }
+  </div>
+  <div class="vd-cabecera__acciones">
+    <ng-content select="[slot=acciones]" />
+  </div>
+</header>

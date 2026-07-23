@@ -1,0 +1,6 @@
+// El diálogo se apoya en los estilos de Material; solo se marca la variante
+// destructiva, que Material 3 ya no expone con `color="warn"`.
+.vd-accion-peligrosa {
+  --mat-button-filled-container-color: var(--vd-acento-error);
+  --mat-button-filled-label-text-color: #fff;
+}

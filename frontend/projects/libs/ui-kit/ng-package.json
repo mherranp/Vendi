@@ -3,5 +3,6 @@
   "dest": "../../../dist/ui-kit",
   "lib": {
     "entryFile": "src/public-api.ts"
-  }
+  },
+  "assets": ["./src/lib/theme/**/*.scss"]
 }

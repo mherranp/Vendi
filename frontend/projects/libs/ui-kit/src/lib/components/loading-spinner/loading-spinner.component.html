@@ -1,0 +1,6 @@
+<div class="vd-cargando" role="status" aria-live="polite">
+  <mat-spinner [diameter]="tamano()" />
+  @if (etiqueta()) {
+    <p class="vd-cargando__etiqueta">{{ etiqueta() | translate }}</p>
+  }
+</div>

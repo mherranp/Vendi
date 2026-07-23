@@ -29,7 +29,10 @@
                 "input": "projects/vendi-app/public"
               }
             ],
-            "styles": ["projects/vendi-app/src/styles.scss"]
+            "styles": ["projects/vendi-app/src/styles.scss"],
+            "stylePreprocessorOptions": {
+              "includePaths": ["dist/ui-kit/src/lib/theme"]
+            }
           },
           "configurations": {
             "production": {
@@ -112,7 +115,10 @@
                 "input": "projects/vendi-portal/public"
               }
             ],
-            "styles": ["projects/vendi-portal/src/styles.scss"]
+            "styles": ["projects/vendi-portal/src/styles.scss"],
+            "stylePreprocessorOptions": {
+              "includePaths": ["dist/ui-kit/src/lib/theme"]
+            }
           },
           "configurations": {
             "production": {
@@ -197,7 +203,10 @@
                 "input": "projects/vendi-tenant/public"
               }
             ],
-            "styles": ["projects/vendi-tenant/src/styles.scss"]
+            "styles": ["projects/vendi-tenant/src/styles.scss"],
+            "stylePreprocessorOptions": {
+              "includePaths": ["dist/ui-kit/src/lib/theme"]
+            }
           },
           "configurations": {
             "production": {
@@ -282,7 +291,10 @@
                 "input": "projects/vendi-admin/public"
               }
             ],
-            "styles": ["projects/vendi-admin/src/styles.scss"]
+            "styles": ["projects/vendi-admin/src/styles.scss"],
+            "stylePreprocessorOptions": {
+              "includePaths": ["dist/ui-kit/src/lib/theme"]
+            }
           },
           "configurations": {
             "production": {

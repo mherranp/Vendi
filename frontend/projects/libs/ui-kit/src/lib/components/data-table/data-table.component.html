@@ -1,0 +1,54 @@
+<div class="vd-tabla">
+  @if (cargando()) {
+    <mat-progress-bar mode="indeterminate" />
+  }
+
+  @if (filas().length === 0 && !cargando()) {
+    <vd-empty-state
+      [icono]="iconoVacio()"
+      [titulo]="tituloVacio()"
+      [descripcion]="descripcionVacio()"
+    />
+  } @else {
+    <table
+      mat-table
+      [dataSource]="filas()"
+      matSort
+      (matSortChange)="alOrdenar($event)"
+      class="vd-tabla__grid"
+    >
+      @for (col of columnas(); track col.clave) {
+        <ng-container [matColumnDef]="col.clave">
+          <th
+            mat-header-cell
+            *matHeaderCellDef
+            [mat-sort-header]="col.ordenable ? col.clave : ''"
+            [style.width]="col.ancho"
+          >
+            {{ col.etiqueta | translate }}
+          </th>
+          <td mat-cell *matCellDef="let fila" [style.width]="col.ancho">
+            @if (col.plantilla) {
+              <ng-container *ngTemplateOutlet="col.plantilla; context: { $implicit: fila }" />
+            } @else {
+              {{ fila[col.clave] }}
+            }
+          </td>
+        </ng-container>
+      }
+      <tr mat-header-row *matHeaderRowDef="clavesDeColumna()"></tr>
+      <tr mat-row *matRowDef="let fila; columns: clavesDeColumna()"></tr>
+    </table>
+
+    @if (mostrarPaginador()) {
+      <mat-paginator
+        [length]="total()"
+        [pageSize]="tamanoPagina()"
+        [pageIndex]="indicePagina()"
+        [pageSizeOptions]="[10, 25, 50, 100]"
+        showFirstLastButtons
+        (page)="alPaginar($event)"
+      />
+    }
+  }
+</div>

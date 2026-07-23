@@ -1,14 +1,8 @@
-import {
-  ApplicationConfig,
-  inject,
-  provideAppInitializer,
-  provideBrowserGlobalErrorListeners,
-} from '@angular/core';
+import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
-import { TranslateService, provideTranslateService } from '@ngx-translate/core';
-import { provideTranslateHttpLoader } from '@ngx-translate/http-loader';
-import { firstValueFrom } from 'rxjs';
+
+import { API_BASE_URL, proveerI18nVendi } from 'data-access';
 
 import { routes } from './app.routes';
 import { environment } from '../environments/environment';
@@ -20,24 +14,14 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes),
     // HttpClient es prerrequisito del cargador de traducciones.
     provideHttpClient(),
-    provideTranslateService({
-      // `fallbackLang`/`lang` sustituyen a `defaultLanguage`, deprecado en
-      // @ngx-translate/core 17. El idioma se fija a español y NO se negocia con
-      // el navegador: Vendi en Fase 0 es solo Colombia, y dejar que un navegador
-      // en inglés pidiera `en.json` (que no existe) pintaría las claves crudas.
-      fallbackLang: 'es',
-      lang: 'es',
-      loader: provideTranslateHttpLoader({
-        prefix: '/i18n/',
-        suffix: '.json',
-        // En desarrollo se añade un parámetro anti-caché para que al editar
-        // `public/i18n/es.json` no haya que vaciar la caché del navegador; en
-        // producción el catálogo se cachea como cualquier otro asset.
-        enforceLoading: !environment.production,
-      }),
-    }),
-    // Se espera al catálogo antes de arrancar: sin esto el primer render pinta
-    // literalmente `app.titulo` hasta que llega el JSON.
-    provideAppInitializer(() => firstValueFrom(inject(TranslateService).use('es'))),
+    // Base de la API para `ApiService`. Los interceptores de sesión y de error
+    // se cablean en la Etapa 4, cuando estas apps empiecen a llamar endpoints.
+    { provide: API_BASE_URL, useValue: environment.apiUrl },
+    // i18n resiliente (ver `proveerI18nVendi` en data-access): español fijo,
+    // catálogo por HTTP con **respaldo empotrado**. El bloque anterior era
+    // fail-hard —si `/i18n/es.json` no se podía descargar, el inicializador
+    // rechazaba y Angular abortaba el bootstrap: pantalla en blanco—. Para un
+    // POS que promete funcionar sin conexión eso no es aceptable.
+    ...proveerI18nVendi(),
   ],
 };

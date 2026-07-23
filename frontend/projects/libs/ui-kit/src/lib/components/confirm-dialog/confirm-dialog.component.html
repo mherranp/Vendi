@@ -1,0 +1,10 @@
+<h2 mat-dialog-title>{{ data.titulo | translate }}</h2>
+<mat-dialog-content>{{ data.mensaje | translate }}</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button matButton (click)="ref.close(false)">
+    {{ data.textoCancelar ?? 'comun.cancelar' | translate }}
+  </button>
+  <button matButton="filled" [class.vd-accion-peligrosa]="data.peligroso" (click)="ref.close(true)">
+    {{ data.textoConfirmar ?? 'comun.aceptar' | translate }}
+  </button>
+</mat-dialog-actions>

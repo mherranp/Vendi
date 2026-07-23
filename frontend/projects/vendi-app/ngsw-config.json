@@ -17,6 +17,24 @@
       }
     },
     {
+      "_comentario": [
+        "El catálogo de traducciones se precarga en la instalación, igual que el",
+        "JS y el CSS. Sin este grupo, una PWA instalada y abierta sin red se",
+        "queda sin /i18n/es.json: la app arranca gracias al catálogo empotrado",
+        "de `proveerI18nVendi`, pero pierde todos los textos que solo están en",
+        "el catálogo completo. Los dos mecanismos son complementarios: el",
+        "service worker evita el degradado; el catálogo empotrado evita la",
+        "pantalla en blanco cuando ni siquiera hay service worker (primera",
+        "visita, WebView de Capacitor, navegador que lo bloquea)."
+      ],
+      "name": "i18n",
+      "installMode": "prefetch",
+      "updateMode": "prefetch",
+      "resources": {
+        "files": ["/i18n/*.json"]
+      }
+    },
+    {
       "name": "assets",
       "installMode": "lazy",
       "updateMode": "prefetch",

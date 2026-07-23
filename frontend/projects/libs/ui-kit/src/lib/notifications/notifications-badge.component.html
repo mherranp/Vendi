@@ -1,0 +1,57 @@
+<button
+  matIconButton
+  [matBadge]="noLeidas() || null"
+  [matBadgeHidden]="noLeidas() === 0"
+  [matMenuTriggerFor]="menu"
+  [attr.aria-label]="'notificaciones.titulo' | translate"
+>
+  <mat-icon aria-hidden="true">notifications</mat-icon>
+</button>
+
+<mat-menu #menu="matMenu" class="vd-avisos__menu">
+  <!--
+    Sin manejador de click en el contenedor: el original de BaseSaaS ponía aquí
+    un `stopPropagation` que obligaba a un div no enfocable a comportarse como
+    control interactivo (dos errores de accesibilidad del lint). El menú de
+    Material solo se cierra al pulsar un `mat-menu-item`, así que basta con
+    detener la propagación en el botón.
+  -->
+  <div class="vd-avisos__cabecera">
+    <span>{{ 'notificaciones.titulo' | translate }}</span>
+    <button
+      matButton
+      (click)="marcarTodasLeidas.emit(); $event.stopPropagation()"
+      [disabled]="noLeidas() === 0"
+    >
+      {{ 'notificaciones.marcar_leidas' | translate }}
+    </button>
+  </div>
+  <mat-divider />
+
+  @if (visibles().length === 0) {
+    <div class="vd-avisos__vacio">{{ 'notificaciones.vacio' | translate }}</div>
+  } @else {
+    @for (n of visibles(); track n.id) {
+      @if (n.enlace) {
+        <a
+          mat-menu-item
+          [routerLink]="n.enlace"
+          class="vd-avisos__item"
+          [class.no-leida]="!n.leida"
+        >
+          <strong>{{ n.titulo }}</strong>
+          @if (n.cuerpo) {
+            <span class="vd-avisos__cuerpo">{{ n.cuerpo }}</span>
+          }
+        </a>
+      } @else {
+        <div class="vd-avisos__item" [class.no-leida]="!n.leida">
+          <strong>{{ n.titulo }}</strong>
+          @if (n.cuerpo) {
+            <div class="vd-avisos__cuerpo">{{ n.cuerpo }}</div>
+          }
+        </div>
+      }
+    }
+  }
+</mat-menu>

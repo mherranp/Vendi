@@ -1,0 +1,34 @@
+.vd-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vd-espacio-4);
+}
+
+.vd-form__rejilla {
+  display: grid;
+  gap: var(--vd-espacio-4);
+}
+
+.vd-form__campo {
+  display: flex;
+  flex-direction: column;
+
+  mat-form-field {
+    width: 100%;
+  }
+}
+
+.vd-form__etiqueta {
+  display: block;
+  font-size: var(--vd-texto-sm);
+  font-weight: 500;
+  color: var(--vd-texto-secundario);
+  margin-bottom: var(--vd-espacio-1);
+}
+
+.vd-form__acciones {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--vd-espacio-2);
+  margin-top: var(--vd-espacio-4);
+}

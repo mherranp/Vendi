@@ -41,3 +41,8 @@ infra/**/*.tfvars
 # Logs y temporales
 *.log
 tmp/
+
+# Cobertura de tests
+.coverage
+.coverage.*
+htmlcov/

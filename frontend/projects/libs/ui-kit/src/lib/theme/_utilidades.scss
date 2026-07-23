@@ -1,0 +1,72 @@
+// Utilidades de Vendi
+//
+// Cosecha de `ui-theme/src/styles/_utilities.scss` con el prefijo `bs-` → `vd-`
+// y sin las clases `.bs-status--*`: el estado se pinta con el componente
+// `<vd-status-badge>`, y tener las dos formas garantizaba que se
+// desincronizaran.
+
+// --- Páginas -----------------------------------------------------------------
+.vd-pagina {
+  padding: var(--vd-espacio-8);
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+// --- Tarjetas ----------------------------------------------------------------
+.vd-tarjeta {
+  background: var(--vd-superficie-1);
+  border: 1px solid var(--vd-borde-sutil);
+  border-radius: var(--vd-radio-lg);
+  padding: var(--vd-espacio-6);
+  box-shadow: var(--vd-sombra-sm);
+  transition: box-shadow var(--vd-transicion-rapida);
+
+  &:hover {
+    box-shadow: var(--vd-sombra-md);
+  }
+}
+
+.vd-tarjeta-titulo {
+  font-size: var(--vd-texto-lg);
+  font-weight: 600;
+  color: var(--vd-texto-primario);
+  margin-bottom: var(--vd-espacio-4);
+}
+
+// --- Disposición -------------------------------------------------------------
+.vd-fila {
+  display: flex;
+}
+.vd-columna {
+  display: flex;
+  flex-direction: column;
+}
+.vd-centrado {
+  align-items: center;
+}
+.vd-separado {
+  justify-content: space-between;
+}
+.vd-gap-2 {
+  gap: var(--vd-espacio-2);
+}
+.vd-gap-4 {
+  gap: var(--vd-espacio-4);
+}
+.vd-gap-6 {
+  gap: var(--vd-espacio-6);
+}
+
+// --- Accesibilidad -----------------------------------------------------------
+// Texto solo para lectores de pantalla.
+.vd-solo-lectores {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
