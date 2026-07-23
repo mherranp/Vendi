@@ -135,21 +135,21 @@ describe('ImpersonationBannerComponent', () => {
   it('con actor pinta la banda con rol de alerta y el nombre interpolado', () => {
     preparar();
     const fixture = TestBed.createComponent(ImpersonationBannerComponent);
-    fixture.componentRef.setInput('actor', 'ana@vendi.local');
+    fixture.componentRef.setInput('actor', 'ana@vendi.co');
     fixture.componentRef.setInput('expiraEnSegundos', 120);
     fixture.detectChanges();
 
     const banda = fixture.nativeElement.querySelector('.vd-suplantacion');
     expect(banda).not.toBeNull();
     expect(banda.getAttribute('role')).toBe('alert');
-    expect(texto(fixture)).toContain('ana@vendi.local');
+    expect(texto(fixture)).toContain('ana@vendi.co');
     expect(texto(fixture)).toContain('120');
   });
 
   it('emite detener sin tocar la sesión', () => {
     preparar();
     const fixture = TestBed.createComponent(ImpersonationBannerComponent);
-    fixture.componentRef.setInput('actor', 'ana@vendi.local');
+    fixture.componentRef.setInput('actor', 'ana@vendi.co');
     fixture.detectChanges();
     let veces = 0;
     fixture.componentInstance.detener.subscribe(() => veces++);

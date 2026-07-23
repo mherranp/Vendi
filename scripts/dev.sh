@@ -45,7 +45,7 @@ set -a
 # shellcheck disable=SC1091
 . "${REPO_ROOT}/.env"
 set +a
-BASE_DOMAIN="${BASE_DOMAIN:-vendi.local}"
+BASE_DOMAIN="${BASE_DOMAIN:-vendi.co}"
 
 # ---------------------------------------------------------------------------
 # Comprobaciones previas: fallar pronto y con el comando exacto que arregla.
@@ -94,10 +94,10 @@ success "puertos 80 y 443 disponibles"
 # Resolución de nombres. Se comprueba por la MISMA vía que usarán curl, el
 # navegador y verify-setup.sh (getaddrinfo del sistema), no solo preguntando a
 # dnsmasq con `dig @127.0.0.1`. En macOS son dos cosas distintas: dnsmasq puede
-# tener su `address=/vendi.local/127.0.0.1` y aun así el sistema no enrutarle
-# las consultas si falta /etc/resolver/vendi.local. Con la comprobación vieja
+# tener su `address=/vendi.co/127.0.0.1` y aun así el sistema no enrutarle
+# las consultas si falta /etc/resolver/vendi.co. Con la comprobación vieja
 # eso daba verde aquí y 000 en el check 11 de verify-setup.sh.
-resuelve_a_loopback() {
+resolucion_de() {
     local nombre="$1" salida=""
     if command -v getent >/dev/null 2>&1; then
         salida="$(getent hosts "${nombre}" 2>/dev/null || true)"
@@ -108,13 +108,66 @@ resuelve_a_loopback() {
 try: print(socket.gethostbyname(sys.argv[1]))
 except OSError: pass' "${nombre}" 2>/dev/null || true)"
     fi
+    echo "${salida}"
+}
+
+resuelve_a_loopback() {
+    local salida
+    salida="$(resolucion_de "$1")"
     [[ "${salida}" == *127.0.0.1* || "${salida}" == *::1* ]]
 }
 
-if ! resuelve_a_loopback "api.${BASE_DOMAIN}"; then
-    error "api.${BASE_DOMAIN} no resuelve a 127.0.0.1 por el resolver del sistema. Ejecuta: ./scripts/setup-dnsmasq.sh  (o --hosts-only)"
+# El DNS del sistema NO es requisito para levantar el stack: Traefik hace bind
+# en 127.0.0.1:443 y sirve igual. Pero la pregunta que importa NO es «¿resuelve?»
+# sino «¿a dónde resuelve?», y hay que separar dos fallos que no se parecen en
+# nada aunque los dos empiecen por "el nombre no apunta a 127.0.0.1":
+#
+#   · NO RESUELVE (NXDOMAIN). Falla CERRADO: los clientes no llegan a ninguna
+#     parte, no se filtra nada. Es lo que pasaba con `vendi.local`, un TLD que
+#     no existe. Molesto, inofensivo: se avisa y se sigue.
+#
+#   · RESUELVE FUERA DE ESTA MÁQUINA. Falla ABIERTO, y esto sí es grave.
+#     `vendi.co` es un dominio REAL y registrado: sin el resolver local, cada
+#     nombre sale a Internet. Hoy `accounts.vendi.co` —el IdP— responde desde
+#     64.190.63.222 con un certificado DigiCert VÁLIDO para ese nombre exacto,
+#     así que la validación TLS da cadena correcta y nadie se entera: un POST al
+#     endpoint de token entrega el `client_secret` de `vendi-provisioning` a un
+#     tercero. Aquí se ABORTA. Levantar el stack en este estado es justo lo que
+#     no se debe hacer.
+#
+# La versión anterior de esta comprobación trataba los dos casos igual (avisar y
+# seguir) porque venía de la época de `vendi.local`, cuando solo existía el
+# primero. Con un TLD real esa equivalencia dejó de ser cierta.
+RESOLVER_SISTEMA="/etc/resolver/${BASE_DOMAIN}"
+RESOLUCION="$(resolucion_de "api.${BASE_DOMAIN}")"
+if resuelve_a_loopback "api.${BASE_DOMAIN}"; then
+    success "el DNS del sistema resuelve *.${BASE_DOMAIN} -> 127.0.0.1"
+elif [[ -n "${RESOLUCION}" ]]; then
+    echo "" >&2
+    echo -e "${RED}  api.${BASE_DOMAIN} resuelve FUERA de esta máquina:${NC}" >&2
+    echo "    ${RESOLUCION}" >&2
+    echo "" >&2
+    echo "  ${BASE_DOMAIN} es un dominio real. Sin ${RESOLVER_SISTEMA}, todo cliente que" >&2
+    echo "  no fije la resolución a mano sale a Internet en vez de hablar con Traefik." >&2
+    echo "  accounts.${BASE_DOMAIN} es el IdP y el host público tiene certificado válido," >&2
+    echo "  así que TLS no avisa de nada y los secretos de cliente se transmiten a un" >&2
+    echo "  tercero. No se levanta el stack en este estado." >&2
+    echo "" >&2
+    echo "  Arréglalo con los dos pasos de sudo (docs/runbooks/dns-y-tls-local.md, A):" >&2
+    echo "    sudo tee ${RESOLVER_SISTEMA} <<<'nameserver 127.0.0.1'" >&2
+    echo "    sudo brew services restart dnsmasq" >&2
+    echo "    sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder" >&2
+    echo "" >&2
+    error "resolución insegura de *.${BASE_DOMAIN}: apunta a Internet, no a esta máquina."
+elif [[ "$(uname -s)" == "Darwin" && ! -f "${RESOLVER_SISTEMA}" ]]; then
+    warn "api.${BASE_DOMAIN} no resuelve y falta ${RESOLVER_SISTEMA} (necesita sudo)."
+    warn "Esto falla CERRADO —ningún cliente llega a ninguna parte— así que se sigue,"
+    warn "pero el nombre no se podrá teclear en el navegador hasta completar el"
+    warn "procedimiento A de docs/runbooks/dns-y-tls-local.md. Mientras tanto:"
+    warn "  curl --resolve api.${BASE_DOMAIN}:443:127.0.0.1 https://api.${BASE_DOMAIN}/health"
+else
+    error "api.${BASE_DOMAIN} no resuelve a 127.0.0.1 y ${RESOLVER_SISTEMA} SÍ existe: el DNS local está roto, no solo pendiente. Ejecuta: ./scripts/setup-dnsmasq.sh  (o --hosts-only)"
 fi
-success "el DNS del sistema resuelve *.${BASE_DOMAIN} -> 127.0.0.1"
 
 # docker compose busca el .env en el directorio desde el que se invoca. El
 # canónico vive en la raíz del repo, así que se enlaza una vez.

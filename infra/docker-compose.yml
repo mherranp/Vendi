@@ -4,7 +4,7 @@ name: vendi
 # los renombres y recortes de la tarea 2.2 del plan de Fase 0:
 #
 #   - servicios/redes/volúmenes basesaas* → vendi*
-#   - dominios *.basesaas.dev → *.vendi.local
+#   - dominios *.basesaas.dev → *.vendi.co
 #   - Keycloak 26.1 → 26.6.4 (fijada; nunca `latest`)
 #   - Postgres pgvector/pgvector:pg17 → postgres:17-alpine (Fase 0 no usa
 #     embeddings; el spike de RLS se verificó contra esta misma imagen)
@@ -45,7 +45,7 @@ services:
     environment:
       # Renombrar el dominio de toda la flota es cambiar esta variable:
       # el entrypoint renderiza el template dinámico con ella.
-      BASE_DOMAIN: ${BASE_DOMAIN:-vendi.local}
+      BASE_DOMAIN: ${BASE_DOMAIN:-vendi.co}
       ACME_ENABLED: ${ACME_ENABLED:-false}
       ACME_STAGING: ${ACME_STAGING:-true}
       ACME_EMAIL: ${ACME_EMAIL:-}
@@ -321,7 +321,7 @@ services:
       KC_DB_USERNAME: ${POSTGRES_USER:-postgres}
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD es obligatorio}
       KC_HTTP_ENABLED: "true"
-      KC_HOSTNAME: https://accounts.${BASE_DOMAIN:-vendi.local}
+      KC_HOSTNAME: https://accounts.${BASE_DOMAIN:-vendi.co}
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_PROXY_HEADERS: xforwarded
@@ -334,7 +334,7 @@ services:
       # secreto del cliente (verificado contra 26.6.4, no es teoría).
       KC_SPI_IMPORT_SINGLE_FILE_REPLACE_PLACEHOLDERS: "true"
       VENDI_BACKEND_CLIENT_SECRET: ${VENDI_BACKEND_CLIENT_SECRET:?VENDI_BACKEND_CLIENT_SECRET es obligatorio}
-      VENDI_BASE_DOMAIN: ${BASE_DOMAIN:-vendi.local}
+      VENDI_BASE_DOMAIN: ${BASE_DOMAIN:-vendi.co}
     volumes:
       - ./keycloak/realm-vendi-co.json:/opt/keycloak/data/import/realm-vendi-co.json:ro
       - ./keycloak/vendi-theme:/opt/keycloak/themes/vendi:ro
@@ -364,7 +364,7 @@ services:
       dockerfile: services/api/Dockerfile
     environment:
       APP_ENV: ${APP_ENV:-development}
-      BASE_DOMAIN: ${BASE_DOMAIN:-vendi.local}
+      BASE_DOMAIN: ${BASE_DOMAIN:-vendi.co}
       # DSN de la API: rol vendi_app, SIN BYPASSRLS. Que la API no pueda
       # saltarse RLS ni por accidente es la garantía central del producto.
       DATABASE_URL: postgresql+asyncpg://vendi_app:${VENDI_APP_DB_PASSWORD:?VENDI_APP_DB_PASSWORD es obligatorio}@postgres:5432/vendi
@@ -455,7 +455,7 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD es obligatorio}
       GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_SERVER_ROOT_URL: https://grafana.${BASE_DOMAIN:-vendi.local}
+      GF_SERVER_ROOT_URL: https://grafana.${BASE_DOMAIN:-vendi.co}
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro

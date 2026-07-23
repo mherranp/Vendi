@@ -44,7 +44,7 @@ CONFIG = SystemSmtpConfig(
     username="",
     password="",
     use_tls=False,
-    sender_address="noreply@vendi.local",
+    sender_address="noreply@vendi.co",
     sender_name="Vendi",
 )
 
@@ -69,7 +69,7 @@ async def test_el_mailer_renderiza_las_tres_piezas_y_envia():
     enviar.assert_awaited_once()
     mime = enviar.call_args.args[0]
     assert mime["To"].endswith("<ana@ejemplo.test>")
-    assert "noreply@vendi.local" in mime["From"]
+    assert "noreply@vendi.co" in mime["From"]
     assert mime["Subject"]
     partes = mime.get_payload()
     assert sorted(p.get_content_type() for p in partes) == ["text/html", "text/plain"]
@@ -122,7 +122,7 @@ class _PoolDoblado:
 
 def _mensaje() -> EmailMessage:
     msg = EmailMessage()
-    msg["Message-ID"] = "<id-1@vendi.local>"
+    msg["Message-ID"] = "<id-1@vendi.co>"
     msg.set_content("hola")
     return msg
 
@@ -132,7 +132,7 @@ async def test_un_envio_correcto_devuelve_el_message_id_y_devuelve_la_conexion()
     pool = _PoolDoblado(cliente)
     resultado = await SmtpProvider(pool).send(CREDENCIALES, _mensaje())
 
-    assert resultado == SentMessage(provider_message_id="<id-1@vendi.local>")
+    assert resultado == SentMessage(provider_message_id="<id-1@vendi.co>")
     assert pool.liberados == [cliente]
 
 

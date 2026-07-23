@@ -1,6 +1,6 @@
 """`VendiKeycloakAdmin` contra el Keycloak real del compose.
 
-Va por `https://accounts.vendi.local` —el dominio, a través de Traefik, con el
+Va por `https://accounts.vendi.co` —el dominio, a través de Traefik, con el
 certificado que instaló mkcert— y no por `localhost:8080`. La diferencia no es
 estética: por el dominio se ejerce el enrutado de Traefik, las cabeceras que
 inyecta y el TLS, que es donde viven los fallos que solo aparecen desplegado.
@@ -8,6 +8,22 @@ Si algo aquí funcionara por puerto y fallara por dominio, eso sería el defecto
 
 Este archivo también es la prueba viva del split de D-02: `test_el_cliente_de_la_api_no_alcanza_organizations`
 falla si alguien devuelve `manage-realm` a `vendi-backend`.
+
+## Ir «por el dominio» no basta, y esta suite lo aprendió por las malas
+
+`vendi.co` está registrado de verdad. Pedir el nombre a secas no pide el stack
+local: pide *lo que conteste*. Con `/etc/resolver/vendi.co` todavía pendiente de
+`sudo`, quien contestaba era `64.190.63.222` —un host ajeno, con certificado
+DigiCert válido para `accounts.vendi.co`— y esta suite le hacía POST del
+`client_secret` de `vendi-provisioning`. La huella quedó en el propio informe de
+QA: `405 Not Allowed` servido por `openresty`, que no es Keycloak ni Traefik.
+Peor aún: `test_el_cliente_de_la_api_no_alcanza_organizations` interpretó ese
+405 de un extraño como si fuera una respuesta del realm y siguió evaluando.
+
+Por eso todo test de este módulo pasa por `stack_local` (autouse), que fija la
+resolución a 127.0.0.1 y **comprueba de quién es el certificado** antes de que
+se transmita ninguna credencial. Con `vendi.local` —un TLD inexistente— el
+mismo despiste era inofensivo; con un TLD real no lo es.
 """
 
 from __future__ import annotations
@@ -26,7 +42,7 @@ from vendi_core.errors.domain import ConflictError, ExternalServiceError, Permis
 
 pytestmark = pytest.mark.integration
 
-KC_URL = os.getenv("VENDI_TEST_KEYCLOAK_URL", "https://accounts.vendi.local")
+KC_URL = os.getenv("VENDI_TEST_KEYCLOAK_URL", "https://accounts.vendi.co")
 
 
 def _cargar_env() -> None:
@@ -43,6 +59,34 @@ def _cargar_env() -> None:
 
 
 _cargar_env()
+
+
+@pytest.fixture(autouse=True)
+def stack_local(exigir_stack_local):
+    """Puerta de entrada de TODO test de este módulo.
+
+    `autouse` a propósito: si esto fuera opcional, el primer test que se
+    escribiera sin pedirlo volvería a mandar el secreto a Internet, y no habría
+    forma de notarlo leyendo el diff. Al ser autouse, la única manera de saltarse
+    la comprobación es borrarla, que sí se ve.
+
+    Devuelve la identidad del peer por si un test quiere afirmar algo sobre ella.
+    """
+    return exigir_stack_local(KC_URL)
+
+
+def test_el_otro_extremo_es_el_stack_local(stack_local):
+    """La aserción de identidad del peer, explícita y no como efecto colateral.
+
+    Que exista un test dedicado no es redundante con el fixture autouse: este es
+    el que da un mensaje inteligible cuando la condición se rompe, en lugar de
+    tumbar la suite entera con un error que parece «Keycloak está caído».
+    """
+    assert stack_local["ip"] in {"127.0.0.1", "::1"}
+    emisor = stack_local["issuer"]
+    assert "mkcert" in emisor.get("organizationName", "") + emisor.get("commonName", ""), (
+        f"El emisor del certificado es {emisor}, no la CA local de mkcert"
+    )
 
 
 # Ámbito de función, no de módulo: `KeycloakOpenIDConnection` mantiene un pool
@@ -99,7 +143,7 @@ async def test_dominio_sintetico(aprovisionamiento, negocio):
     tenant_id, org_id = negocio
     org = await aprovisionamiento.get_organization_by_alias(tenant_id)
     dominios = [d["name"] for d in org.get("domains", [])]
-    assert f"{tenant_id}.tenants.vendi.local" in dominios
+    assert f"{tenant_id}.tenants.vendi.co" in dominios
 
 
 @pytest.mark.asyncio
@@ -123,7 +167,7 @@ async def test_ciclo_de_miembros(aprovisionamiento, negocio):
     sufijo = uuid.uuid4().hex[:8]
     user_id = await aprovisionamiento.create_user(
         username=f"prueba{sufijo}",
-        email=f"prueba{sufijo}@demo.vendi.local",
+        email=f"prueba{sufijo}@demo.vendi.co",
         first_name="Prueba",
         last_name="Integracion",
         password="prueba-integracion",
@@ -207,7 +251,7 @@ async def test_el_cliente_de_la_api_no_alcanza_organizations(api_general):
 async def test_keycloak_inalcanzable_da_error_tipado():
     """Un Keycloak caído no puede subir como traza cruda del cliente HTTP."""
     admin = VendiKeycloakAprovisionamiento(
-        "https://accounts-que-no-existe.vendi.local", "vendi-provisioning", "loquesea"
+        "https://accounts-que-no-existe.vendi.co", "vendi-provisioning", "loquesea"
     )
     with pytest.raises((ExternalServiceError, PermissionDeniedError, Exception)) as exc:
         await admin.list_organizations()

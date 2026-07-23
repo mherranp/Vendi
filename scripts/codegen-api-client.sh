@@ -31,7 +31,9 @@
 #   CODEGEN_SCHEMA_FILE  esquema congelado   (si se define, no se toca la red)
 #   CODEGEN_TOKEN        bearer para /openapi.json si queda tras autenticación
 #   CODEGEN_DRY_RUN      imprime lo que haría y sale 0, sin escribir nada
-#   CODEGEN_INSECURE     pasa -k a curl (certificados locales de setup-certs.sh)
+#   CODEGEN_INSECURE     apaga la verificación TLS. Rara vez es lo que quieres:
+#                        el script ya ancla a la CA de mkcert por defecto, así
+#                        que un certificado local válido verifica sin esto.
 #
 # Compatible con bash 3.2 (el que trae macOS).
 # =============================================================================
@@ -62,14 +64,37 @@ fi
 if [ -n "${BASE_DOMAIN_PREVIO}" ]; then
     BASE_DOMAIN="${BASE_DOMAIN_PREVIO}"
 fi
-BASE_DOMAIN="${BASE_DOMAIN:-vendi.local}"
+BASE_DOMAIN="${BASE_DOMAIN:-vendi.co}"
 
 API_URL="${CODEGEN_API_URL:-https://api.${BASE_DOMAIN}}"
 API_URL="${API_URL%/}"
 ESQUEMA_FILE="${CODEGEN_SCHEMA_FILE:-}"
 
 CURL_OPTS="-sS --connect-timeout 5 --max-time 30"
+
+# Anclar a la CA de mkcert por defecto. El certificado del borde lo emite esa CA,
+# así que esto hace que el camino normal valide sin que nadie tenga que recurrir
+# a CODEGEN_INSECURE — que es el objetivo: la salida de este script se convierte
+# en el cliente de la API, y generar código a partir de un esquema descargado sin
+# verificar de quién viene no es un riesgo teórico. `api.${BASE_DOMAIN}` resuelve
+# a un host público cuando falta /etc/resolver/${BASE_DOMAIN}.
+for _RAIZ_CA in \
+    "${VENDI_MKCERT_CAROOT:-}" \
+    "$(command -v mkcert >/dev/null 2>&1 && mkcert -CAROOT 2>/dev/null || true)" \
+    "${HOME}/Library/Application Support/mkcert" \
+    "${HOME}/.local/share/mkcert"; do
+    if [ -n "${_RAIZ_CA}" ] && [ -f "${_RAIZ_CA}/rootCA.pem" ]; then
+        CURL_OPTS="${CURL_OPTS} --cacert ${_RAIZ_CA}/rootCA.pem"
+        break
+    fi
+done
+
 if [ -n "${CODEGEN_INSECURE:-}" ]; then
+    # Se conserva como escotilla, pero deja rastro: apagar la verificación aquí
+    # significa aceptar como esquema de la API lo que conteste cualquiera.
+    avisa "CODEGEN_INSECURE=1: se DESACTIVA la verificación TLS. El esquema se aceptará"
+    avisa "venga de donde venga. Si es por el certificado local, lo correcto es"
+    avisa "'mkcert -install' y no esta variable."
     CURL_OPTS="${CURL_OPTS} -k"
 fi
 
@@ -140,8 +165,9 @@ else
          2. Apunta a otra API: CODEGEN_API_URL=https://otra.host $0
          3. Usa un esquema congelado (no necesita stack):
             CODEGEN_SCHEMA_FILE=docs/api/openapi-fase0.json $0
-       Si la API sí está arriba y falla el certificado local, reintenta con
-       CODEGEN_INSECURE=1 (solo para desarrollo)."
+       Si la API sí está arriba y lo que falla es el certificado, el arreglo es
+       'mkcert -install && ./scripts/setup-certs.sh', no CODEGEN_INSECURE=1:
+       este script ya valida contra la CA de mkcert."
     fi
     ok "La API responde."
 

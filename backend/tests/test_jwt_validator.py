@@ -4,7 +4,7 @@ Los tokens se firman aquí con una clave RSA generada al vuelo y el JWKS se
 sirve monkeypatcheando `_fetch_jwks`. Así el test es determinista y no depende
 de que Keycloak esté arriba: lo que se prueba es la lógica del validador, no la
 disponibilidad del IdP. Los tests que sí necesitan Keycloak de verdad están en
-`test_keycloak_admin_orgs.py` y van por `https://accounts.vendi.local`.
+`test_keycloak_admin_orgs.py` y van por `https://accounts.vendi.co`.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from jose import jwt as jose_jwt
 
 from vendi_core.auth.jwt import REALM_VENDI, JWTValidator, parsear_claim_organization
 
-KC = "https://accounts.vendi.local"
+KC = "https://accounts.vendi.co"
 ALIAS_1 = "1b8e0d4e-8f3a-4c2b-9d5e-2f6a7b8c9d0e"
 ALIAS_2 = "2c9f1e5f-9a4b-4d3c-8e6f-3a7b8c9d0e1f"
 
@@ -60,7 +60,7 @@ def _claims(realm: str = REALM_VENDI, **extra) -> dict:
         "iss": f"{KC}/realms/{realm}",
         "sub": "usuario-1",
         "preferred_username": "cajera1",
-        "email": "cajera1@demo.vendi.local",
+        "email": "cajera1@demo.vendi.co",
         "exp": int(time.time()) + 300,
         "iat": int(time.time()),
         "realm_access": {"roles": ["dueno"]},

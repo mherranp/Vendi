@@ -104,7 +104,7 @@ Cada app tiene dos archivos en `src/environments/`:
 | Archivo                      | Cuándo se usa                                   | Qué apunta      |
 | ---------------------------- | ----------------------------------------------- | --------------- |
 | `environment.ts`             | Configuración `production` (la **por defecto**) | `*.vendi.co`    |
-| `environment.development.ts` | Configuración `development` (`npm run start:*`) | `*.vendi.local` |
+| `environment.development.ts` | Configuración `development` (`npm run start:*`) | `*.vendi.co` |
 
 El intercambio lo hace `fileReplacements` en la configuración `development` de
 `angular.json`. La dirección importa: **el archivo de producción es el que se
@@ -123,7 +123,7 @@ Identidad por app (realm `vendi-co` en las tres que la usan):
 
 **En desarrollo las apps NO se sirven por Traefik**: se sirven con `ng serve`,
 así que el redirect URI que el navegador presenta a Keycloak es
-`http://localhost:420x/...`, no `https://app.vendi.local/...`. Esos tres
+`http://localhost:420x/...`, no `https://app.vendi.co/...`. Esos tres
 `localhost` están registrados en `infra/keycloak/realm-vendi-co.json` —
 `vendi-web` lleva 4200 y 4202, `vendi-admin` lleva 4203— junto a los hosts de
 producción `https://app.${VENDI_BASE_DOMAIN}/*` y

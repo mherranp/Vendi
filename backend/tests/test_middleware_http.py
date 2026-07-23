@@ -127,8 +127,8 @@ def test_la_csp_se_puede_sobrescribir_por_argumento_y_por_entorno(monkeypatch):
     assert _resolve_csp(None) == DEFAULT_CSP
     assert _resolve_csp("default-src 'none'") == "default-src 'none'"
 
-    monkeypatch.setenv("SECURITY_CSP", "default-src 'self' https://cdn.vendi.local")
-    assert _resolve_csp(None) == "default-src 'self' https://cdn.vendi.local"
+    monkeypatch.setenv("SECURITY_CSP", "default-src 'self' https://cdn.vendi.co")
+    assert _resolve_csp(None) == "default-src 'self' https://cdn.vendi.co"
     # El argumento explícito gana sobre la variable de entorno.
     assert _resolve_csp("default-src 'none'") == "default-src 'none'"
 

@@ -34,7 +34,7 @@ if [[ -f "${REPO_ROOT}/.env" ]]; then
     set +a
 fi
 
-BASE_DOMAIN="${BASE_DOMAIN:-vendi.local}"
+BASE_DOMAIN="${BASE_DOMAIN:-vendi.co}"
 
 if ! command -v mkcert &>/dev/null; then
     error "mkcert no está instalado. macOS: brew install mkcert · otros: https://github.com/FiloSottile/mkcert"

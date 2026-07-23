@@ -1,7 +1,7 @@
 /**
  * Entorno de DESARROLLO de `vendi-tenant`.
  *
- * Apunta al stack local de `infra/` (`*.vendi.local` vía Traefik + dnsmasq).
+ * Apunta al stack local de `infra/` (`*.vendi.co` vía Traefik + dnsmasq).
  * Se activa por `fileReplacements` en la configuración `development` de
  * angular.json.
  *
@@ -14,8 +14,8 @@
  */
 export const environment = {
   production: false,
-  apiUrl: 'https://api.vendi.local/api/v1',
-  keycloakUrl: 'https://accounts.vendi.local',
+  apiUrl: 'https://api.vendi.co/api/v1',
+  keycloakUrl: 'https://accounts.vendi.co',
   realm: 'vendi-co',
   clientId: 'vendi-web',
 };

@@ -62,7 +62,7 @@ PAGINA=100
 # La imagen oficial de Keycloak 26 es UBI-micro: NO trae curl ni python, así
 # que no se puede llamar a la Admin API con `docker compose exec keycloak
 # curl`. Se llama desde el anfitrión al puerto que el compose publica en
-# loopback, que además funciona igual sin tener resuelto vendi.local.
+# loopback, que además funciona igual sin tener resuelto vendi.co.
 KC_URL_BASE="${KEYCLOAK_URL:-http://127.0.0.1:8080}"
 kc_curl() {
     curl -s --connect-timeout 5 --max-time 30 "$@"

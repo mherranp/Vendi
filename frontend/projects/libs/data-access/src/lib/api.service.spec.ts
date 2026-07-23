@@ -43,9 +43,9 @@ describe('ApiService', () => {
   });
 
   it('respeta el override de API_BASE_URL (el caso real: environment.apiUrl)', () => {
-    ({ api, http } = configurar('https://api.vendi.local/api/v1'));
+    ({ api, http } = configurar('https://api.vendi.co/api/v1'));
     api.get('/tenants/me').subscribe();
-    http.expectOne('https://api.vendi.local/api/v1/tenants/me').flush({});
+    http.expectOne('https://api.vendi.co/api/v1/tenants/me').flush({});
   });
 
   it('serializa los parámetros de consulta con HttpParams (numéricos y de texto)', () => {

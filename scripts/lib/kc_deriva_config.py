@@ -118,7 +118,7 @@ with open(RUTA_JSON, encoding="utf-8") as f:
 # también, cada redirect URI se reporta como deriva y el informe se vuelve ruido
 # que nadie lee.
 for marcador, variable, defecto in (
-    ("${VENDI_BASE_DOMAIN}", "BASE_DOMAIN", "vendi.local"),
+    ("${VENDI_BASE_DOMAIN}", "BASE_DOMAIN", "vendi.co"),
     ("${VENDI_BACKEND_CLIENT_SECRET}", "VENDI_BACKEND_CLIENT_SECRET", ""),
 ):
     crudo = crudo.replace(marcador, os.environ.get(variable) or defecto)

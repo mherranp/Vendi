@@ -17,7 +17,7 @@ import { KeycloakFake, ORG_POR_DEFECTO } from './keycloak.fake';
 const ORG_B = '2c9f1e5f-9a4b-4d3c-8e6f-3a7b8c9d0e1f';
 
 const CONFIG = {
-  url: 'https://accounts.vendi.local',
+  url: 'https://accounts.vendi.co',
   realm: 'vendi-co',
   clientId: 'vendi-web',
 } as const;

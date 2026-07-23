@@ -86,7 +86,7 @@ REALM_VENDI = "vendi-co"
 # porque el patrón es único por construcción —el alias es un UUID— y deja abierta
 # sin migración la puerta al login identity-first por dominio de email. Coste:
 # cero.
-SUFIJO_DOMINIO_ORG = "tenants.vendi.local"
+SUFIJO_DOMINIO_ORG = "tenants.vendi.co"
 
 
 def _codigo(exc: KeycloakError) -> int | None:

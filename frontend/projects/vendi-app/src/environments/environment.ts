@@ -8,7 +8,7 @@
  * sustituye este archivo por `environment.development.ts`).
  *
  * Dominio de producción: `vendi.co` (BASE_DOMAIN de producción; en desarrollo
- * el stack de `infra/` usa `vendi.local` vía dnsmasq + certificados locales).
+ * el stack de `infra/` usa `vendi.co` vía dnsmasq + certificados locales).
  *
  * Identidad: `vendi-app` y `vendi-tenant` comparten el cliente público PKCE
  * `vendi-web` del realm `vendi-co` (Tarea 2.4, Paso 1). En Fase 0 la app móvil

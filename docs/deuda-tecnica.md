@@ -137,7 +137,7 @@ Organizations (`admin-fine-grained-authz:v2` todavía no cubre ese recurso).
 **Lo que se midió primero.** La pregunta que decide todo es: ¿qué necesita de
 verdad la API general, y se puede tener sin `manage-realm`? Matriz ejecutada
 contra el realm vivo de `vendi-co` (Keycloak 26.6.4, por
-`https://accounts.vendi.local`) creando un cliente sonda y rotándole los roles:
+`https://accounts.vendi.co`) creando un cliente sonda y rotándole los roles:
 
 ```
 === C1 · solo manage-users ===                     === C3 · manage-realm + manage-users ===
@@ -241,6 +241,18 @@ a ciegas puede tirar sesiones y credenciales.
 
 **Vencimiento: Fase 1**, cuando haya más de un entorno desplegado y la deriva
 deje de ser hipotética.
+
+**Ocurrencia real (2026-07-23).** El renombrado de `vendi.local` a `vendi.co`
+lo demostró en vivo: cambiar `BASE_DOMAIN` y reiniciar el stack actualizó el
+JSON, Traefik y las apps, pero el realm existente se quedó con
+`https://app.vendi.local/*` y `https://admin.vendi.local/*` en los
+`redirectUris` de `vendi-web` y `vendi-admin`. `reconcile-keycloak.sh` lo
+detectó con exactitud (`faltan [...] · sobran [...]`) y la corrección hubo que
+aplicarla a mano contra la Admin API, cliente por cliente, preservando el resto
+del objeto para no pisar secretos. Es justo el trabajo manual que la parte
+pendiente de esta deuda debe automatizar. Los `webOrigins` no hicieron falta:
+valen `"+"`, que deriva de los `redirectUris` y por tanto es independiente del
+dominio.
 
 ---
 

@@ -154,7 +154,7 @@ titulo "P4 · PREGUNTAS 4 y 5 — alias en formato UUID, dominio sintético, dup
 sub "org 1: alias = tenant_id ($T1) + dominio sintético"
 api POST "/admin/realms/$REALM/organizations" \
   "{\"name\":\"Tienda Don Carlos\",\"alias\":\"$T1\",
-    \"domains\":[{\"name\":\"$T1.tenants.vendi.local\",\"verified\":true}]}"
+    \"domains\":[{\"name\":\"$T1.tenants.vendi.co\",\"verified\":true}]}"
 
 sub "¿es OBLIGATORIO el dominio? (crear una org sin 'domains')"
 api POST "/admin/realms/$REALM/organizations" \
@@ -162,12 +162,12 @@ api POST "/admin/realms/$REALM/organizations" \
 
 sub "alias DUPLICADO (debe fallar)"
 api POST "/admin/realms/$REALM/organizations" \
-  "{\"name\":\"Duplicada\",\"alias\":\"$T1\",\"domains\":[{\"name\":\"otro.tenants.vendi.local\"}]}"
+  "{\"name\":\"Duplicada\",\"alias\":\"$T1\",\"domains\":[{\"name\":\"otro.tenants.vendi.co\"}]}"
 
 sub "dominio DUPLICADO (debe fallar)"
 api POST "/admin/realms/$REALM/organizations" \
   "{\"name\":\"Duplicada2\",\"alias\":\"bbbbbbbb-0000-0000-0000-00000000000b\",
-    \"domains\":[{\"name\":\"$T1.tenants.vendi.local\"}]}"
+    \"domains\":[{\"name\":\"$T1.tenants.vendi.co\"}]}"
 
 sub "borrar la org de prueba sin dominio"
 ORG_SIN_DOM="$(get "/admin/realms/$REALM/organizations" | python3 -c '
@@ -189,7 +189,7 @@ for U in cajera1 sinorg; do
   sub "crear usuario $U"
   api POST "/admin/realms/$REALM/users" \
     "{\"username\":\"$U\",\"enabled\":true,\"firstName\":\"Nombre\",\"lastName\":\"Apellido\",
-      \"email\":\"$U@vendi.local\",\"emailVerified\":true,
+      \"email\":\"$U@vendi.co\",\"emailVerified\":true,
       \"credentials\":[{\"type\":\"password\",\"value\":\"spike\",\"temporary\":false}]}"
 done
 U1="$(get "/admin/realms/$REALM/users?username=cajera1&exact=true" | python3 -c 'import sys,json;print(json.load(sys.stdin)[0]["id"])')"
@@ -253,7 +253,7 @@ titulo "P9 · PREGUNTA 3 — usuario en DOS organizaciones"
 sub "crear org 2 (alias = $T2) y añadir a cajera1"
 api POST "/admin/realms/$REALM/organizations" \
   "{\"name\":\"Minimercado Andrea\",\"alias\":\"$T2\",
-    \"domains\":[{\"name\":\"$T2.tenants.vendi.local\",\"verified\":true}]}"
+    \"domains\":[{\"name\":\"$T2.tenants.vendi.co\",\"verified\":true}]}"
 ORG2="$(get "/admin/realms/$REALM/organizations" | python3 -c "
 import sys,json
 print([o['id'] for o in json.load(sys.stdin) if o['alias']=='$T2'][0])")"
@@ -310,7 +310,7 @@ token cajera1 "openid organization:*"
 sub "usuario cuya ÚNICA organización está deshabilitada"
 api POST "/admin/realms/$REALM/users" \
   '{"username":"solodeshab","enabled":true,"firstName":"Nombre","lastName":"Apellido",
-    "email":"solodeshab@vendi.local","emailVerified":true,
+    "email":"solodeshab@vendi.co","emailVerified":true,
     "credentials":[{"type":"password","value":"spike","temporary":false}]}'
 U3="$(get "/admin/realms/$REALM/users?username=solodeshab&exact=true" | python3 -c 'import sys,json;print(json.load(sys.stdin)[0]["id"])')"
 api POST "/admin/realms/$REALM/organizations/$ORG2/members" "\"$U3\""

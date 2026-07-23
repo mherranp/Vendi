@@ -72,7 +72,7 @@ export class KeycloakFake {
   /** Perfil que devuelve `loadUserProfile()`. */
   profile: PerfilFalso = {
     username: 'dueno',
-    email: 'dueno@demo.vendi.local',
+    email: 'dueno@demo.vendi.co',
     firstName: 'Ana',
     lastName: 'Gómez',
   };

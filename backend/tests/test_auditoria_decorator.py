@@ -152,7 +152,7 @@ async def test_el_decorador_no_publica_ningun_actor_de_suplantacion():
     servicio = _AuditServiceDoblado()
     user = SimpleNamespace(
         user_id="kc-admin",
-        email="admin@vendi.local",
+        email="admin@vendi.co",
         actor={"sub": "kc-victima", "username": "duenio"},
     )
 

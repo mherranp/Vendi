@@ -6,7 +6,7 @@
  *
  * Apunta al stack local de `infra/` (Traefik + dnsmasq + certificados de
  * `scripts/setup-certs.sh`), no a `localhost:8000`: la API y Keycloak solo se
- * exponen por sus hosts `*.vendi.local`.
+ * exponen por sus hosts `*.vendi.co`.
  *
  * En web esta app se sirve con `ng serve` en el puerto **4200**; su redirect
  * URI (`http://localhost:4200/*`) está registrado en el cliente `vendi-web`
@@ -15,8 +15,8 @@
  */
 export const environment = {
   production: false,
-  apiUrl: 'https://api.vendi.local/api/v1',
-  keycloakUrl: 'https://accounts.vendi.local',
+  apiUrl: 'https://api.vendi.co/api/v1',
+  keycloakUrl: 'https://accounts.vendi.co',
   realm: 'vendi-co',
   clientId: 'vendi-web',
 };

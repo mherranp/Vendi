@@ -8,11 +8,11 @@
 #   - roles y grupos de realm: dueno, cajero, almacenista + los permisos de
 #     policies.py (no están en el realm como código a propósito: --import-realm
 #     no vuelve a ejecutarse sobre un realm existente, ver infra/keycloak/README.md)
-#   - usuario admin@vendi.local con el permiso platform:admin
+#   - usuario admin@vendi.co con el permiso platform:admin
 #   - un tenant de demostración "Tienda Don Carlos" creado VÍA LA API, para que
 #     pase por el mismo camino de provisionamiento que producción (fila en
 #     `tenants` + organización en Keycloak con alias = tenant_id)
-#   - un usuario dueno@demo.vendi.local, miembro de esa organización
+#   - un usuario dueno@demo.vendi.co, miembro de esa organización
 #
 # Estado actual: el módulo `tenants` de la API no existe todavía (tarea 4.2),
 # así que este script falla limpio en vez de fingir que sembró algo.
@@ -46,7 +46,7 @@ if [[ -f "${REPO_ROOT}/.env" ]]; then
     . "${REPO_ROOT}/.env"
     set +a
 fi
-BASE_DOMAIN="${BASE_DOMAIN:-vendi.local}"
+BASE_DOMAIN="${BASE_DOMAIN:-vendi.co}"
 
 if [[ ! -d "${REPO_ROOT}/backend/services/api/app/modules/tenants" ]]; then
     error "La API todavía no tiene el módulo 'tenants' (llega con la tarea 4.2 del plan de Fase 0). No hay nada que sembrar."

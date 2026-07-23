@@ -160,7 +160,7 @@ describe('la app degradada no pinta claves crudas', () => {
   it('ImpersonationBannerComponent', () => {
     preparar();
     const fixture = TestBed.createComponent(ImpersonationBannerComponent);
-    fixture.componentRef.setInput('actor', 'ana@vendi.local');
+    fixture.componentRef.setInput('actor', 'ana@vendi.co');
     fixture.componentRef.setInput('expiraEnSegundos', 120);
     fixture.detectChanges();
     sinClavesCrudas(fixture);

@@ -10,7 +10,7 @@ que un intermediario dentro de la red del clúster sería indetectable.
 
 En Vendi hay un matiz que hace esto más importante, no menos: `mkcert` instala
 la CA en el sistema precisamente para que el desarrollo funcione **con**
-verificación por `https://accounts.vendi.local`. Es decir, ni siquiera en
+verificación por `https://accounts.vendi.co`. Es decir, ni siquiera en
 desarrollo hace falta apagarla.
 """
 
@@ -48,10 +48,48 @@ def test_un_app_env_desconocido_verifica(monkeypatch):
     assert keycloak_ssl_verify() is True
 
 
-def test_development_no_verifica_por_defecto(monkeypatch):
+def test_development_verifica_anclando_a_la_ca_de_mkcert(monkeypatch, tmp_path):
+    """En desarrollo NO se apaga la verificación: se ancla a la CA de mkcert.
+
+    Esta prueba afirmaba lo contrario (`is False`), heredado de BaseSaaS, donde
+    el único salto HTTPS en desarrollo era un certificado autofirmado dentro de
+    la red del compose. En Vendi esa premisa no se sostiene: la API llega a
+    Keycloak por HTTP plano (`http://keycloak:8080`), así que `verify` ni se
+    aplica ahí, y el único cliente que sí habla HTTPS es la suite en el host,
+    contra `https://accounts.vendi.co`, con un certificado de mkcert que valida
+    perfectamente.
+
+    Y como `vendi.co` es un TLD REAL, apagar la verificación tenía un coste
+    concreto: con el resolver local ausente el nombre sale a Internet, y un
+    cliente sin verificación entrega el `client_secret` a quien conteste sin
+    mirar de quién es el certificado. Anclar a la CA de mkcert lo vuelve
+    imposible: ningún tercero puede presentar una cadena firmada por una CA que
+    solo existe en este portátil.
+    """
+    ca = tmp_path / "rootCA.pem"
+    ca.write_text("-- CA de mentira, solo hace falta que el archivo exista --")
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("VENDI_MKCERT_CAROOT", str(tmp_path))
+    monkeypatch.delenv("KEYCLOAK_VERIFY_SSL", raising=False)
+    assert keycloak_ssl_verify() == str(ca)
+
+
+def test_development_sin_ca_de_mkcert_verifica_igual(monkeypatch, tmp_path):
+    """Si no aparece la CA local, se cae del lado seguro (almacén del sistema),
+    nunca a `False`. Sesgo a prueba de fallos: en la duda, se verifica."""
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("VENDI_MKCERT_CAROOT", str(tmp_path / "no-existe"))
+    monkeypatch.delenv("KEYCLOAK_VERIFY_SSL", raising=False)
+    assert keycloak_ssl_verify() is True
+
+
+def test_development_nunca_devuelve_false_por_defecto(monkeypatch):
+    """La regresión que se está cerrando, dicha sin rodeos: sin un override
+    explícito, NINGÚN entorno puede desembocar en «no verifiques»."""
     monkeypatch.setenv("APP_ENV", "development")
     monkeypatch.delenv("KEYCLOAK_VERIFY_SSL", raising=False)
-    assert keycloak_ssl_verify() is False
+    monkeypatch.delenv("VENDI_MKCERT_CAROOT", raising=False)
+    assert keycloak_ssl_verify() is not False
 
 
 def test_el_override_explicito_gana_sobre_el_entorno(monkeypatch):
@@ -91,11 +129,14 @@ def test_se_aceptan_las_formas_habituales_de_booleano(monkeypatch):
         assert keycloak_ssl_verify() is False, valor
 
 
-def test_la_decision_se_relee_en_cada_llamada(monkeypatch):
+def test_la_decision_se_relee_en_cada_llamada(monkeypatch, tmp_path):
     """Sin cachear: un operador que rota variables con un sidecar no debería
     tener que reiniciar el proceso."""
+    ca = tmp_path / "rootCA.pem"
+    ca.write_text("-- CA de mentira --")
+    monkeypatch.setenv("VENDI_MKCERT_CAROOT", str(tmp_path))
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.delenv("KEYCLOAK_VERIFY_SSL", raising=False)
     assert keycloak_ssl_verify() is True
     monkeypatch.setenv("APP_ENV", "development")
-    assert keycloak_ssl_verify() is False
+    assert keycloak_ssl_verify() == str(ca)

@@ -118,14 +118,14 @@ describe('FormRendererComponent', () => {
     const fixture = montar();
     fixture.componentInstance.formulario.patchValue({
       nombre: 'Tienda Don Carlos',
-      correo: 'ana@vendi.local',
+      correo: 'ana@vendi.co',
       activo: true,
     });
     const renderer = fixture.debugElement.children[0].componentInstance as FormRendererComponent;
     renderer.alEnviar();
     expect(fixture.componentInstance.enviado).toEqual({
       nombre: 'Tienda Don Carlos',
-      correo: 'ana@vendi.local',
+      correo: 'ana@vendi.co',
       activo: true,
     });
   });

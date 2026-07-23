@@ -2,6 +2,12 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Nota de 2026-07-23 — el dominio cambió.** Este plan se escribió cuando el
+> dominio local era `vendi.local` y se conserva tal cual como registro histórico.
+> El stack usa hoy `vendi.co`: al leer los pasos, sustituye mentalmente
+> `*.vendi.local` por `*.vendi.co` y `<tenant_id>.tenants.vendi.local` por
+> `<tenant_id>.tenants.vendi.co`. Ver `docs/runbooks/dns-y-tls-local.md`.
+
 **Objetivo:** construir la fundación técnica de Vendi cosechando BaseSaaS, con tenancy por RLS en schema único y un realm regional con Keycloak Organizations, hasta cumplir los cuatro criterios de cierre de Fase 0 del spec.
 
 **Arquitectura:** monolito modular FastAPI (`services/api`) + worker (`services/worker`) sobre la librería transversal `vendi-core` cosechada de `base_saas`; frontend Angular 21 con cuatro apps y cinco libs ya andamiadas; infraestructura docker-compose cosechada de BaseSaaS. El aislamiento multi-tenant lo garantiza PostgreSQL RLS (fail-closed) y la identidad un realm `vendi-co` con una Organization por negocio.

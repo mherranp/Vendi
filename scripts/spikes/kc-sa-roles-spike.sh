@@ -32,7 +32,7 @@ docker run -d --name kc-sa-spike -p "${PUERTO}:8080" \
   -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
   -e KC_SPI_IMPORT_SINGLE_FILE_REPLACE_PLACEHOLDERS=true \
   -e VENDI_BACKEND_CLIENT_SECRET="${SECRETO}" \
-  -e VENDI_BASE_DOMAIN=vendi.local \
+  -e VENDI_BASE_DOMAIN=vendi.co \
   -v "${REPO_ROOT}/infra/keycloak/realm-vendi-co.json:/opt/keycloak/data/import/realm-vendi-co.json:ro" \
   "${KC_IMG}" start-dev --import-realm >/dev/null
 
@@ -129,7 +129,7 @@ def secuencia_aprovisionamiento(token):
             "name": f"Negocio {tid[:8]}",
             "alias": tid,
             "enabled": True,
-            "domains": [{"name": f"{tid}.tenants.vendi.local", "verified": True}],
+            "domains": [{"name": f"{tid}.tenants.vendi.co", "verified": True}],
         },
     )
     resultados.append(("POST /organizations (alta de tenant)", st))

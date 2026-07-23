@@ -59,7 +59,7 @@ for VAR in ${ANULABLES}; do
     fi
 done
 
-BASE_DOMAIN="${BASE_DOMAIN:-vendi.local}"
+BASE_DOMAIN="${BASE_DOMAIN:-vendi.co}"
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
 APP_ENV="${APP_ENV:-development}"
 CURL_TOPES=(--connect-timeout 3 --max-time 8)
@@ -74,9 +74,9 @@ en_servicio() {
 # ¿Este nombre resuelve a loopback POR EL RESOLVER DEL SISTEMA? Es la misma
 # vía que usan curl y el navegador. Preguntarle directamente a dnsmasq con
 # `dig @127.0.0.1` no vale: en macOS dnsmasq puede estar bien configurado y el
-# sistema no enrutarle las consultas de *.vendi.local por faltar
-# /etc/resolver/vendi.local. Se usa para diagnosticar el check 11.
-resuelve_a_loopback() {
+# sistema no enrutarle las consultas de *.vendi.co por faltar
+# /etc/resolver/vendi.co. Se usa para diagnosticar el check 11.
+resolucion_de() {
     nombre="$1"; salida=""
     if command -v getent >/dev/null 2>&1; then
         salida="$(getent hosts "${nombre}" 2>/dev/null || true)"
@@ -87,10 +87,40 @@ resuelve_a_loopback() {
 try: print(socket.gethostbyname(sys.argv[1]))
 except OSError: pass' "${nombre}" 2>/dev/null || true)"
     fi
+    echo "${salida}"
+}
+
+resuelve_a_loopback() {
+    salida="$(resolucion_de "$1")"
     case "${salida}" in
         *127.0.0.1*|*::1*) return 0 ;;
         *) return 1 ;;
     esac
+}
+
+# ¿Este nombre resuelve a algo que NO es esta máquina? Es la condición peligrosa
+# y merece su propia función porque es distinta de "no resuelve": la primera
+# manda el tráfico a un tercero, la segunda no lo manda a ninguna parte.
+resuelve_fuera() {
+    salida="$(resolucion_de "$1")"
+    [ -n "${salida}" ] && ! resuelve_a_loopback "$1"
+}
+
+# CA de mkcert: el ancla de confianza para diagnosticar TLS sin recurrir a -k.
+ca_de_mkcert() {
+    if [ -n "${VENDI_MKCERT_CAROOT:-}" ] && [ -f "${VENDI_MKCERT_CAROOT}/rootCA.pem" ]; then
+        echo "${VENDI_MKCERT_CAROOT}/rootCA.pem"; return 0
+    fi
+    if command -v mkcert >/dev/null 2>&1; then
+        raiz="$(mkcert -CAROOT 2>/dev/null)"
+        if [ -n "${raiz}" ] && [ -f "${raiz}/rootCA.pem" ]; then
+            echo "${raiz}/rootCA.pem"; return 0
+        fi
+    fi
+    for raiz in "${HOME}/Library/Application Support/mkcert" "${HOME}/.local/share/mkcert"; do
+        if [ -f "${raiz}/rootCA.pem" ]; then echo "${raiz}/rootCA.pem"; return 0; fi
+    done
+    return 1
 }
 
 echo ""
@@ -258,32 +288,114 @@ fi
 # 11. La API a través de Traefik (prueba la cadena TLS + enrutado + DNS).
 # ---------------------------------------------------------------------------
 info "11. La API responde a través de Traefik en https://api.${BASE_DOMAIN}/health"
-# Este es el único check que ejercita la cadena completa de borde: resolución
-# del nombre por el resolver del sistema + bind de :443 + terminación TLS +
-# enrutado de Traefik hasta el contenedor api. Un «devolvió 000» pelado no
-# distingue cuál de los cuatro eslabones se rompió, así que se diagnostican por
-# separado y cada rama trae el comando que lo arregla.
-if ! resuelve_a_loopback "api.${BASE_DOMAIN}"; then
-    falla "api.${BASE_DOMAIN} no resuelve a 127.0.0.1 por el resolver del sistema (ni siquiera se intentó la conexión). Ejecuta: ./scripts/setup-dnsmasq.sh"
+# Este check ejercita el borde: bind de :443 + terminación TLS con certificado
+# de confianza + enrutado de Traefik por Host hasta el contenedor api.
+#
+# La resolución del nombre se fija con --resolve en vez de depender del resolver
+# del sistema, y eso NO afloja nada: el hostname, el SNI, la cabecera Host y el
+# enrutado de Traefik son los reales, y la validación del certificado contra la
+# CA de mkcert sigue siendo completa (sin -k). Lo único que se sustituye es la
+# consulta DNS —que es exactamente lo que el check 11b mide por separado—, de
+# modo que un DNS pendiente ya no oculta si el borde funciona o no.
+#
+# Un «devolvió 000» pelado no distingue qué eslabón se rompió, así que se
+# diagnostican por separado y cada rama trae el comando que lo arregla.
+FIJA_DNS="--resolve api.${BASE_DOMAIN}:443:127.0.0.1"
+# Sin `|| echo 000`: curl ya imprime 000 cuando no conecta, y encadenar el echo
+# produce el confuso "000000" que vio el QA.
+# shellcheck disable=SC2086
+CODIGO="$(curl -s ${FIJA_DNS} "${CURL_TOPES[@]}" -o /dev/null -w '%{http_code}' "https://api.${BASE_DOMAIN}/health" 2>/dev/null)"
+CODIGO="${CODIGO:-000}"
+if [ "${CODIGO}" = "200" ]; then
+    ok "https://api.${BASE_DOMAIN}/health devuelve 200 con certificado de confianza (TLS validado contra la CA de mkcert)"
 else
-    # Deliberadamente SIN -k: así el check cubre también que el certificado sea
-    # de confianza para el sistema (mkcert -install), no solo que exista
-    # handshake. Sin `|| echo 000`: curl ya imprime 000 cuando no conecta, y
-    # encadenar el echo produce el confuso "000000" que vio el QA.
-    CODIGO="$(curl -s "${CURL_TOPES[@]}" -o /dev/null -w '%{http_code}' "https://api.${BASE_DOMAIN}/health" 2>/dev/null)"
-    CODIGO="${CODIGO:-000}"
-    if [ "${CODIGO}" = "200" ]; then
-        ok "https://api.${BASE_DOMAIN}/health devuelve 200 con certificado de confianza"
-    else
-        # ¿Es solo la confianza en el certificado, o no hay servicio detrás?
-        CODIGO_INSEGURO="$(curl -ks "${CURL_TOPES[@]}" -o /dev/null -w '%{http_code}' "https://api.${BASE_DOMAIN}/health" 2>/dev/null)"
-        CODIGO_INSEGURO="${CODIGO_INSEGURO:-000}"
-        if [ "${CODIGO_INSEGURO}" = "200" ]; then
-            falla "https://api.${BASE_DOMAIN}/health responde 200 pero su certificado no es de confianza para el sistema. Ejecuta: mkcert -install && ./scripts/setup-certs.sh && docker compose restart traefik"
+    # ¿Es solo la confianza en el certificado, o no hay servicio detrás?
+    #
+    # Esta rama usaba `curl -ks`. No podía producir un verde —solo corre después
+    # de que la comprobación estricta ya falló, y las dos salidas son `falla`—
+    # pero mantenía `--insecure` vivo dentro del verificador, que es justo la
+    # herramienta que no debería tenerlo a mano: basta un copy-paste para que
+    # acabe en la rama que sí decide. Se ancla a la CA de mkcert en su lugar,
+    # que distingue exactamente lo mismo (¿hay servicio detrás?) sin apagar
+    # nada. Si la CA no aparece, se dice y no se diagnostica a ciegas.
+    CA_MKCERT="$(ca_de_mkcert || true)"
+    if [ -n "${CA_MKCERT}" ]; then
+        # shellcheck disable=SC2086
+        CODIGO_CA="$(curl -s --cacert "${CA_MKCERT}" ${FIJA_DNS} "${CURL_TOPES[@]}" -o /dev/null -w '%{http_code}' "https://api.${BASE_DOMAIN}/health" 2>/dev/null)"
+        CODIGO_CA="${CODIGO_CA:-000}"
+        if [ "${CODIGO_CA}" = "200" ]; then
+            falla "https://api.${BASE_DOMAIN}/health valida contra la CA de mkcert pero NO contra el almacén del sistema: la CA no está instalada. Ejecuta: mkcert -install"
         else
-            falla "https://api.${BASE_DOMAIN}/health devolvió ${CODIGO_INSEGURO}; el nombre SÍ resuelve, así que mira el bind de :443 (docker ps | grep traefik) y el router 'api' en http://127.0.0.1:8088/dashboard/"
+            falla "https://api.${BASE_DOMAIN}/health devolvió ${CODIGO_CA} incluso anclando a la CA de mkcert; mira el bind de :443 (docker ps | grep traefik) y el router 'api' en http://127.0.0.1:8088/dashboard/"
         fi
+    else
+        falla "https://api.${BASE_DOMAIN}/health devolvió ${CODIGO} y no se encontró el rootCA.pem de mkcert para diagnosticar. Ejecuta: mkcert -install && ./scripts/setup-certs.sh && docker compose restart traefik"
     fi
+fi
+
+# ---------------------------------------------------------------------------
+# 11b. El resolver del sistema, medido aparte del borde.
+#
+# Separarlo del check 11 no es un truco para poner verdes las cosas: son dos
+# fallos con dos causas y dos arreglos distintos, y antes uno tapaba al otro (si
+# el nombre no resolvía, del borde no se sabía NADA). Aquí se mide solo el DNS.
+#
+# CORRECCIÓN (bloqueante de QA). Este check tenía una rama OMITIDA —"el resolver
+# todavía no existe, necesita sudo"— que se activaba EXACTAMENTE en el estado
+# peligroso, de modo que la única comprobación capaz de detectar la fuga se
+# apagaba sola justo cuando había algo que detectar. El check 11 tampoco podía
+# verlo: fija la resolución con --resolve, así que por construcción nunca sale
+# a Internet. Resultado: «18 en verde · 4 omitidos · 0 fallos», exit 0, con
+# accounts.${BASE_DOMAIN} apuntando a un host de terceros.
+#
+# Lo que se omitía era la premisa equivocada, no la conclusión. "Falta el
+# resolver" NO es una condición; son dos, y solo una es benigna:
+#
+#   · el nombre no resuelve  → falla CERRADO, no se filtra nada  → OMITIDO
+#   · el nombre resuelve fuera → falla ABIERTO, se filtran secretos → FALLO
+#
+# Con `vendi.local` (TLD inexistente) solo existía la primera, y por eso la
+# omisión parecía razonable. Con un TLD real existe la segunda.
+# ---------------------------------------------------------------------------
+info "11b. El resolver del sistema manda *.${BASE_DOMAIN} a 127.0.0.1"
+RESOLVER_SISTEMA="/etc/resolver/${BASE_DOMAIN}"
+if resuelve_a_loopback "api.${BASE_DOMAIN}"; then
+    ok "api.${BASE_DOMAIN} resuelve a loopback por el resolver del sistema"
+elif resuelve_fuera "api.${BASE_DOMAIN}"; then
+    falla "api.${BASE_DOMAIN} resuelve a $(resolucion_de "api.${BASE_DOMAIN}" | tr '\n' ' '), que NO es esta máquina: ${BASE_DOMAIN} es un dominio real y sin ${RESOLVER_SISTEMA} el tráfico sale a Internet. Completa el procedimiento A de docs/runbooks/dns-y-tls-local.md."
+elif [ "$(uname -s)" = "Darwin" ] && [ ! -f "${RESOLVER_SISTEMA}" ]; then
+    omite "11b: api.${BASE_DOMAIN} no resuelve y falta ${RESOLVER_SISTEMA}, que necesita sudo. Falla cerrado (ningún cliente llega a ninguna parte), así que se omite en vez de suspender. Ver docs/runbooks/dns-y-tls-local.md (procedimiento A)."
+else
+    falla "api.${BASE_DOMAIN} no resuelve a 127.0.0.1 y ${RESOLVER_SISTEMA} sí existe: el DNS local está roto, no solo pendiente. Ejecuta: ./scripts/setup-dnsmasq.sh"
+fi
+
+# ---------------------------------------------------------------------------
+# 11c. Ningún nombre de la familia *.${BASE_DOMAIN} sale de esta máquina.
+#
+# El 11b mira un solo nombre (api). No basta: la evidencia de QA mostró que
+# dentro de la MISMA familia unos nombres fallan cerrados y otros abiertos,
+# según tengan o no certificado público. api/app/admin daban 000 (cierran);
+# accounts —el IdP, el que recibe los client_secret— y el ápice daban 436 con
+# cadena TLS válida (abren). Comprobar solo `api` es mirar precisamente donde
+# el problema NO se ve.
+#
+# Se comprueban por nombre, con especial atención a `accounts`, que es el que
+# convierte un error de DNS en una fuga de credenciales.
+# ---------------------------------------------------------------------------
+info "11c. Ningún *.${BASE_DOMAIN} resuelve fuera de esta máquina"
+NOMBRES_FUERA=""
+for SUB in accounts api app admin grafana mail; do
+    if resuelve_fuera "${SUB}.${BASE_DOMAIN}"; then
+        NOMBRES_FUERA="${NOMBRES_FUERA} ${SUB}.${BASE_DOMAIN}->$(resolucion_de "${SUB}.${BASE_DOMAIN}" | tr '\n' ' ' | awk '{print $1}')"
+    fi
+done
+if resuelve_fuera "${BASE_DOMAIN}"; then
+    NOMBRES_FUERA="${NOMBRES_FUERA} ${BASE_DOMAIN}->$(resolucion_de "${BASE_DOMAIN}" | tr '\n' ' ' | awk '{print $1}')"
+fi
+if [ -z "${NOMBRES_FUERA}" ]; then
+    ok "ningún nombre de ${BASE_DOMAIN} resuelve a un host externo"
+else
+    falla "estos nombres salen a Internet en vez de a Traefik:${NOMBRES_FUERA}. accounts.${BASE_DOMAIN} es el IdP: un POST al endpoint de token entrega el client_secret a un tercero, y como ese host tiene certificado público VÁLIDO la verificación TLS no avisa. Completa el procedimiento A de docs/runbooks/dns-y-tls-local.md antes de seguir."
 fi
 
 # ---------------------------------------------------------------------------

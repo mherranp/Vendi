@@ -39,7 +39,7 @@ COMPOSE=(docker compose -f "${INFRA_DIR}/docker-compose.yml" -f "${INFRA_DIR}/do
 if [[ -f "${REPO_ROOT}/.env" ]]; then
     set -a; . "${REPO_ROOT}/.env"; set +a
 fi
-BASE_DOMAIN="${BASE_DOMAIN:-vendi.local}"
+BASE_DOMAIN="${BASE_DOMAIN:-vendi.co}"
 DOMINIO="api.${BASE_DOMAIN}"
 RED_DOCKER="vendi_vendi-net"
 IMG_PEBBLE="ghcr.io/letsencrypt/pebble:latest"

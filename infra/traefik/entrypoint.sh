@@ -15,7 +15,7 @@
 # que el `command:` de docker compose no sabe hacer.
 #
 # Variables:
-#   BASE_DOMAIN     dominio de la flota (por defecto vendi.local)
+#   BASE_DOMAIN     dominio de la flota (por defecto vendi.co)
 #   ACME_ENABLED    true → los certificados los emite una CA ACME
 #                   false (por defecto) → los pone el operador en /certs
 #   ACME_STAGING    true (por defecto) → CA de pruebas de Let's Encrypt.
@@ -34,7 +34,7 @@ CERTS_LOCALES="/etc/traefik/dynamic/certificados-locales.yml"
 CONFIG_BASE="/etc/traefik/traefik.yml"
 CONFIG_EFECTIVO="/etc/traefik/traefik-efectivo.yml"
 
-: "${BASE_DOMAIN:=vendi.local}"
+: "${BASE_DOMAIN:=vendi.co}"
 : "${ACME_ENABLED:=false}"
 : "${ACME_STAGING:=true}"
 : "${ACME_EMAIL:=}"

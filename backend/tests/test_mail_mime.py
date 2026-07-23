@@ -12,19 +12,19 @@ from vendi_core.mail.mime import build_mime
 
 def test_multipart_con_cabeceras_de_baja():
     msg = build_mime(
-        sender_address="noreply@vendi.local",
+        sender_address="noreply@vendi.co",
         sender_name="Vendi",
         to_address="ana@ejemplo.test",
         to_name="Ana",
         subject="Bienvenida",
         text_body="Hola Ana",
         html_body="<p>Hola Ana</p>",
-        unsubscribe_url="https://app.vendi.local/baja/xxx",
+        unsubscribe_url="https://app.vendi.co/baja/xxx",
     )
     assert msg["Subject"] == "Bienvenida"
     assert "Vendi" in msg["From"]
     assert "ana@ejemplo.test" in msg["To"]
-    assert msg["List-Unsubscribe"] == "<https://app.vendi.local/baja/xxx>"
+    assert msg["List-Unsubscribe"] == "<https://app.vendi.co/baja/xxx>"
     assert msg["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
     assert msg["Message-ID"]
 
@@ -52,7 +52,7 @@ def test_sin_url_de_baja_no_se_ponen_esas_cabeceras():
 
 def test_el_message_id_usa_el_dominio_del_remitente_por_defecto():
     msg = build_mime(
-        sender_address="noreply@vendi.local",
+        sender_address="noreply@vendi.co",
         sender_name="Vendi",
         to_address="ana@ejemplo.test",
         to_name=None,
@@ -60,12 +60,12 @@ def test_el_message_id_usa_el_dominio_del_remitente_por_defecto():
         text_body="t",
         html_body="<p>h</p>",
     )
-    assert msg["Message-ID"].endswith("@vendi.local>")
+    assert msg["Message-ID"].endswith("@vendi.co>")
 
 
 def test_copia_y_copia_oculta_llegan_a_las_cabeceras():
     msg = build_mime(
-        sender_address="noreply@vendi.local",
+        sender_address="noreply@vendi.co",
         sender_name="Vendi",
         to_address="ana@ejemplo.test",
         to_name=None,

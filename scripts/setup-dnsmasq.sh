@@ -3,7 +3,7 @@
 # setup-dnsmasq.sh
 #
 # Hace que todos los dominios *.${BASE_DOMAIN} resuelvan a 127.0.0.1 usando
-# dnsmasq, para poder abrir api.vendi.local, accounts.vendi.local, etc. sin
+# dnsmasq, para poder abrir api.vendi.co, accounts.vendi.co, etc. sin
 # editar /etc/hosts a mano.
 #
 # Plataformas: macOS (Homebrew) y Linux (apt/systemd).
@@ -44,7 +44,7 @@ if [[ -f "${REPO_ROOT}/.env" ]]; then
     set +a
 fi
 
-DOMAIN="${BASE_DOMAIN:-vendi.local}"
+DOMAIN="${BASE_DOMAIN:-vendi.co}"
 RESOLVE_IP="127.0.0.1"
 # 1 en cuanto se toca algo del sistema. Gobierna si hace falta reiniciar
 # dnsmasq y vaciar la caché de DNS (ver setup_macos/setup_linux).

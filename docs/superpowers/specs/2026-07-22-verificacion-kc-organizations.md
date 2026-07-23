@@ -3,6 +3,15 @@
 **Tarea:** 1.1 (backend) del plan `2026-07-22-fundacion-fase-0-plan.md`
 **Fecha de ejecución:** 2026-07-22
 **Entorno:** `quay.io/keycloak/keycloak:26.6.4` efímero (`start-dev`), realm `vendi-co`
+
+> **Nota de 2026-07-23 — el dominio cambió.** Este documento es un registro de
+> ejecución y conserva la salida literal de aquel día, cuando el dominio local
+> era `vendi.local`. Desde entonces el stack usa `vendi.co`, así que donde aquí
+> se lee `<tenant_id>.tenants.vendi.local` hoy hay que leer
+> `<tenant_id>.tenants.vendi.co` (`SUFIJO_DOMINIO_ORG` en
+> `backend/libs/vendi-core/src/vendi_core/auth/keycloak_admin.py`). Las
+> conclusiones del spike no dependen del dominio. Ver
+> `docs/runbooks/dns-y-tls-local.md`.
 **Reproducir:**
 
 ```bash
