@@ -297,10 +297,23 @@ class VentasService:
 
     def _validar_datos(self, operacion: OperacionSync, modelo):
         """`datos` se valida POR OPERACIÓN (decisión 6): una operación mal
-        formada es `rechazada` y no arrastra el lote al 422."""
+        formada es `rechazada` y no arrastra el lote al 422.
+
+        Excepción estructural: un campo que el schema NO CONOCE
+        (`extra="forbid"`) no es contenido inválido — es un payload que
+        habla otro idioma (un bug del cliente, o un `tenant_id` inyectado)
+        y su lugar es el 422 del request entero, como defensa en profundidad
+        del WITH CHECK de la RLS (ADR-017). El contenido mal formado (tipos,
+        cotas, requeridos) sí sigue siendo `rechazada` por operación."""
         try:
             return modelo.model_validate(operacion.datos)
         except PydanticValidationError as exc:
+            if any(error["type"] == "extra_forbidden" for error in exc.errors()):
+                raise ValidationError(
+                    "Los datos de una operación traen campos que el contrato no conoce.",
+                    code="campos_desconocidos",
+                    details={"operacion_id": str(operacion.id)},
+                ) from exc
             return self._rechazada(
                 operacion,
                 "datos_invalidos",

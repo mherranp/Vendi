@@ -15,7 +15,7 @@ Aquí viven las dos que sostienen el aislamiento:
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -111,3 +111,27 @@ async def exigir_admin_de_plataforma(user: UserContext = Depends(get_current_use
             code="requiere_platform_admin",
         )
     return user
+
+
+def exigir_permiso(permiso: str) -> Callable:
+    """Fábrica de guards: exige un permiso del token, con sobre estándar.
+
+    La autorización lee SOLO el token (`realm_access.roles`), sin consulta a
+    base de datos en la ruta caliente (ADR-015/ADR-023). Es fábrica propia y
+    NO `require_permission` de `vendi-core` por el mismo motivo por el que
+    existe `exigir_admin_de_plataforma`: aquella lanza `HTTPException`
+    (cuerpo `{"detail": ...}`) y toda la API contesta con el sobre
+    `{"success": false, "message": ..., "code": ...}`. El 403 es la respuesta
+    correcta y esperada cuando falta el permiso.
+    """
+
+    async def _comprobar(user: UserContext = Depends(get_current_user)) -> UserContext:
+        if not has_permission(user, permiso):
+            raise PermissionDeniedError(
+                f"Esta operación requiere el permiso {permiso}.",
+                code="permiso_ausente",
+                details={"permiso": permiso},
+            )
+        return user
+
+    return _comprobar
