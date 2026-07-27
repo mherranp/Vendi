@@ -49,10 +49,10 @@ def _cuantizar_cantidad(valor: Decimal) -> Decimal:
     (BUG-2 del QA de ventas). El schema aplica el MISMO redondeo al validar
     y rechaza lo que cuantiza a cero, que reventaría `ck_..._cantidad_positiva`
     como 500. Misma regla que `ventas/schemas.py`; se duplica a propósito:
-    el mensaje de error nombra el contexto (una línea de compra)."""
+    el mensaje es neutro porque la usan la línea de compra Y la merma."""
     cuantizada = valor.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
     if cuantizada == 0:
-        raise ValueError("La cantidad es menor que 0.001: no cabe en una línea de compra.")
+        raise ValueError("La cantidad es menor que 0.001: no cabe en la precisión del inventario.")
     return cuantizada
 
 

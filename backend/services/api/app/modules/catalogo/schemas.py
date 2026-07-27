@@ -126,7 +126,12 @@ class ProductoSalida(BaseModel):
     categoria: str | None = None
     unidad_medida: str
     precio_venta: int
-    ultimo_costo: int
+    #: El costo de la última compra, en centavos. `None` cuando quien llama
+    #: no tiene `compra:crear` (el cajero): los costos son el margen del
+    #: negocio y la decisión firmada es que viven tras ese permiso. Lo anula
+    #: el router por respuesta — el dato existe en base y lo costea el P&L
+    #: (ADR-020); lo que cambia con el permiso es qué viaja en el JSON.
+    ultimo_costo: int | None = None
     iva_pct: Decimal
     stock_actual: Decimal
     stock_minimo: Decimal

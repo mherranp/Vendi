@@ -136,6 +136,30 @@ def test_el_almacenista_compra_y_consulta(app_con_base):
     assert lista.status_code == 200 and lista.json()["total"] == 1
 
 
+def test_la_compra_cuyo_total_desborda_la_columna_es_422(app_con_base):
+    """El ejemplo literal de la revisión final (I1): una sola línea VÁLIDA
+    (cantidad=10, costo=2^31-1) cuyo total no cabe en el `Integer` de
+    `compras.total_centavos`. Sin la cota del servicio esto era un 500 del
+    `DataError` de Postgres."""
+    cliente, validador, _ = app_con_base
+    negocio = _crear_negocio(cliente, validador, "Inv 12")
+    cabeceras = _cabeceras_de(validador, ROL_DUENO, negocio, "tok-d12")
+    producto = _alta_producto(cliente, cabeceras)
+
+    respuesta = cliente.post(
+        "/api/v1/compras",
+        json=_compra(
+            producto,
+            items=[{"producto_id": producto, "cantidad": "10", "costo_unitario_centavos": 2_147_483_647}],
+        ),
+        headers=cabeceras,
+    )
+
+    assert respuesta.status_code == 422
+    assert respuesta.json()["code"] == "total_fuera_de_rango"
+    assert respuesta.json()["success"] is False
+
+
 def test_la_compra_de_otro_negocio_es_404_sin_fuga(app_con_base):
     cliente, validador, _ = app_con_base
     negocio_a = _crear_negocio(cliente, validador, "Inv 5A")

@@ -851,7 +851,7 @@ export interface components {
             /** Stock Minimo */
             stock_minimo: string;
             /** Ultimo Costo */
-            ultimo_costo: number;
+            ultimo_costo?: number | null;
             /** Unidad Medida */
             unidad_medida: string;
         };

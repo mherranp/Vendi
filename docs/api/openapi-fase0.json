@@ -1147,8 +1147,15 @@
             "type": "string"
           },
           "ultimo_costo": {
-            "title": "Ultimo Costo",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ultimo Costo"
           },
           "unidad_medida": {
             "title": "Unidad Medida",
@@ -1160,7 +1167,6 @@
           "nombre",
           "unidad_medida",
           "precio_venta",
-          "ultimo_costo",
           "iva_pct",
           "stock_actual",
           "stock_minimo"

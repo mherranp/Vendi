@@ -66,7 +66,12 @@ decidir qué mensaje mostrar — `tenant_suspendido`, `requiere_platform_admin`,
 `limite_de_productos_alcanzado`, `permiso_ausente`, `dispositivo_no_encontrado`,
 `dispositivo_id_en_conflicto`,
 `fecha_sin_zona`, `campos_desconocidos`, `compra_no_encontrada`,
-`compra_id_duplicado`, `ajuste_id_divergente`.
+`compra_id_duplicado`, `ajuste_id_divergente`, `total_fuera_de_rango`.
+
+En las respuestas de productos, `ultimo_costo` viaja en `null` para quien no
+tiene `compra:crear` (el cajero): los costos son el margen del negocio y viven
+tras ese permiso. El campo sigue presente en el esquema (anulable); lo que
+cambia con el permiso es su valor, no la forma de la respuesta.
 
 En `POST /api/v1/sync/lotes` los rechazos de una operación NO son errores HTTP:
 viajan en `ResultadoOperacion.motivo` cuando el resultado es `rechazada`. Los

@@ -8,7 +8,7 @@ por el mismo cruce.
 
 Semilla del producto de estos tests: stock 10, `stock_minimo` 4. El mapa:
 
-    stock >-= 4   ok
+    stock >= 4    ok
     2 <= stock < 4  bajo
     0 < stock < 2   crítico
     stock <= 0    agotado

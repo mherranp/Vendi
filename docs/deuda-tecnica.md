@@ -22,6 +22,7 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 | D-20 | El `FOR UPDATE` del producto que exige `aplicar_movimiento` es convención documentada, no enforced | Fase 1 (antes del piloto o al primer llamante nuevo) | backend |
 | D-21 | El sync de ventas bloquea los productos en el orden del ticket: deadlock teórico multi-producto (heredado del módulo ventas) | Fase 1 (antes del piloto) | backend |
 | D-22 | Falta el test literal `inventario.ajustar` → `tipo_desconocido` que la decisión 3 del plan dice fijado (lo cubre el genérico) | Fase 1 (Etapa 1.4, QA) | backend |
+| D-23 | El reintento de un ajuste cuyo producto fue dado de baja después devuelve 422 `producto_no_encontrado` en vez de la respuesta idempotente original | Fase 1 (antes del piloto) | backend |
 
 Cerradas en la Etapa 5, con su evidencia al final de este documento: **D-01**
 (ROPC), **D-04** (Keycloak sin `--optimized`), **D-06** (`alembic_version`
@@ -494,6 +495,42 @@ test literal.
 
 - `backend/tests/test_ventas_servicio.py::test_un_tipo_desconocido_es_rechazada_no_422`
 - `backend/tests/test_ventas_adversarial.py::test_un_tipo_con_inyeccion_sql_es_tipo_desconocido_y_no_pasa_nada`
+
+---
+
+## D-23 · El reintento de un ajuste sobre un producto dado de baja no es idempotente
+
+**Qué es.** En `InventarioService.registrar_ajuste` el bloqueo/validación del
+producto (`_producto_bloqueado`, que rechaza con 422 `producto_no_encontrado`
+los productos dados de baja) corre ANTES del chequeo de la ancla de
+idempotencia (`_reintento_de_ajuste`). Si el primer intento del ajuste se
+confirmó y DESPUÉS el producto se dio de baja, el reintento byte-idéntico del
+mismo ajuste no recupera la respuesta original: recibe un 422
+`producto_no_encontrado`, como si el ajuste nunca hubiera existido.
+
+**Por qué se aceptó.** El arreglo correcto (chequear la ancla antes de
+validar el producto) exige reordenar el flujo para que el reintento no
+necesite la fila del producto — hoy `_salida` calcula el nivel con el
+`stock_minimo` del producto bloqueado — y eso mueve el orden de adquisición
+del FOR UPDATE que la decisión 9 disciplina. La revisión final del módulo lo
+dictaminó registrable, no bloqueante: el caso exige la secuencia ajuste →
+baja → reintento, y el cliente que reintenta recibe un error tipado y
+explicable, no un 500 ni un doble movimiento de stock.
+
+**Riesgo si se olvida.** Un cliente offline-reactivo que reintenta un ajuste
+tras la baja del producto interpreta el 422 como «el ajuste nunca entró» y
+puede re-encolarlo o mostrar un falso pendiente; el ajuste SÍ está aplicado
+en el libro. Nunca hay doble aplicación del delta: la fila del ajuste existe
+y el delta ya se asentó en el primer intento.
+
+**Vencimiento: Fase 1, antes del piloto.** Reordenar para que la ancla se
+chequee antes de la validación del producto (persistiendo lo que `_salida`
+necesita del producto en la fila del ajuste, o devolviendo el nivel sin él).
+
+**Candados mientras tanto:**
+
+- `backend/tests/test_inventario_servicio.py::test_el_reintento_del_ajuste_devuelve_lo_mismo_sin_mover_stock`
+  (el reintento con el producto vivo sí es idempotente)
 
 ---
 

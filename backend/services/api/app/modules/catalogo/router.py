@@ -8,6 +8,12 @@ sesión de TENANT (rol `vendi_app`, RLS activo): ningún handler recibe un
 Los permisos (ADR-023): lectura con `producto:leer` (los tres roles),
 escritura con `producto:editar` (dueño y almacenista; el cajero recibe 403
 `permiso_ausente`, que es la respuesta correcta y esperada).
+
+`ultimo_costo` es la excepción de la lectura compartida: los costos son el
+margen del negocio y la decisión firmada es que viven tras `compra:crear`.
+El cajero lee el catálogo con `producto:leer`, así que las respuestas le
+llegan con `ultimo_costo` en null — el dato existe en base (lo pueblan las
+compras, ADR-020) pero no viaja en SU JSON.
 """
 
 from __future__ import annotations
@@ -24,6 +30,7 @@ from app.modules.catalogo.dependencies import (
 from app.modules.catalogo.schemas import ProductoActualizar, ProductoCrear, ProductoSalida
 from app.modules.catalogo.service import CatalogoService
 from vendi_core.auth.context import UserContext
+from vendi_core.auth.policies import PERM_COMPRA_CREAR, has_permission
 from vendi_core.models.pagination import PagedList
 from vendi_core.models.responses import ErrorResponse
 
@@ -34,6 +41,20 @@ _RESPUESTAS_COMUNES = {
     403: {"model": ErrorResponse, "description": "Falta el permiso o el negocio está suspendido"},
     404: {"model": ErrorResponse, "description": "El producto no existe"},
 }
+
+
+def _ocultar_costo_a_quien_no_compra(salida: ProductoSalida, actor: UserContext) -> ProductoSalida:
+    """Anula `ultimo_costo` cuando el actor no tiene `compra:crear`.
+
+    Mismo criterio que el flag `puede_anular` de ventas (decisión 12 del
+    plan): el veredicto se deriva del token en el borde y la autorización lee
+    solo el JWT — el servicio no conoce claims. Se aplica en TODA respuesta
+    de producto, no solo en las de lectura: la regla es del dato, no del
+    endpoint.
+    """
+    if not has_permission(actor, PERM_COMPRA_CREAR):
+        salida.ultimo_costo = None
+    return salida
 
 
 @router.post(
@@ -49,11 +70,11 @@ _RESPUESTAS_COMUNES = {
 async def crear_producto(
     datos: ProductoCrear,
     servicio: CatalogoService = Depends(servicio_de_catalogo),
-    _actor: UserContext = Depends(exigir_producto_editar),
+    actor: UserContext = Depends(exigir_producto_editar),
 ) -> ProductoSalida:
     """Acepta el `id` que traiga el cliente (ADR-017): reenviar la misma
     creación devuelve el producto ya creado, sin duplicar fila ni evento."""
-    return ProductoSalida.model_validate(await servicio.crear(datos))
+    return _ocultar_costo_a_quien_no_compra(ProductoSalida.model_validate(await servicio.crear(datos)), actor)
 
 
 @router.get(
@@ -68,11 +89,11 @@ async def listar_productos(
     q: str | None = Query(default=None, description="Texto a buscar en el nombre"),
     categoria: str | None = Query(default=None),
     servicio: CatalogoService = Depends(servicio_de_catalogo),
-    _actor: UserContext = Depends(exigir_producto_leer),
+    actor: UserContext = Depends(exigir_producto_leer),
 ) -> PagedList[ProductoSalida]:
     filas, total = await servicio.listar(skip=skip, limit=limit, q=q, categoria=categoria)
     return PagedList[ProductoSalida](
-        items=[ProductoSalida.model_validate(f) for f in filas],
+        items=[_ocultar_costo_a_quien_no_compra(ProductoSalida.model_validate(f), actor) for f in filas],
         total=total,
         skip=skip,
         limit=limit,
@@ -88,11 +109,13 @@ async def listar_productos(
 async def buscar_por_codigo(
     codigo: str,
     servicio: CatalogoService = Depends(servicio_de_catalogo),
-    _actor: UserContext = Depends(exigir_producto_leer),
+    actor: UserContext = Depends(exigir_producto_leer),
 ) -> ProductoSalida:
     """El camino del escáner (ADR-024): un EAN resuelve a exactamente un
     producto, gracias al índice único parcial."""
-    return ProductoSalida.model_validate(await servicio.buscar_por_codigo(codigo))
+    return _ocultar_costo_a_quien_no_compra(
+        ProductoSalida.model_validate(await servicio.buscar_por_codigo(codigo)), actor
+    )
 
 
 @router.get(
@@ -104,9 +127,9 @@ async def buscar_por_codigo(
 async def ver_producto(
     producto_id: uuid.UUID,
     servicio: CatalogoService = Depends(servicio_de_catalogo),
-    _actor: UserContext = Depends(exigir_producto_leer),
+    actor: UserContext = Depends(exigir_producto_leer),
 ) -> ProductoSalida:
-    return ProductoSalida.model_validate(await servicio.obtener(producto_id))
+    return _ocultar_costo_a_quien_no_compra(ProductoSalida.model_validate(await servicio.obtener(producto_id)), actor)
 
 
 @router.patch(
@@ -122,11 +145,13 @@ async def actualizar_producto(
     producto_id: uuid.UUID,
     datos: ProductoActualizar,
     servicio: CatalogoService = Depends(servicio_de_catalogo),
-    _actor: UserContext = Depends(exigir_producto_editar),
+    actor: UserContext = Depends(exigir_producto_editar),
 ) -> ProductoSalida:
     """No acepta `stock_actual` ni `ultimo_costo`: el stock lo mueven los
     movimientos de inventario y el costo las compras (ADR-020)."""
-    return ProductoSalida.model_validate(await servicio.actualizar(producto_id, datos))
+    return _ocultar_costo_a_quien_no_compra(
+        ProductoSalida.model_validate(await servicio.actualizar(producto_id, datos)), actor
+    )
 
 
 @router.delete(

@@ -44,6 +44,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.catalogo.models import Producto
+from app.modules.catalogo.schemas import TOPE_PRECIO
 from app.modules.inventario.models import AjusteInventario, Compra, CompraItem
 from app.modules.inventario.schemas import AjusteCreado, AjusteCrear, CompraCrear, StockSalida
 from app.modules.inventario.stock import aplicar_movimiento, nivel_de_stock
@@ -86,6 +87,15 @@ class InventarioService:
         for item in datos.items:
             linea = (item.cantidad * item.costo_unitario_centavos).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
             total += int(linea)
+        if total > TOPE_PRECIO:
+            # Cada línea cabe por sí sola (cantidad ≤ TOPE_STOCK, costo ≤
+            # TOPE_PRECIO), pero la SUMA no: `total_centavos` es un `Integer`
+            # y sin esta cota el INSERT reventaba con un `DataError` → 500 en
+            # vez del 422 que corresponde a una entrada rechazable.
+            raise ValidationError(
+                "El total de la compra no cabe en el sistema. Divide la factura en varias compras.",
+                code="total_fuera_de_rango",
+            )
 
         compra = Compra(
             tenant_id=self._tenant_id,

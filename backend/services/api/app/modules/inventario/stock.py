@@ -38,11 +38,13 @@ from vendi_core.events.service import DomainEventService
 
 logger = structlog.get_logger()
 
-#: Los cuatro niveles derivados de `stock_minimo` (ADR-020). El orden de
-#: `_SEVERIDAD` es el criterio de «empeora»: agotado > crítico > bajo > ok.
+#: Los cuatro niveles derivados de `stock_minimo` (ADR-020). El ORDEN de la
+#: tupla es el criterio de «empeora»: agotado > crítico > bajo > ok.
 NIVELES_DE_STOCK: tuple[str, ...] = ("ok", "bajo", "critico", "agotado")
 
-_SEVERIDAD: dict[str, int] = {"ok": 0, "bajo": 1, "critico": 2, "agotado": 3}
+#: La severidad de cada nivel ES su posición en `NIVELES_DE_STOCK`: una sola
+#: fuente — añadir un nivel a la tupla lo hace comparable sin tocar nada más.
+_SEVERIDAD: dict[str, int] = {nivel: i for i, nivel in enumerate(NIVELES_DE_STOCK)}
 
 
 def nivel_de_stock(stock: Decimal, stock_minimo: Decimal) -> str:

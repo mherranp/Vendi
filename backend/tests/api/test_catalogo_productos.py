@@ -283,6 +283,60 @@ def test_el_limite_del_tier_da_403(app_con_base, pg_platform_url):
         cliente.app.dependency_overrides.clear()
 
 
+# --- El costo no es para el cajero ------------------------------------------
+
+
+def _compra(cliente, cabeceras, producto_id: str, costo: int = 2000) -> None:
+    """Una compra real por el camino real: es la que puebla `ultimo_costo`
+    (ADR-020). Sembrar la columna a mano no probaría el camino que la llena."""
+    respuesta = cliente.post(
+        "/api/v1/compras",
+        json={
+            "proveedor_nombre": "Distribuidora La 33",
+            "items": [{"producto_id": producto_id, "cantidad": "10", "costo_unitario_centavos": costo}],
+        },
+        headers=cabeceras,
+    )
+    assert respuesta.status_code == 201, respuesta.text
+
+
+def test_el_cajero_no_ve_el_ultimo_costo_en_ninguna_lectura(app_con_base):
+    """Decisión firmada: los costos son el margen del negocio y viven tras
+    `compra:crear`. El cajero lee el catálogo con `producto:leer`, así que el
+    servidor le anula `ultimo_costo` en listado, detalle y búsqueda por
+    código — el dato existe en base, pero no viaja en SU respuesta."""
+    cliente, validador, _ = app_con_base
+    negocio = _crear_negocio(cliente, validador, "Catálogo 15")
+    dueno = _cabeceras_de(validador, ROL_DUENO, negocio, "tok-d15")
+    cajero = _cabeceras_de(validador, ROL_CAJERO, negocio, "tok-c15")
+    creado = _alta(cliente, dueno, codigo_barras="771500000015")
+    _compra(cliente, dueno, creado["id"])
+
+    listado = cliente.get("/api/v1/productos", headers=cajero)
+    assert listado.status_code == 200 and listado.json()["items"][0]["ultimo_costo"] is None
+    detalle = cliente.get(f"/api/v1/productos/{creado['id']}", headers=cajero)
+    assert detalle.status_code == 200 and detalle.json()["ultimo_costo"] is None
+    escaner = cliente.get("/api/v1/productos/por-codigo/771500000015", headers=cajero)
+    assert escaner.status_code == 200 and escaner.json()["ultimo_costo"] is None
+
+
+def test_dueno_y_almacenista_si_ven_el_ultimo_costo(app_con_base):
+    """La pareja del anterior: quien tiene `compra:crear` (dueño y
+    almacenista) ve el costo que su compra acaba de fijar. Sin esta lectura,
+    el null del cajero sería indistinguible de un costo que nunca se sirve."""
+    cliente, validador, _ = app_con_base
+    negocio = _crear_negocio(cliente, validador, "Catálogo 16")
+    dueno = _cabeceras_de(validador, ROL_DUENO, negocio, "tok-d16")
+    almacenista = _cabeceras_de(validador, ROL_ALMACENISTA, negocio, "tok-a16")
+    creado = _alta(cliente, dueno)
+    _compra(cliente, dueno, creado["id"], costo=2000)
+
+    for cabeceras in (dueno, almacenista):
+        detalle = cliente.get(f"/api/v1/productos/{creado['id']}", headers=cabeceras)
+        assert detalle.status_code == 200, detalle.text
+        assert detalle.json()["ultimo_costo"] == 2000
+
+
 def test_un_negocio_suspendido_no_opera_su_catalogo(app_con_base):
     cliente, validador, _ = app_con_base
     negocio = _crear_negocio(cliente, validador, "Catálogo 14")

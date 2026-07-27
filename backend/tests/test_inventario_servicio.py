@@ -20,6 +20,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.modules.catalogo.models import Producto
+from app.modules.catalogo.schemas import TOPE_PRECIO
 from app.modules.inventario.schemas import AjusteCrear, CompraCrear
 from app.modules.inventario.service import InventarioService
 from app.modules.inventario.stock import aplicar_movimiento
@@ -172,6 +173,19 @@ async def test_el_total_de_la_compra_lo_calcula_el_servidor_por_linea(servicio, 
         )
     )
     assert compra.total_centavos == 33 + 1100
+
+
+async def test_el_total_de_la_compra_se_acota_al_tope_de_la_columna(servicio, semilla):
+    """La columna `compras.total_centavos` es `Integer` y el total es Σ
+    cantidad × costo: cada línea VÁLIDA por sí sola puede desbordar la suma
+    (cantidad ≤ TOPE_STOCK, costo ≤ TOPE_PRECIO). Justo en el tope cabe; un
+    centavo por encima es un 422 tipado, no el 500 del `DataError` de
+    Postgres (I1 de la revisión final del módulo)."""
+    compra = await servicio.registrar_compra(_compra(semilla, uuid.uuid4(), cantidad="1", costo=TOPE_PRECIO))
+    assert compra.total_centavos == TOPE_PRECIO
+    with pytest.raises(ValidationError) as exc:
+        await servicio.registrar_compra(_compra(semilla, uuid.uuid4(), cantidad="2", costo=TOPE_PRECIO))
+    assert exc.value.code == "total_fuera_de_rango"
 
 
 async def test_registrar_compra_es_idempotente_por_el_id_del_cliente(servicio, semilla, pg_platform_url):

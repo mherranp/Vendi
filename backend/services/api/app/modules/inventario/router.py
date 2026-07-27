@@ -9,7 +9,7 @@ almacenista; un lote con `tipo: "inventario.ajustar"` sale `rechazada` con
 
 Todo trabaja con la sesión de TENANT (rol `vendi_app`, RLS activo): ningún
 handler recibe `tenant_id` por URL, cuerpo o cabecera. Los permisos
-(ADR-023/ADR-010 del plan): escribir Y leer compras exige `compra:crear`;
+(ADR-023, decisión 10 del plan): escribir Y leer compras exige `compra:crear`;
 escribir Y leer ajustes exige `inventario:ajustar`; el estado de stock, con
 su nivel derivado, exige `producto:leer`. El 403 del cajero es la respuesta
 correcta y esperada.
