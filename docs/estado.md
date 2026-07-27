@@ -167,6 +167,143 @@ SHA de corte (`gh run list`): `e2e` 30260180052 y `release-images`
 
 ---
 
+## Módulo ventas (Fase 1, Etapa 1.2)
+
+Fecha de corte: **2026-07-27**. Segundo módulo de negocio del MVP —el
+crítico: las ventas offline de ADR-018 sobre la capa de sincronización de
+ADR-017—, cerrado con el gate de la Etapa 1.2 del plan maestro. Plan:
+[`docs/superpowers/plans/2026-07-28-modulo-ventas-plan.md`](superpowers/plans/2026-07-28-modulo-ventas-plan.md)
+(9 tareas TDD, commits `186b6ee`…`503499b`, cada una con revisión
+independiente registrada en `.superpowers/sdd/`).
+
+Los comandos del gate que exigen el stack (migrar, tests de integración,
+`verify-setup.sh`) se citan desde el CI, que los ejecuta contra PostgreSQL,
+RabbitMQ y Keycloak reales en cada push: el run de corte es el `ci`
+**30283626280** sobre el SHA `503499b`, con los 11 jobs en verde
+(`gh run view 30283626280`).
+
+### Qué se entregó, y el comando que lo demuestra
+
+**Cinco tablas nuevas con RLS, índices y grants (ADR-017/018/020/021).**
+`dispositivos`, `caja_sesiones`, `ventas`, `ventas_items` y
+`movimientos_inventario` en la migración `0005`, aplicada hasta head en el
+stack del CI:
+
+```
+$ bash scripts/migrate.sh          # run ci 30283626280, job «pytest -m integration»
+INFO  [alembic.runtime.migration] Running upgrade 0004 -> 0005, Ventas y sync offline: `dispositivos`, `caja_sesiones`, `ventas`, …
+0005 (head)
+[OK]    Migraciones aplicadas.
+```
+
+Las cinco heredan los cuatro privilegios por defecto de `vendi_app`
+(decisión 11 del plan): el candado invertido
+(`test_privilegios_de_vendi_app.py`) pasa sin edición, y el candado de
+cobertura RLS (`test_rls_coverage.py`) cubre las cinco tablas — sus modelos
+quedaron registrados en él en la tarea 2.
+
+**Aislamiento cross-tenant contra PostgreSQL real, 0 SKIPPED.** 11 tests
+nuevos en `backend/tests/test_aislamiento_ventas.py` (las cinco tablas:
+SELECT/UPDATE acotados por la policy, INSERT con `tenant_id` ajeno bloqueado
+por `WITH CHECK`). El job de CI convierte cualquier `SKIPPED` en fallo, así
+que «passed» aquí significa que corrieron todos:
+
+```
+$ uv run pytest -q -m integration  # run ci 30283626280
+200 passed, 376 deselected
+```
+
+**El candado del sync: el mismo lote dos veces deja UNA venta, UN movimiento
+de stock y UN evento (ADR-017/018/020).**
+`tests/test_sync_idempotente.py::test_el_mismo_lote_dos_veces_deja_una_venta_un_movimiento_y_un_evento`,
+verde en el run de corte. Idempotencia por UUID de cliente (la PK de
+`ventas`), segunda red por el índice único `(tenant_id, tipo, referencia_id,
+producto_id)` de `movimientos_inventario` (decisión 2), una transacción por
+lote con un SAVEPOINT por operación, y respuesta por operación
+(`aceptada`/`duplicada`/`rechazada`): mismo `id` con payload divergente es
+`rechazada` con motivo y `detalles`, no un no-op silencioso (decisión 4).
+
+**Servicio y router del sync.** 23 tests de servicio
+(`backend/tests/test_ventas_servicio.py`) y 14 de API
+(`backend/tests/api/test_ventas_sync.py`), todos integration y verdes en el
+run de corte: descuento de stock por deltas con la proyección `stock_actual`
+actualizada en la misma transacción, sesión de caja resuelta en el servidor
+(abierta del tenant o implícita; el índice único parcial de ADR-021 decide
+la carrera de aperturas concurrentes), anulación como operación nueva no
+destructiva que repone stock, venta que sube ya `anulada` sin movimientos ni
+`venta:anular` (decisión 9), fiado con `cliente_id` obligatorio
+(`fiado_requiere_cliente`), total verificado contra los ítems
+(`total_incoherente`), tope de 200 operaciones por lote (decisión 7) y
+carreras cerradas con `FOR UPDATE` al anular y choque idéntico de
+`ventas_pkey` como `duplicada`.
+
+**Tres rutas nuevas en el contrato congelado:**
+
+```
+$ python3 -c "import json; print('\n'.join(sorted(p for p in json.load(open('docs/api/openapi-fase0.json'))['paths'] if 'sync' in p or 'dispositivo' in p)))"
+/api/v1/dispositivos
+/api/v1/sync/delta
+/api/v1/sync/lotes
+```
+
+`GET /sync/delta` drena el catálogo hacia los dispositivos: productos vivos
+modificados desde el watermark, tumbas de los dados de baja, y `hasta` del
+reloj del servidor como próximo `desde` (decisión 10).
+
+**Permisos de ventas en el token del dueño, contra el realm vivo** (check 23
+de `verify-setup.sh`, extendido por este módulo y ejecutado en el CI):
+
+```
+[OK]    aud=vendi-backend, rol de negocio y permisos de catálogo y ventas en el token del dueño
+[OK]    27 en verde · 2 omitidos · 0 fallos (de 29)
+```
+
+El reparto firmado (ADR-023): el cajero crea pero NO anula. El chequeo de
+`venta:anular` es POR OPERACIÓN dentro del lote (decisión 12): un lote de
+solo anulaciones de un cajero devuelve todas sus operaciones `rechazada` con
+`permiso_ausente` sin abortar el resto de su cola, y el guard de entrada
+`exigir_venta_crear` da 403 al almacenista en `/api/v1/dispositivos`
+(`test_registrar_dispositivo_exige_venta_crear`).
+
+**Eventos de outbox según ADR-018** (`venta.creada`/`venta.anulada`, clave
+`<tenant_id>.venta.*`), emitidos dentro de la misma transacción del lote, una
+sola vez por operación aceptada — una `duplicada` o `rechazada` no emite:
+
+```
+tests/test_ventas_servicio.py::test_aplicar_una_venta_descuenta_stock_abre_sesion_implicita_y_emite_evento
+tests/test_ventas_servicio.py::test_anular_repone_stock_emite_evento_y_no_toca_la_venta_original
+```
+
+**Suite completa verde, lint verde, contrato sin deriva.**
+
+```
+$ uv run pytest -q -m 'not integration'   # run ci 30283626280
+376 passed, 200 deselected
+$ uv run pytest -q -m integration         # run ci 30283626280
+200 passed, 376 deselected
+$ uv run ruff check .                     # job «ruff + mypy» del CI; reproducido en local
+All checks passed!
+$ CODEGEN_SCHEMA_FILE=docs/api/openapi-fase0.json bash scripts/codegen-api-client.sh && git status --short
+(exit 0 y `git status` vacío: el cliente TS regenerado es idéntico al commiteado)
+```
+
+`contrato.ts` sigue compilando: el job `frontend / contratos`, los cuatro
+`ng build` y `ng test` del mismo run, en verde. Los demás workflows sobre el
+SHA de corte (`gh run list`): `e2e` 30283626150, `release-images`
+30283626103 y `deploy` 30284035180, todos success.
+
+**Deuda registrada al cierre** (detalle, riesgo y candados en
+[`docs/deuda-tecnica.md`](deuda-tecnica.md)): **D-10** (`ventas.cliente_id`
+sin FK hasta el módulo 5), **D-11** (`caja_sesiones` sin endpoints propios
+hasta el módulo 4), **D-12** (stock sin alertas de umbral hasta el módulo
+3), **D-13** (carrera TOCTOU del cupo de tier del catálogo, detectada por el
+QA adversarial), **D-14** (`datos` de la operación del sync opcional en el
+contrato), **D-15** (`exigir_venta_anular` sin consumidor todavía), **D-16**
+(el check 23 no tiene prueba negativa ejecutada) y **D-17** (`alembic check`
+fuera del CI).
+
+---
+
 ## La suite de tests
 
 ```

@@ -11,6 +11,14 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 |---|---|---|---|
 | D-03 | El realm es semilla, no estado deseado continuo (mitigado en la Etapa 5: se aplica el subconjunto seguro) | Fase 1 | backend |
 | D-09 | El tier del negocio se resuelve como `pro` para todos (módulo catálogo, decisión 2 del plan) | Fase 1 (módulo de suscripciones) | backend |
+| D-10 | `ventas.cliente_id` no tiene FK: la tabla `clientes` es del módulo 5 | Fase 1 (módulo 5, clientes-fiado) | backend |
+| D-11 | `caja_sesiones` existe y se puebla (apertura implícita del sync) sin endpoints propios | Fase 1 (módulo 4, caja) | backend |
+| D-12 | El stock no tiene alertas de umbral: el negativo es visible en `stock_actual` pero nadie notifica | Fase 1 (módulo 3, inventario) | backend |
+| D-13 | Carrera TOCTOU del cupo de tier del catálogo: dos altas concurrentes dejan 101/100 (QA adversarial) | Fase 1 (antes del piloto) | backend |
+| D-14 | `OperacionSync.datos` es opcional en el contrato: una operación sin `datos` es `rechazada`, no 422 | Fase 1 (módulo 3) | backend |
+| D-15 | `exigir_venta_anular` está definido y exportado sin endpoint que lo use | Fase 1 (módulo 4; si nada lo usa, se borra) | backend |
+| D-16 | El check 23 de `verify-setup.sh` no tiene prueba negativa ejecutada (nadie lo ha visto fallar) | Fase 1 (Etapa 1.5) | backend |
+| D-17 | `alembic check` (deriva metadata↔DDL) no corre en CI | Fase 1 | backend |
 
 Cerradas en la Etapa 5, con su evidencia al final de este documento: **D-01**
 (ROPC), **D-04** (Keycloak sin `--optimized`), **D-06** (`alembic_version`
@@ -122,6 +130,248 @@ fuente real del tier). El único punto de cambio es la dependencia
 - `backend/tests/api/test_catalogo_productos.py::test_el_limite_del_tier_da_403`
 - `backend/tests/test_catalogo_servicio.py::test_el_limite_del_tier_se_verifica_contra_las_filas_vivas`
 - `backend/tests/test_catalogo_servicio.py::test_el_limite_del_tier_light_se_detiene_en_500`
+
+---
+
+## D-10 · `ventas.cliente_id` no tiene FK
+
+**Qué es.** La venta fiada lleva `cliente_id`, pero la columna no referencia
+a ninguna tabla: `clientes` es del módulo 5 y todavía no existe.
+
+**Por qué se aceptó.** Decisión 8 del plan del módulo ventas: el fiado sin
+red está permitido por ADR-018, así que el sync no puede rechazar una venta
+real porque su referencia aún no exista en el servidor. El crédito lo crea el
+módulo 5, que tiene todo lo que necesita en la venta y en el evento
+`venta.creada` (lleva `medio_pago`, `cliente_id` y total). Como los módulos
+se entregan en orden antes del piloto, ninguna venta real queda huérfana de
+crédito.
+
+**Riesgo si se olvida.** Si el módulo 5 crea `clientes` con su propia
+convención de ids sin mirar las ventas ya sincronizadas, los fiados vendidos
+antes de su llegada apuntarían a clientes que no existen y no generarían
+crédito.
+
+**Vencimiento: Fase 1, módulo 5 (clientes-fiado).** Al crear `clientes`, el
+módulo 5 adopta el `cliente_id` del dispositivo como PK (mismo patrón de id
+de cliente que `ventas` y `productos`) o migra las referencias.
+
+**Candados mientras tanto:**
+
+- `backend/tests/test_ventas_servicio.py`: fiado sin cliente es `rechazada`
+  con `fiado_requiere_cliente`, y cliente en venta no fiada con
+  `cliente_solo_en_fiado` — la columna solo se puebla en ventas fiadas.
+- El evento `venta.creada` conserva `cliente_id`, `medio_pago` y total para
+  que el módulo 5 cree el crédito sin releer la venta.
+
+---
+
+## D-11 · `caja_sesiones` existe y se puebla sin endpoints propios
+
+**Qué es.** La tabla `caja_sesiones` se creó completa en la migración `0005`
+y el sync la puebla: toda venta sincronizada pertenece a la sesión abierta
+del tenant o a una implícita nueva (`base_inicial = 0`, `abierta_por` el
+usuario que sincroniza). Pero no hay endpoints para abrir, cerrar ni arquear
+sesiones: son del módulo 4.
+
+**Por qué se aceptó.** Decisión 3 del plan: ADR-018 firma que la venta
+referencia sesión de caja resuelta en servidor, y grabar las ventas del
+piloto con `sesion_caja_id` NULL obligaría a re-procesarlas cuando llegue la
+caja (el arqueo suma por sesión). La tensión declarada con ADR-021 («vender
+sin caja abierta es posible… pero esa venta no entra al arqueo») se resolvió
+a favor de ADR-018: una venta con sesión siempre puede excluirse de un
+arqueo; una sin sesión nunca puede incluirse.
+
+**Riesgo si se olvida.** Las sesiones implícitas quedan abiertas
+indefinidamente (nadie puede cerrarlas hasta el módulo 4). Es visible y sin
+pérdida de datos, pero si el módulo 4 no llegara, la operación no tendría
+cierre de caja que cuadrar.
+
+**Vencimiento: Fase 1, módulo 4 (caja y arqueo).** El módulo 4 encontrará la
+tabla y sus filas ya vivas: añade los endpoints, `caja_movimientos` y los
+eventos de caja.
+
+**Candados mientras tanto:**
+
+- El índice único parcial `(tenant_id) WHERE estado = 'abierta'` (ADR-021)
+  garantiza UNA sesión abierta por tienda y decide la carrera de aperturas
+  implícitas concurrentes (quien pierde re-lee la ganadora).
+- `backend/tests/test_ventas_servicio.py::test_aplicar_una_venta_descuenta_stock_abre_sesion_implicita_y_emite_evento`
+  y `::test_la_segunda_venta_reusa_la_sesion_implicita`.
+
+---
+
+## D-12 · El stock no tiene alertas de umbral
+
+**Qué es.** El sync descuenta stock por deltas en `movimientos_inventario` y
+actualiza la proyección `stock_actual`, pero no evalúa `stock_minimo`: un
+producto puede quedar en cero o en negativo (legítimo según ADR-020) sin que
+nadie se entere.
+
+**Por qué se aceptó.** Decisión 1 del plan: las alertas de tres niveles con
+`inventario.alerta_stock` se difirieron al módulo 3 porque su consumidor es
+el módulo de notificaciones (ADR-025), que aún no existe — emitir un evento
+que nadie consume no avisa a nadie.
+
+**Riesgo si se olvida.** El tendero se entera del quiebre de stock cuando el
+cliente lo pide, no antes. El dato no se pierde: `stock_actual` viaja en cada
+producto del `GET /sync/delta`, así que el dispositivo ya puede mostrarlo.
+
+**Vencimiento: Fase 1, módulo 3 (inventario y alertas).**
+
+**Candados mientras tanto:**
+
+- `stock_actual` actualizado en la misma transacción del lote (probado en
+  `test_aplicar_una_venta_descuenta_stock_abre_sesion_implicita_y_emite_evento`)
+  y servido por el delta del sync.
+- El `tipo` de `movimientos_inventario` ya admite `venta`, `compra`,
+  `ajuste` y `merma`: el módulo 3 no migra nada.
+
+---
+
+## D-13 · Carrera TOCTOU del cupo de tier del catálogo
+
+**Qué es.** `_exigir_cupo` cuenta las filas vivas y luego inserta: con 99
+productos y dos sesiones intercaladas (A hace flush sin commit, B cuenta 99
+y pasa, ambas confirman) quedan **101 productos con límite 100**. Lo
+documentó el QA adversarial del catálogo con test commiteado
+(`.superpowers/sdd/qa-adversarial-report.md`).
+
+**Por qué se aceptó.** El límite por tier vive en aplicación por diseño
+firmado (ADR-019); sin `SERIALIZABLE` ni bloqueo, toda verificación
+cuenta-luego-inserta tiene esta ventana. Impacto real bajo: la ingesta del
+catálogo es síncrona y por un solo negocio a la vez; superar el cupo por uno
+no rompe nada más que la letra del límite.
+
+**Riesgo si se olvida.** Con ingesta masiva concurrente (importaciones del
+módulo 3, o varios dispositivos sincronizando altas) el sobre-paso deja de
+ser anecdótico y el límite del tier —que es un límite comercial, ADR-010— se
+vuelve poroso.
+
+**Vencimiento: Fase 1, antes del piloto.** Arreglo propuesto por el propio
+QA: `SELECT pg_advisory_xact_lock(hashtext(tenant_id::text))` al entrar en
+`_exigir_cupo` — serializa las altas del negocio sin tocar el esquema.
+
+**Candados mientras tanto:**
+
+- `backend/tests/test_catalogo_adversarial.py::test_la_carrera_del_cupo_supera_el_limite_aunque_el_check_pase`
+  (documenta el 101/100; si alguien cierra la ventana, este test es el que
+  hay que invertir).
+- D-09 sigue viva: hoy el tier es `pro` (ilimitado) para todos, así que la
+  carrera no tiene efecto observable hasta que exista una fuente real del
+  tier.
+
+---
+
+## D-14 · `OperacionSync.datos` es opcional en el contrato
+
+**Qué es.** En `OperacionSync` el campo `datos` tiene
+`Field(default_factory=dict)`: una operación sin `datos` no es un 422 de
+request; llega al servicio con `{}` y sale `rechazada` con motivo
+`datos_invalidos`.
+
+**Por qué se aceptó.** Decisión 6 del plan: el contenido de `datos` se
+valida por operación dentro del procesamiento del lote (la unidad de fallo
+es la operación, no el request). Pero la opcionalidad del CAMPO es un paso
+más allá: el contrato OpenAPI no marca `datos` como requerido, así que un
+cliente que lo omite no recibe la señal más temprana posible.
+
+**Riesgo si se olvida.** Bajo: el comportamiento es correcto (la operación
+se rechaza con motivo y no aplica nada), solo es menos explícito de lo que
+el contrato podría ser. Con más tipos de operación (módulo 3 en adelante)
+conviene hacerlo requerido para que el 422 lo dé pydantic.
+
+**Vencimiento: Fase 1, módulo 3** (cuando el sync gane tipos de operación
+nuevos y el contrato se revise).
+
+**Candado mientras tanto:**
+
+- `backend/tests/test_ventas_servicio.py`: operación con datos inválidos es
+  `rechazada` con `datos_invalidos` y no arrastra al resto del lote.
+
+---
+
+## D-15 · `exigir_venta_anular` está definido sin consumidor
+
+**Qué es.** `backend/services/api/app/modules/ventas/dependencies.py`
+define y exporta `exigir_venta_anular = exigir_permiso(PERM_VENTA_ANULAR)`,
+pero ningún endpoint lo usa: la anulación viaja como operación del lote y su
+chequeo es por operación dentro del servicio (decisión 12), y los guards de
+entrada del router son `exigir_venta_crear` (dispositivos y lotes) y
+`exigir_producto_leer` (delta).
+
+**Por qué se aceptó.** El plan (tarea 6) lo dejó preparado para un endpoint
+de anulación directa que finalmente no se construyó: la anulación del piloto
+sube por el sync. Es código muerto exportado, y el código muerto con nombre
+de permiso invita a usarlo mal o a creer que hay una ruta que no existe.
+
+**Riesgo si se olvida.** Cosmético hoy; confuso mañana. Si el módulo 4 (o un
+endpoint de anulación online) lo usa, la deuda se cierra sola; si no, hay
+que borrarlo.
+
+**Vencimiento: Fase 1, módulo 4.** O lo estrena un endpoint, o se retira.
+
+**Candado mientras tanto:**
+
+- El 403 por rol se prueba de verdad a nivel operación:
+  `backend/tests/api/test_ventas_sync.py` (lote de anulaciones del cajero →
+  todas `rechazada` con `permiso_ausente`) y
+  `backend/tests/test_ventas_servicio.py` (mismo caso en el servicio).
+
+---
+
+## D-16 · El check 23 no tiene prueba negativa ejecutada
+
+**Qué es.** El check 23 de `verify-setup.sh` (aud, rol y permisos de
+catálogo y ventas en el token del dueño) pasa en verde en el CI, pero nadie
+ha ejecutado la mutación: quitar un permiso del realm y ver el check fallar.
+Sin esa prueba, el candado podría estar aprobando siempre por la razón
+equivocada (la cultura del repo lo exige: «distinguir deniega porque no lo
+tiene de deniega siempre»).
+
+**Por qué se aceptó.** La prueba negativa exige mutar el realm del stack
+local (quitar `venta:crear` del grupo `dueno`, correr el check, restaurar),
+y el cierre del módulo se hizo sin tocar contenedores locales, con la
+evidencia citada del CI.
+
+**Riesgo si se olvida.** Que el check 23 sea un placebo y nadie lo sepa
+hasta que un permiso falte de verdad en un despliegue.
+
+**Vencimiento: Fase 1, Etapa 1.5.** Ejecutar la mutación contra el stack
+local y pegar la salida del fallo en este registro al cerrarla.
+
+**Candado mientras tanto:**
+
+- El check corre en cada `verify-setup.sh` del CI (job «pytest -m
+  integration»): `[OK] aud=vendi-backend, rol de negocio y permisos de
+  catálogo y ventas en el token del dueño` — si la siembra deja de incluir
+  un permiso, el CI se pone rojo en el siguiente push.
+
+---
+
+## D-17 · `alembic check` no corre en CI
+
+**Qué es.** Nada compara la metadata de los modelos SQLAlchemy con el DDL
+que producen las migraciones (`alembic check`): una columna añadida al
+modelo sin migración (o al revés) solo se nota cuando un test la toca.
+
+**Por qué se aceptó.** En el módulo ventas los modelos se escribieron contra
+la migración (tarea 2, «alineados con la migración 0005») y los tests de
+integración contra PostgreSQL real ejercitan el DDL completo, así que la
+deriva habría reventado la suite. El candado automático es defensa en
+profundidad, no la primera línea.
+
+**Riesgo si se olvida.** Una deriva metadata↔DDL que ningún test toque
+(columna sin uso todavía, índice olvidado) llegaría silenciosa a producción.
+
+**Vencimiento: Fase 1.** Añadir `alembic check` al job `ruff + mypy` del CI
+(o uno propio) con el stack levantado.
+
+**Candado mientras tanto:**
+
+- `backend/tests/test_rls_coverage.py` registra todo modelo nuevo y exige su
+  tabla con policy RLS — una tabla sin migrar lo pone rojo.
+- Los tests de integración corren contra la base migrada hasta head en cada
+  push (job «pytest -m integration», 0 SKIPPED permitidos).
 
 ---
 

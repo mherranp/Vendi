@@ -3063,7 +3063,7 @@ git commit -m "Contrato OpenAPI con las rutas del sync offline y cliente TypeScr
 - Modify: `docs/estado.md` (sección nueva del módulo ventas, con fecha de corte y evidencia comando+salida)
 - Modify: `docs/deuda-tecnica.md` (solo si quedó deuda nueva; si no, no se toca)
 
-- [ ] **Paso 1: ejecutar el gate completo del módulo** (idéntico al de cualquier módulo de la Etapa 1.2):
+- [x] **Paso 1: ejecutar el gate completo del módulo** (idéntico al de cualquier módulo de la Etapa 1.2):
 
 ```bash
 bash scripts/migrate.sh
@@ -3078,15 +3078,15 @@ CODEGEN_SCHEMA_FILE=docs/api/openapi-fase0.json bash scripts/codegen-api-client.
 ```
 
 Gate por módulo (del plan maestro de Fase 1), verificado ítem a ítem:
-- [ ] Migración con RLS + índice + grants, revisada por el agente de seguridad.
-- [ ] Tests de integración con aislamiento cross-tenant nuevo por tabla (`test_aislamiento_ventas.py`: las cinco tablas), 0 SKIPPED.
-- [ ] El candado del sync (`test_sync_idempotente.py`): el mismo lote dos veces deja una venta, un movimiento y un evento.
-- [ ] OpenAPI congelado actualizado + codegen + `contrato.ts` sigue compilando.
-- [ ] Eventos de outbox emitidos según ADR-018 (`venta.creada`/`venta.anulada`, clave `<tenant_id>.venta.*`); `pytest -m integration` verde; `ruff` verde.
+- [x] Migración con RLS + índice + grants, revisada por el agente de seguridad.
+- [x] Tests de integración con aislamiento cross-tenant nuevo por tabla (`test_aislamiento_ventas.py`: las cinco tablas), 0 SKIPPED.
+- [x] El candado del sync (`test_sync_idempotente.py`): el mismo lote dos veces deja una venta, un movimiento y un evento.
+- [x] OpenAPI congelado actualizado + codegen + `contrato.ts` sigue compilando.
+- [x] Eventos de outbox emitidos según ADR-018 (`venta.creada`/`venta.anulada`, clave `<tenant_id>.venta.*`); `pytest -m integration` verde; `ruff` verde.
 
-- [ ] **Paso 2: actualizar `docs/estado.md`.** Añadir una sección «Módulo ventas (Fase 1, Etapa 1.2)» con: fecha de corte, qué se entregó (tablas, endpoints del sync, permisos, eventos, idempotencia), y **al lado de cada afirmación el comando que la demuestra** con su salida pegada (regla del documento: no promete nada que un comando no demuestre). Candidatas a entrada en `docs/deuda-tecnica.md` con vencimiento si el ejecutor decide registrarlas: (a) `cliente_id` sin FK hasta que el módulo de fiado cree `clientes` (vence: módulo 5); (b) `caja_sesiones` existe y se puebla sin endpoints propios hasta el módulo de caja (vence: módulo 4); (c) las alertas de umbral de stock no existen hasta el módulo 3 — el negativo ya es visible en `stock_actual` pero nadie notifica (vence: módulo 3). Si se registran, que sea con el formato del registro (qué es, por qué se aceptó, riesgo, vencimiento, candados mientras tanto).
+- [x] **Paso 2: actualizar `docs/estado.md`.** Añadir una sección «Módulo ventas (Fase 1, Etapa 1.2)» con: fecha de corte, qué se entregó (tablas, endpoints del sync, permisos, eventos, idempotencia), y **al lado de cada afirmación el comando que la demuestra** con su salida pegada (regla del documento: no promete nada que un comando no demuestre). Candidatas a entrada en `docs/deuda-tecnica.md` con vencimiento si el ejecutor decide registrarlas: (a) `cliente_id` sin FK hasta que el módulo de fiado cree `clientes` (vence: módulo 5); (b) `caja_sesiones` existe y se puebla sin endpoints propios hasta el módulo de caja (vence: módulo 4); (c) las alertas de umbral de stock no existen hasta el módulo 3 — el negativo ya es visible en `stock_actual` pero nadie notifica (vence: módulo 3). Si se registran, que sea con el formato del registro (qué es, por qué se aceptó, riesgo, vencimiento, candados mientras tanto).
 
-- [ ] **Paso 3: commit de cierre**
+- [x] **Paso 3: commit de cierre**
 
 ```bash
 git add docs/estado.md docs/deuda-tecnica.md
