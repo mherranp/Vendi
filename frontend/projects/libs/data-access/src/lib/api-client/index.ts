@@ -72,6 +72,76 @@ export interface paths {
         patch: operations["actualizar_tenant_api_v1_platform_tenants__tenant_id__patch"];
         trace?: never;
     };
+    "/api/v1/productos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listar productos */
+        get: operations["listar_productos_api_v1_productos_get"];
+        put?: never;
+        /**
+         * Crear un producto
+         * @description Acepta el `id` que traiga el cliente (ADR-017): reenviar la misma
+         *     creación devuelve el producto ya creado, sin duplicar fila ni evento.
+         */
+        post: operations["crear_producto_api_v1_productos_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/productos/por-codigo/{codigo}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Buscar un producto por código de barras
+         * @description El camino del escáner (ADR-024): un EAN resuelve a exactamente un
+         *     producto, gracias al índice único parcial.
+         */
+        get: operations["buscar_por_codigo_api_v1_productos_por_codigo__codigo__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/productos/{producto_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ver un producto */
+        get: operations["ver_producto_api_v1_productos__producto_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Dar de baja un producto (borrado lógico)
+         * @description Marca `deleted_at` y libera el EAN. La fila sobrevive: el historial de
+         *     ventas la referencia (ADR-019).
+         */
+        delete: operations["eliminar_producto_api_v1_productos__producto_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Actualizar un producto
+         * @description No acepta `stock_actual` ni `ultimo_costo`: el stock lo mueven los
+         *     movimientos de inventario y el costo las compras (ADR-020).
+         */
+        patch: operations["actualizar_producto_api_v1_productos__producto_id__patch"];
+        trace?: never;
+    };
     "/api/v1/tenants/me": {
         parameters: {
             query?: never;
@@ -194,6 +264,17 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** PagedList[ProductoSalida] */
+        PagedList_ProductoSalida_: {
+            /** Items */
+            items: components["schemas"]["ProductoSalida"][];
+            /** Limit */
+            limit: number;
+            /** Skip */
+            skip: number;
+            /** Total */
+            total: number;
+        };
         /** PagedList[TenantSalida] */
         PagedList_TenantSalida_: {
             /** Items */
@@ -204,6 +285,93 @@ export interface components {
             skip: number;
             /** Total */
             total: number;
+        };
+        /**
+         * ProductoActualizar
+         * @description Todo opcional: es un PATCH. `None` significa "no lo toques" (misma
+         *     convención que `TenantActualizar`).
+         *
+         *     No lleva `stock_actual` ni `ultimo_costo`: el stock lo mueven los
+         *     movimientos de inventario y el costo las compras (ADR-020). Un endpoint
+         *     que dejara editar el contador a mano rompería la invariante del libro.
+         */
+        ProductoActualizar: {
+            /** Categoria */
+            categoria?: string | null;
+            /** Codigo Barras */
+            codigo_barras?: string | null;
+            /** Iva Pct */
+            iva_pct?: number | string | null;
+            /** Nombre */
+            nombre?: string | null;
+            /** Padre Id */
+            padre_id?: string | null;
+            /** Precio Venta */
+            precio_venta?: number | null;
+            /** Stock Minimo */
+            stock_minimo?: number | string | null;
+            /** Unidad Medida */
+            unidad_medida?: string | null;
+        };
+        /** ProductoCrear */
+        ProductoCrear: {
+            /** Categoria */
+            categoria?: string | null;
+            /** Codigo Barras */
+            codigo_barras?: string | null;
+            /** Id */
+            id?: string | null;
+            /**
+             * Iva Pct
+             * @default 0
+             */
+            iva_pct: number | string;
+            /** Nombre */
+            nombre: string;
+            /** Padre Id */
+            padre_id?: string | null;
+            /** Precio Venta */
+            precio_venta: number;
+            /**
+             * Stock Minimo
+             * @default 0
+             */
+            stock_minimo: number | string;
+            /**
+             * Unidad Medida
+             * @default unidad
+             */
+            unidad_medida: string;
+        };
+        /** ProductoSalida */
+        ProductoSalida: {
+            /** Categoria */
+            categoria?: string | null;
+            /** Codigo Barras */
+            codigo_barras?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Iva Pct */
+            iva_pct: string;
+            /** Nombre */
+            nombre: string;
+            /** Padre Id */
+            padre_id?: string | null;
+            /** Precio Venta */
+            precio_venta: number;
+            /** Stock Actual */
+            stock_actual: string;
+            /** Stock Minimo */
+            stock_minimo: string;
+            /** Ultimo Costo */
+            ultimo_costo: number;
+            /** Unidad Medida */
+            unidad_medida: string;
         };
         /**
          * TenantActualizar
@@ -525,6 +693,371 @@ export interface operations {
             };
             /** @description No existe */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listar_productos_api_v1_productos_get: {
+        parameters: {
+            query?: {
+                skip?: number;
+                limit?: number;
+                /** @description Texto a buscar en el nombre */
+                q?: string | null;
+                categoria?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PagedList_ProductoSalida_"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    crear_producto_api_v1_productos_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductoCrear"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductoSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El producto no existe */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description EAN duplicado o id ya usado */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    buscar_por_codigo_api_v1_productos_por_codigo__codigo__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                codigo: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductoSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El producto no existe */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ver_producto_api_v1_productos__producto_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                producto_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductoSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El producto no existe */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    eliminar_producto_api_v1_productos__producto_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                producto_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El producto no existe */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    actualizar_producto_api_v1_productos__producto_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                producto_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductoActualizar"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductoSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El producto no existe */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description EAN duplicado */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

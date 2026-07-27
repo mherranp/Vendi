@@ -59,6 +59,37 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "PagedList_ProductoSalida_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProductoSalida"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "PagedList[ProductoSalida]",
+        "type": "object"
+      },
       "PagedList_TenantSalida_": {
         "properties": {
           "items": {
@@ -88,6 +119,315 @@
           "limit"
         ],
         "title": "PagedList[TenantSalida]",
+        "type": "object"
+      },
+      "ProductoActualizar": {
+        "description": "Todo opcional: es un PATCH. `None` significa \"no lo toques\" (misma\nconvención que `TenantActualizar`).\n\nNo lleva `stock_actual` ni `ultimo_costo`: el stock lo mueven los\nmovimientos de inventario y el costo las compras (ADR-020). Un endpoint\nque dejara editar el contador a mano rompería la invariante del libro.",
+        "properties": {
+          "categoria": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categoria"
+          },
+          "codigo_barras": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Barras"
+          },
+          "iva_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iva Pct"
+          },
+          "nombre": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nombre"
+          },
+          "padre_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Padre Id"
+          },
+          "precio_venta": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precio Venta"
+          },
+          "stock_minimo": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Minimo"
+          },
+          "unidad_medida": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unidad Medida"
+          }
+        },
+        "title": "ProductoActualizar",
+        "type": "object"
+      },
+      "ProductoCrear": {
+        "properties": {
+          "categoria": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categoria"
+          },
+          "codigo_barras": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Barras"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "iva_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Iva Pct"
+          },
+          "nombre": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Nombre",
+            "type": "string"
+          },
+          "padre_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Padre Id"
+          },
+          "precio_venta": {
+            "minimum": 0.0,
+            "title": "Precio Venta",
+            "type": "integer"
+          },
+          "stock_minimo": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Stock Minimo"
+          },
+          "unidad_medida": {
+            "default": "unidad",
+            "title": "Unidad Medida",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nombre",
+          "precio_venta"
+        ],
+        "title": "ProductoCrear",
+        "type": "object"
+      },
+      "ProductoSalida": {
+        "properties": {
+          "categoria": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categoria"
+          },
+          "codigo_barras": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Barras"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "iva_pct": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Iva Pct",
+            "type": "string"
+          },
+          "nombre": {
+            "title": "Nombre",
+            "type": "string"
+          },
+          "padre_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Padre Id"
+          },
+          "precio_venta": {
+            "title": "Precio Venta",
+            "type": "integer"
+          },
+          "stock_actual": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Stock Actual",
+            "type": "string"
+          },
+          "stock_minimo": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Stock Minimo",
+            "type": "string"
+          },
+          "ultimo_costo": {
+            "title": "Ultimo Costo",
+            "type": "integer"
+          },
+          "unidad_medida": {
+            "title": "Unidad Medida",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "nombre",
+          "unidad_medida",
+          "precio_venta",
+          "ultimo_costo",
+          "iva_pct",
+          "stock_actual",
+          "stock_minimo"
+        ],
+        "title": "ProductoSalida",
         "type": "object"
       },
       "TenantActualizar": {
@@ -230,7 +570,7 @@
     }
   },
   "info": {
-    "description": "\nAPI regional de Vendi. Fase 0: fundación.\n\nEl negocio (tenant) se resuelve del claim `organization` del token: el alias de\nla Organization de Keycloak **es** el identificador del negocio. Un usuario que\npertenece a varios negocios indica cuál con la cabecera `X-Tenant-Id`, y solo\npuede elegir entre los que ya trae su token.\n",
+    "description": "\nAPI regional de Vendi. Fase 1: fundación + catálogo de productos.\n\nEl negocio (tenant) se resuelve del claim `organization` del token: el alias de\nla Organization de Keycloak **es** el identificador del negocio. Un usuario que\npertenece a varios negocios indica cuál con la cabecera `X-Tenant-Id`, y solo\npuede elegir entre los que ya trae su token.\n",
     "title": "Vendi API",
     "version": "0.1.0"
   },
@@ -634,6 +974,529 @@
         "summary": "Renombrar o suspender un negocio",
         "tags": [
           "plataforma"
+        ]
+      }
+    },
+    "/api/v1/productos": {
+      "get": {
+        "operationId": "listar_productos_api_v1_productos_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Texto a buscar en el nombre",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Texto a buscar en el nombre",
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "categoria",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Categoria"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedList_ProductoSalida_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Listar productos",
+        "tags": [
+          "catalogo"
+        ]
+      },
+      "post": {
+        "description": "Acepta el `id` que traiga el cliente (ADR-017): reenviar la misma\ncreación devuelve el producto ya creado, sin duplicar fila ni evento.",
+        "operationId": "crear_producto_api_v1_productos_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductoCrear"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductoSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "El producto no existe"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "EAN duplicado o id ya usado"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Crear un producto",
+        "tags": [
+          "catalogo"
+        ]
+      }
+    },
+    "/api/v1/productos/por-codigo/{codigo}": {
+      "get": {
+        "description": "El camino del escáner (ADR-024): un EAN resuelve a exactamente un\nproducto, gracias al índice único parcial.",
+        "operationId": "buscar_por_codigo_api_v1_productos_por_codigo__codigo__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "codigo",
+            "required": true,
+            "schema": {
+              "title": "Codigo",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductoSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "El producto no existe"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Buscar un producto por código de barras",
+        "tags": [
+          "catalogo"
+        ]
+      }
+    },
+    "/api/v1/productos/{producto_id}": {
+      "delete": {
+        "description": "Marca `deleted_at` y libera el EAN. La fila sobrevive: el historial de\nventas la referencia (ADR-019).",
+        "operationId": "eliminar_producto_api_v1_productos__producto_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "producto_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Producto Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "El producto no existe"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Dar de baja un producto (borrado lógico)",
+        "tags": [
+          "catalogo"
+        ]
+      },
+      "get": {
+        "operationId": "ver_producto_api_v1_productos__producto_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "producto_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Producto Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductoSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "El producto no existe"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Ver un producto",
+        "tags": [
+          "catalogo"
+        ]
+      },
+      "patch": {
+        "description": "No acepta `stock_actual` ni `ultimo_costo`: el stock lo mueven los\nmovimientos de inventario y el costo las compras (ADR-020).",
+        "operationId": "actualizar_producto_api_v1_productos__producto_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "producto_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Producto Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductoActualizar"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductoSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "El producto no existe"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "EAN duplicado"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Actualizar un producto",
+        "tags": [
+          "catalogo"
         ]
       }
     },
