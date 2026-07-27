@@ -106,6 +106,12 @@ async def test_el_mismo_lote_dos_veces_deja_una_venta_un_movimiento_y_un_evento(
     pg_app_url: str, pg_platform_url: str, semilla
 ):
     venta_id = uuid.uuid4()
+    # El MISMO lote, construido una vez: `_lote` pone `datetime.now()` en
+    # `creada_en_cliente`, así que construirlo por envío hace que un cruce
+    # de segundo entre ambas llamadas salga `venta_id_divergente` en vez de
+    # `duplicada` (la comparación solo perdona microsegundos, ADR-018) —
+    # flake de reloj, no del mecanismo de idempotencia que se mide aquí.
+    lote = _lote(semilla, venta_id)
     engine = create_engine(pg_app_url)
     factory = create_session_factory(engine)
     marca = current_tenant_id.set(T1)
@@ -113,7 +119,7 @@ async def test_el_mismo_lote_dos_veces_deja_una_venta_un_movimiento_y_un_evento(
         for esperado in ("aceptada", "duplicada"):
             async with factory() as s:
                 servicio = VentasService(session=s, tenant_id=T1, actor_id="cajero-prueba", puede_anular=True)
-                resultados = await servicio.procesar_lote(_lote(semilla, venta_id))
+                resultados = await servicio.procesar_lote(lote)
                 assert [r.resultado for r in resultados] == [esperado]
                 await s.commit()
     finally:
