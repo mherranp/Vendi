@@ -82,7 +82,7 @@
 **Regla:** ningún módulo entra a implementación sin (a) sus ADRs firmados, (b) un plan detallado propio en `docs/superpowers/plans/` escrito con la skill writing-plans (TDD, pasos de 2-5 min), (c) su migración Alembic revisada por el agente de seguridad.
 
 **Orden (por dependencias):**
-1. `modulo-catalogo` (base de todo: productos) — plan: `2026-XX-modulo-catalogo-plan.md`
+1. `modulo-catalogo` (base de todo: productos) — plan: `2026-07-28-modulo-catalogo-plan.md` — **CERRADO 2026-07-27** (gate verificado; evidencia comando+salida en `docs/estado.md`)
 2. `modulo-ventas` + soporte de sincronización offline en la API (endpoints idempotentes de sync) — el módulo crítico
 3. `modulo-inventario` + alertas
 4. `modulo-caja` + P&L/forecast (ADR-006)
@@ -91,10 +91,12 @@
 7. `modulo-push` (FCM)
 
 **Gate por módulo (idéntico para todos):**
-- [ ] Migración con RLS + índice + grants, revisada por security.
-- [ ] Tests de integración con aislamiento cross-tenant nuevo por tabla (0 SKIPPED).
-- [ ] OpenAPI congelado actualizado (`docs/api/`) + codegen + `contrato.ts` sigue compilando.
-- [ ] Eventos de outbox emitidos según su ADR; `pytest -m integration` verde; `ruff` verde.
+- [x] Migración con RLS + índice + grants, revisada por security.
+- [x] Tests de integración con aislamiento cross-tenant nuevo por tabla (0 SKIPPED).
+- [x] OpenAPI congelado actualizado (`docs/api/`) + codegen + `contrato.ts` sigue compilando.
+- [x] Eventos de outbox emitidos según su ADR; `pytest -m integration` verde; `ruff` verde.
+
+*(Marcado por el módulo catálogo, 2026-07-27 — run de CI 30258309167; la lista se reusa y se vuelve a verificar por cada módulo siguiente.)*
 
 ## Etapa 1.3 — Frontend web y móvil (paralela a 1.2, medio paso detrás)
 

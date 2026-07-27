@@ -10,6 +10,7 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 | # | Deuda | Vence | Dueño |
 |---|---|---|---|
 | D-03 | El realm es semilla, no estado deseado continuo (mitigado en la Etapa 5: se aplica el subconjunto seguro) | Fase 1 | backend |
+| D-09 | El tier del negocio se resuelve como `pro` para todos (módulo catálogo, decisión 2 del plan) | Fase 1 (módulo de suscripciones) | backend |
 
 Cerradas en la Etapa 5, con su evidencia al final de este documento: **D-01**
 (ROPC), **D-04** (Keycloak sin `--optimized`), **D-06** (`alembic_version`
@@ -85,6 +86,39 @@ del objeto para no pisar secretos. Es justo el trabajo manual que la parte
 pendiente de esta deuda debe automatizar. Los `webOrigins` no hicieron falta:
 valen `"+"`, que deriva de los `redirectUris` y por tanto es independiente del
 dominio.
+
+---
+
+## D-09 · El tier del negocio se resuelve como `pro` para todos
+
+**Qué es.** El límite de productos por tier (ADR-010) se verifica de verdad en
+la aplicación —`LIMITES_PRODUCTOS_POR_TIER = {"gratis": 100, "light": 500,
+"pro": None}` contra las filas vivas del tenant, con 403
+`limite_de_productos_alcanzado`— pero la **fuente** del dato es fija: la
+dependencia `tier_del_negocio`
+(`backend/services/api/app/modules/catalogo/dependencies.py`) devuelve `"pro"`
+para todo negocio. En Fase 1 no existe módulo de suscripciones ni columna de
+tier en `tenants`.
+
+**Por qué se aceptó.** Decisión 2 del plan del módulo catálogo: el plan maestro
+§5 registra a todo negocio nuevo en el trial de Pro (1 mes, sin tarjeta), así
+que el valor fijo coincide con la realidad del piloto. Lo diferido es solo la
+fuente del dato, no la verificación: los tests la ejercitan de verdad con
+`dependency_overrides` para `gratis` (alta 101 → 403) y `light` (se detiene en
+500).
+
+**Riesgo si se olvida.** El día que se dé de alta un negocio por debajo de Pro
+sin haber cerrado esta deuda, su límite real (100 o 500) no se le aplicará:
+heredará el de Pro (ilimitado).
+
+**Vencimiento: Fase 1**, al existir el módulo de suscripciones (o cualquier
+fuente real del tier). El único punto de cambio es la dependencia
+`tier_del_negocio`.
+
+**Candados mientras tanto** (verdes en el run de CI 30258309167, 2026-07-27):
+
+- `backend/tests/api/test_catalogo_productos.py::test_el_limite_del_tier_da_403`
+- `backend/tests/test_catalogo_servicio.py::test_el_limite_del_tier_se_verifica_contra_las_filas_vivas`
 
 ---
 

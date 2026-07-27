@@ -2297,7 +2297,7 @@ git commit -m "Contrato OpenAPI con las rutas del catálogo y cliente TypeScript
 - Modify: `docs/estado.md` (sección nueva del módulo catálogo, con fecha de corte y evidencia comando+salida)
 - Modify: `docs/deuda-tecnica.md` (solo si quedó deuda nueva; si no, no se toca)
 
-- [ ] **Paso 1: ejecutar el gate completo del módulo** (idéntico al de cualquier módulo de la Etapa 1.2):
+- [x] **Paso 1: ejecutar el gate completo del módulo** (idéntico al de cualquier módulo de la Etapa 1.2):
 
 ```bash
 bash scripts/migrate.sh
@@ -2312,14 +2312,14 @@ CODEGEN_SCHEMA_FILE=docs/api/openapi-fase0.json bash scripts/codegen-api-client.
 ```
 
 Gate por módulo (del plan maestro de Fase 1), verificado ítem a ítem:
-- [ ] Migración con RLS + índice + grants, revisada por el agente de seguridad.
-- [ ] Tests de integración con aislamiento cross-tenant nuevo por tabla (`test_aislamiento_productos.py`), 0 SKIPPED.
-- [ ] OpenAPI congelado actualizado + codegen + `contrato.ts` sigue compilando.
-- [ ] Eventos de outbox emitidos según ADR-019 (`producto.creado/actualizado/eliminado`, clave `<tenant_id>.producto.*`); `pytest -m integration` verde; `ruff` verde.
+- [x] Migración con RLS + índice + grants, revisada por el agente de seguridad.
+- [x] Tests de integración con aislamiento cross-tenant nuevo por tabla (`test_aislamiento_productos.py`), 0 SKIPPED.
+- [x] OpenAPI congelado actualizado + codegen + `contrato.ts` sigue compilando.
+- [x] Eventos de outbox emitidos según ADR-019 (`producto.creado/actualizado/eliminado`, clave `<tenant_id>.producto.*`); `pytest -m integration` verde; `ruff` verde.
 
-- [ ] **Paso 2: actualizar `docs/estado.md`.** Añadir una sección «Módulo catálogo (Fase 1, Etapa 1.2)» con: fecha de corte, qué se entregó (tabla, endpoints, permisos, eventos), y **al lado de cada afirmación el comando que la demuestra** con su salida pegada (regla del documento: no promete nada que un comando no demuestre). Si quedó deuda (p. ej. «el tier se resuelve como `pro` hasta que exista el módulo de suscripciones»), registrarla en `docs/deuda-tecnica.md` con vencimiento.
+- [x] **Paso 2: actualizar `docs/estado.md`.** Añadir una sección «Módulo catálogo (Fase 1, Etapa 1.2)» con: fecha de corte, qué se entregó (tabla, endpoints, permisos, eventos), y **al lado de cada afirmación el comando que la demuestra** con su salida pegada (regla del documento: no promete nada que un comando no demuestre). Si quedó deuda (p. ej. «el tier se resuelve como `pro` hasta que exista el módulo de suscripciones»), registrarla en `docs/deuda-tecnica.md` con vencimiento.
 
-- [ ] **Paso 3: commit de cierre**
+- [x] **Paso 3: commit de cierre**
 
 ```bash
 git add docs/estado.md docs/deuda-tecnica.md
