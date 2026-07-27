@@ -44,7 +44,7 @@ def servicio_de_tenants(
     recursos = request.app.state.recursos
     return TenantService(
         session=session,
-        keycloak=recursos.keycloak_aprovisionamiento,
+        aprovisionamiento=recursos.aprovisionamiento,
         audit=recursos.audit_service,
         cache=recursos.redis,
         cache_ttl=recursos.settings.tenant_estado_cache_ttl,

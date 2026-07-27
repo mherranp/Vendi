@@ -41,10 +41,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from app.settings import Settings
 from vendi_core.audit.service import AuditService
 from vendi_core.auth.jwt import JWTValidator
-from vendi_core.auth.keycloak_admin import VendiKeycloakAdmin, VendiKeycloakAprovisionamiento
+from vendi_core.auth.keycloak_admin import VendiKeycloakAdmin
 from vendi_core.cache.redis import RedisCache
 from vendi_core.db.engine import create_engine, dispose_engine
 from vendi_core.db.session import create_platform_session_factory, create_session_factory
+from vendi_core.provisioning.cliente import ClienteAprovisionamiento
 from vendi_core.tracing.otel import configure_tracing
 
 logger = structlog.get_logger()
@@ -69,7 +70,11 @@ class Recursos:
     sesion_plataforma: async_sessionmaker[AsyncSession]
     jwt_validator: JWTValidator
     keycloak: VendiKeycloakAdmin
-    keycloak_aprovisionamiento: VendiKeycloakAprovisionamiento
+    # El aprovisionamiento NO es un cliente de Keycloak: es el cliente HTTP del
+    # servicio `provisioner` (cierre de D-02, ADR-027). En este proceso no hay
+    # credencial con `manage-realm`; las Organizations se crean y se borran al
+    # otro lado de `provisioner_url`.
+    aprovisionamiento: ClienteAprovisionamiento
     audit_service: AuditService
     redis: RedisCache | None = None
     tareas_en_vuelo: set[asyncio.Task] = field(default_factory=set)
@@ -144,12 +149,7 @@ def construir_recursos(settings: Settings) -> Recursos:
             client_secret=settings.keycloak_backend_client_secret,
             realm=settings.keycloak_realm,
         ),
-        keycloak_aprovisionamiento=VendiKeycloakAprovisionamiento(
-            server_url=settings.keycloak_url_normalizada,
-            client_id=settings.keycloak_provisioning_client_id,
-            client_secret=settings.keycloak_provisioning_client_secret,
-            realm=settings.keycloak_realm,
-        ),
+        aprovisionamiento=ClienteAprovisionamiento(settings.provisioner_url),
         # La auditoría va SIEMPRE con la fábrica de plataforma: abre su propia
         # sesión fuera de la transacción del llamante (si fuera dentro, un
         # rollback de negocio borraría la prueba de que se intentó la
@@ -222,6 +222,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if recursos.redis is not None:
             with contextlib.suppress(Exception):
                 await recursos.redis.close()
+        with contextlib.suppress(Exception):
+            await recursos.aprovisionamiento.aclose()
         await dispose_engine(recursos.engine_tenant)
         await dispose_engine(recursos.engine_plataforma)
         logger.info("api_detenida")

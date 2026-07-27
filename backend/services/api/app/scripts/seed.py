@@ -1,42 +1,43 @@
 """Siembra de desarrollo, idempotente. La ejecuta `scripts/seed.sh`.
 
-Qué deja montado, en este orden:
+Qué deja montado, y DÓNDE ocurre cada cosa desde el cierre de D-02 (ADR-027):
 
-1. Los **permisos** como roles de realm (`PERMISSION_CATALOG` de
-   `vendi_core.auth.policies`).
-2. Los **roles de negocio** (`dueno`, `cajero`, `almacenista`) como roles de
-   realm **y** como grupos homónimos, donde el grupo mapea {su rol} ∪ {sus
-   permisos}. Que el rol sea de realm es lo que hace que viaje en
-   `realm_access.roles` y que `has_role()` funcione (deuda D-08, ADR-015).
-3. El **administrador de plataforma** `admin@vendi.co`, con `platform:admin`
-   directo y sin pertenecer a ninguna organización.
-4. El **negocio demo** «Tienda Don Carlos» con su Organization (alias =
-   tenant_id).
-5. El **dueño** `dueno@demo.vendi.co`, en el grupo `dueno` y miembro de la
-   organización del negocio demo.
+1. Los **permisos** como roles de realm y los **roles de negocio** como roles
+   de realm y grupos homónimos con sus mapeos → los hace el **provisioner**
+   (`POST /interno/v1/semilla/realm`). Necesita `manage-realm`, que ya no vive
+   en este proceso.
+2. El **administrador de plataforma** `admin@vendi.co`, con `platform:admin`
+   → también el provisioner (`/semilla/admin-plataforma`).
+3. El **negocio demo** «Tienda Don Carlos» → AQUÍ, con `TenantService` contra
+   la base de datos; la Organization la crea el provisioner por HTTP interno a
+   través del mismo cliente que usa la API.
+4. El **dueño** `dueno@demo.vendi.co`, en el grupo `dueno` y miembro de la
+   organización del negocio demo → el provisioner (`/semilla/dueno-demo`),
+   que resuelve la organización por alias y falla con 404 si no existe.
+
+Este script se sigue ejecutando DENTRO del contenedor de la API (así usa la
+misma configuración y los mismos DSN que producción), pero ya no instancia el
+cliente de Keycloak de aprovisionamiento: orquesta llamadas al provisioner.
+La credencial con `manage-realm` no pasa por aquí ni de camino.
 
 ## Idempotente de verdad
 
 Correrlo tres veces seguidas tiene que dar el mismo estado y ninguna operación
-destructiva. Cada paso comprueba antes de crear, y el negocio demo se busca por
-nombre entre los no eliminados. Si alguien borra el negocio demo a mano, la
-siguiente pasada lo vuelve a crear **con un id nuevo** — y eso es correcto: el
-id anterior fue alias de una Organization y no se reutiliza jamás.
+destructiva. Cada paso comprueba antes de crear (los endpoints de siembra del
+provisioner también), y el negocio demo se busca por nombre entre los no
+eliminados. Si alguien borra el negocio demo a mano, la siguiente pasada lo
+vuelve a crear **con un id nuevo** — y eso es correcto: el id anterior fue
+alias de una Organization y no se reutiliza jamás.
 
-## Por qué el alta del negocio NO va por HTTP
+## Por qué el alta del negocio NO va por HTTP contra la API
 
 El plan pedía crear el negocio demo «vía la API» para ejercer el mismo camino de
 aprovisionamiento que producción. Se ejerce el mismo camino —se llama a
 `TenantService`, el mismo objeto que usa el router— pero en proceso, no por
 HTTP. Motivo: por HTTP haría falta un token con `platform:admin`, y el único
 modo de obtenerlo sin navegador es el grant de contraseña contra un cliente
-público, que es exactamente la deuda D-01 que la Etapa 5 tiene que cerrar. Una
-siembra que dependa de ROPC bloquearía apagarlo.
-
-Lo que se pierde con esta decisión, dicho en voz alta: la siembra no ejercita la
-cadena de middlewares ni la comprobación de `platform:admin`. Eso lo ejercitan
-`tests/api/test_tenants_crud.py` y `tests/api/test_aislamiento_end_to_end.py`,
-que son mejores sitios para probarlo que un script de datos de ejemplo.
+público, que es exactamente la deuda D-01 que la Etapa 5 cerró. Una siembra que
+dependa de ROPC impediría mantenerlo apagado.
 
 ## Las contraseñas vienen del entorno
 
@@ -49,7 +50,6 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-import uuid
 
 import structlog
 from sqlalchemy import select
@@ -58,16 +58,10 @@ from app.modules.tenants.models import Tenant
 from app.modules.tenants.service import TenantService
 from app.settings import cargar_settings
 from vendi_core.audit.service import AuditService
-from vendi_core.auth.keycloak_admin import VendiKeycloakAprovisionamiento
-from vendi_core.auth.policies import (
-    PERM_PLATFORM_ADMIN,
-    PERMISSION_CATALOG,
-    ROLES_DE_NEGOCIO,
-    roles_de_realm_del_grupo,
-)
 from vendi_core.db.engine import create_engine, dispose_engine
 from vendi_core.db.session import create_platform_session_factory
 from vendi_core.logging.setup import setup_logging
+from vendi_core.provisioning.cliente import ClienteAprovisionamiento
 
 log = structlog.get_logger("vendi.seed")
 
@@ -85,55 +79,6 @@ def _clave(variable: str) -> str:
             "Ponla en el .env de la raíz."
         )
     return valor
-
-
-async def sembrar_realm(kc: VendiKeycloakAprovisionamiento) -> None:
-    """Permisos (roles de realm) y roles de negocio (grupos), idempotentes."""
-    for permiso, recurso in PERMISSION_CATALOG:
-        await kc.ensure_realm_role(permiso, description=f"Permiso de Vendi sobre {recurso}")
-    log.info("permisos_sembrados", cuantos=len(PERMISSION_CATALOG))
-
-    # Los roles de negocio son ROLES DE REALM (restricción global del plan), y
-    # por eso se crean aquí antes que los grupos: sin el rol creado,
-    # `set_group_realm_roles` no tendría qué mapear y `realm_access.roles` no
-    # llevaría `dueno` — que era exactamente la deuda D-08.
-    for rol in ROLES_DE_NEGOCIO:
-        await kc.ensure_realm_role(rol, description=f"Rol de negocio de Vendi: {rol}")
-
-    for rol in ROLES_DE_NEGOCIO:
-        group_id = await kc.ensure_group(rol, description=f"Rol de negocio de Vendi: {rol}")
-        # `set_group_realm_roles` hace diff: quita lo que sobra. Es lo correcto
-        # aquí — el grupo es la definición del rol y `PERMISOS_POR_ROL` es su
-        # fuente de verdad al sembrar. El propio rol de negocio entra en el
-        # mapeo (ver `roles_de_realm_del_grupo`).
-        await kc.set_group_realm_roles(group_id, roles_de_realm_del_grupo(rol))
-    log.info("roles_de_negocio_sembrados", roles=list(ROLES_DE_NEGOCIO))
-
-
-async def sembrar_admin_de_plataforma(kc: VendiKeycloakAprovisionamiento, password: str) -> str:
-    existente = await kc.find_user_by_username(USUARIO_ADMIN)
-    if existente:
-        user_id = str(existente["id"])
-        log.info("admin_de_plataforma_ya_existe", user_id=user_id)
-    else:
-        user_id = await kc.create_user(
-            username=USUARIO_ADMIN,
-            email=USUARIO_ADMIN,
-            # Obligatorios: sin ellos el perfil declarativo del realm marca
-            # VERIFY_PROFILE y el usuario no puede autenticarse — el error que
-            # sale es «Account is not fully set up» y no menciona el perfil.
-            first_name="Admin",
-            last_name="Plataforma",
-            password=password,
-            email_verified=True,
-        )
-        log.info("admin_de_plataforma_creado", user_id=user_id)
-
-    # No pertenece a ninguna organización, a propósito: es empleado de Vendi, no
-    # dueño de un negocio. Su token no traerá claim `organization` y por eso solo
-    # puede entrar por `/api/v1/platform/*`.
-    await kc.add_user_realm_roles(user_id, [PERM_PLATFORM_ADMIN])
-    return user_id
 
 
 async def sembrar_negocio_demo(servicio: TenantService, session) -> Tenant:  # noqa: ANN001
@@ -154,47 +99,6 @@ async def sembrar_negocio_demo(servicio: TenantService, session) -> Tenant:  # n
     return tenant
 
 
-async def sembrar_dueno(
-    kc: VendiKeycloakAprovisionamiento,
-    tenant_id: uuid.UUID,
-    org_id: str | None,
-    password: str,
-) -> str:
-    existente = await kc.find_user_by_username(USUARIO_DUENO)
-    if existente:
-        user_id = str(existente["id"])
-        log.info("dueno_demo_ya_existe", user_id=user_id)
-    else:
-        user_id = await kc.create_user(
-            username=USUARIO_DUENO,
-            email=USUARIO_DUENO,
-            first_name="Carlos",
-            last_name="Demo",
-            password=password,
-            email_verified=True,
-            # SIN required actions: cualquiera pendiente (incluida
-            # `webauthn-register-passwordless`) hace fallar el grant de
-            # contraseña con «Account is not fully set up», y los tests de
-            # integración y esta misma siembra dejarían de funcionar. La passkey
-            # se registra desde la consola de cuenta.
-        )
-        log.info("dueno_demo_creado", user_id=user_id)
-
-    await kc.set_user_groups(user_id, ["dueno"])
-
-    if org_id is None:
-        org = await kc.get_organization_by_alias(tenant_id)
-        org_id = org["id"] if org else None
-    if org_id is None:
-        raise SystemExit(
-            f"El negocio demo no tiene organización en Keycloak (alias {tenant_id}). "
-            "Ejecuta scripts/reconcile-keycloak.sh."
-        )
-    await kc.add_member(org_id, user_id)
-    log.info("dueno_demo_en_la_organizacion", user_id=user_id, kc_org_id=org_id)
-    return user_id
-
-
 async def main() -> int:
     settings = cargar_settings()
     setup_logging(level=settings.log_level, json_output=False)
@@ -202,35 +106,36 @@ async def main() -> int:
     clave_admin = _clave("SEED_ADMIN_PASSWORD")
     clave_dueno = _clave("SEED_DUENO_PASSWORD")
 
-    kc = VendiKeycloakAprovisionamiento(
-        server_url=settings.keycloak_url_normalizada,
-        client_id=settings.keycloak_provisioning_client_id,
-        client_secret=settings.keycloak_provisioning_client_secret,
-        realm=settings.keycloak_realm,
-    )
-
-    await sembrar_realm(kc)
-    await sembrar_admin_de_plataforma(kc, clave_admin)
-
-    # El aprovisionamiento va con la fábrica de PLATAFORMA. Con la de la API
-    # (`vendi_app`) esto fallaría con un `permission denied` opaco: `tenants`
-    # está revocada para ese rol y el evento `tenant.creado` viaja con
-    # `tenant_id NULL`, que la policy de INSERT del outbox rechaza.
-    engine = create_engine(settings.platform_database_url)
-    fabrica = create_platform_session_factory(engine)
+    provisioner = ClienteAprovisionamiento(settings.provisioner_url)
     try:
-        async with fabrica() as session:
-            servicio = TenantService(
-                session=session,
-                keycloak=kc,
-                audit=AuditService(session_factory=fabrica, service_name="seed"),
-            )
-            tenant = await sembrar_negocio_demo(servicio, session)
-            tenant_id, org_id = tenant.id, tenant.kc_org_id
-    finally:
-        await dispose_engine(engine)
+        resumen_realm = await provisioner.sembrar_realm()
+        log.info("realm_sembrado", **resumen_realm)
 
-    await sembrar_dueno(kc, tenant_id, org_id, clave_dueno)
+        admin = await provisioner.sembrar_admin_de_plataforma(clave_admin)
+        log.info("admin_de_plataforma_listo", user_id=admin["user_id"], creado=admin["creado"])
+
+        # El aprovisionamiento va con la fábrica de PLATAFORMA. Con la de la API
+        # (`vendi_app`) esto fallaría con un `permission denied` opaco: `tenants`
+        # está revocada para ese rol y el evento `tenant.creado` viaja con
+        # `tenant_id NULL`, que la policy de INSERT del outbox rechaza.
+        engine = create_engine(settings.platform_database_url)
+        fabrica = create_platform_session_factory(engine)
+        try:
+            async with fabrica() as session:
+                servicio = TenantService(
+                    session=session,
+                    aprovisionamiento=provisioner,
+                    audit=AuditService(session_factory=fabrica, service_name="seed"),
+                )
+                tenant = await sembrar_negocio_demo(servicio, session)
+                tenant_id = tenant.id
+        finally:
+            await dispose_engine(engine)
+
+        dueno = await provisioner.sembrar_dueno_demo(tenant_id, clave_dueno)
+        log.info("dueno_demo_listo", user_id=dueno["user_id"], creado=dueno["creado"])
+    finally:
+        await provisioner.aclose()
 
     log.info(
         "siembra_completa",

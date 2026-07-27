@@ -35,10 +35,8 @@ import uuid
 
 import pytest
 
-from vendi_core.auth.keycloak_admin import (
-    VendiKeycloakAdmin,
-    VendiKeycloakAprovisionamiento,
-)
+from vendi_core.auth.keycloak_admin import VendiKeycloakAdmin
+from vendi_core.auth.keycloak_aprovisionamiento import VendiKeycloakAprovisionamiento
 from vendi_core.errors.domain import ConflictError, ExternalServiceError, PermissionDeniedError
 
 pytestmark = pytest.mark.integration

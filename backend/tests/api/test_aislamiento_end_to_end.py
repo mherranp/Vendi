@@ -31,7 +31,7 @@ pytestmark = pytest.mark.integration
 @pytest.fixture
 def dos_negocios(app_con_base):
     """Siembra A y B y devuelve el cliente con los dos ids."""
-    cliente, validador, keycloak = app_con_base
+    cliente, validador, aprovisionamiento = app_con_base
     validador.registrar("tok-admin", usuario_de_plataforma())
     cabeceras = {"Authorization": "Bearer tok-admin"}
 

@@ -10,8 +10,10 @@ COPY pyproject.toml uv.lock .python-version ./
 COPY libs/ libs/
 COPY services/api/pyproject.toml services/api/
 COPY services/worker/pyproject.toml services/worker/
+COPY services/provisioner/pyproject.toml services/provisioner/
 COPY services/api/app/ services/api/app/
 COPY services/worker/worker/ services/worker/worker/
+COPY services/provisioner/provisioner/ services/provisioner/provisioner/
 
 RUN uv sync --frozen --no-dev
 

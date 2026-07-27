@@ -1,15 +1,17 @@
 [project]
 # Raíz del workspace uv del backend de Vendi. No es un paquete instalable:
-# solo agrupa a los miembros (vendi-core, services/api, services/worker) para
-# que `uv sync` resuelva un único lockfile compartido por todos.
+# solo agrupa a los miembros (vendi-core, services/api, services/worker,
+# services/provisioner) para que `uv sync` resuelva un único lockfile
+# compartido por todos.
 name = "vendi-backend"
 version = "0.1.0"
-description = "Workspace del backend de Vendi (monolito modular + worker sobre vendi-core)"
+description = "Workspace del backend de Vendi (monolito modular + worker + provisioner sobre vendi-core)"
 requires-python = ">=3.12"
 dependencies = [
     "vendi-core",
     "vendi-api",
     "vendi-worker",
+    "vendi-provisioner",
 ]
 
 [tool.uv]
@@ -23,6 +25,7 @@ members = ["libs/*", "services/*"]
 vendi-core = { workspace = true }
 vendi-api = { workspace = true }
 vendi-worker = { workspace = true }
+vendi-provisioner = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -46,7 +49,7 @@ ignore = ["E501", "B008"]
 "__init__.py" = ["F401"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["vendi_core", "app", "worker"]
+known-first-party = ["vendi_core", "app", "worker", "provisioner"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

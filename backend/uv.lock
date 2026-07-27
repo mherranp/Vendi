@@ -12,6 +12,7 @@ members = [
     "vendi-api",
     "vendi-backend",
     "vendi-core",
+    "vendi-provisioner",
     "vendi-worker",
 ]
 
@@ -2325,6 +2326,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "vendi-api" },
     { name = "vendi-core" },
+    { name = "vendi-provisioner" },
     { name = "vendi-worker" },
 ]
 
@@ -2342,6 +2344,7 @@ dev = [
 requires-dist = [
     { name = "vendi-api", editable = "services/api" },
     { name = "vendi-core", editable = "libs/vendi-core" },
+    { name = "vendi-provisioner", editable = "services/provisioner" },
     { name = "vendi-worker", editable = "services/worker" },
 ]
 
@@ -2458,6 +2461,32 @@ requires-dist = [
     { name = "vendi-core", extras = ["auth", "cache", "mail", "messaging", "storage", "tracing"], marker = "extra == 'all'", editable = "libs/vendi-core" },
 ]
 provides-extras = ["auth", "cache", "messaging", "storage", "mail", "tracing", "all", "dev"]
+
+[[package]]
+name = "vendi-provisioner"
+version = "0.1.0"
+source = { editable = "services/provisioner" }
+dependencies = [
+    { name = "uvicorn", extra = ["standard"] },
+    { name = "vendi-core", extra = ["all"] },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "httpx" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.30.0" },
+    { name = "vendi-core", extras = ["all"], editable = "libs/vendi-core" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "vendi-worker"

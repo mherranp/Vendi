@@ -28,6 +28,13 @@ verifica un test (`test_tenants_provisioning.py`).
                              ▼
                           ROLLBACK  (no queda negocio sin organización)
 
+`create_organization` ya no habla con Keycloak: habla con el servicio
+`provisioner` por HTTP interno (cierre de D-02, ADR-027), y es el provisioner
+quien llama a Keycloak con la credencial que ya no vive en este proceso. Para
+la compensación el cambio es neutro: un provisioner caído produce el mismo
+`ExternalServiceError` tipado que producía un Keycloak caído, y el ROLLBACK se
+ejecuta igual.
+
 El camino inverso —organización creada y `COMMIT` fallido— deja una Organization
 huérfana en Keycloak. No se compensa en caliente a propósito: un `DELETE` contra
 Keycloak dentro del manejador de un fallo de base de datos es otra operación de
@@ -70,11 +77,11 @@ from app.modules.tenants.models import EstadoTenant, Tenant
 from vendi_core.audit.events import AuditEvent, AuditStatus
 from vendi_core.audit.service import AuditService
 from vendi_core.auth.context import UserContext
-from vendi_core.auth.keycloak_admin import VendiKeycloakAprovisionamiento
 from vendi_core.cache.redis import RedisCache
 from vendi_core.db.session import es_sesion_de_plataforma
 from vendi_core.errors.domain import NotFoundError
 from vendi_core.events.service import DomainEventService
+from vendi_core.provisioning.cliente import PuertoAprovisionamiento
 from vendi_core.tracing.context import get_correlation_id
 
 logger = structlog.get_logger()
@@ -97,7 +104,7 @@ class TenantService:
     def __init__(
         self,
         session: AsyncSession,
-        keycloak: VendiKeycloakAprovisionamiento,
+        aprovisionamiento: PuertoAprovisionamiento,
         audit: AuditService,
         cache: RedisCache | None = None,
         cache_ttl: int = 60,
@@ -112,7 +119,7 @@ class TenantService:
                 "menciona ninguna de las dos causas."
             )
         self._session = session
-        self._kc = keycloak
+        self._aprovisionamiento = aprovisionamiento
         self._audit = audit
         self._cache = cache
         self._cache_ttl = cache_ttl
@@ -204,7 +211,7 @@ class TenantService:
         await self._session.flush()
 
         try:
-            tenant.kc_org_id = await self._kc.create_organization(tenant.id, nombre)
+            tenant.kc_org_id = await self._aprovisionamiento.create_organization(tenant.id, nombre)
         except Exception:
             await self._session.rollback()
             await self._auditar(
@@ -308,7 +315,7 @@ class TenantService:
             # borrada y negocio vivo, es decir, un negocio cuyos usuarios dejan
             # de poder entrar sin que nadie lo haya dado de baja.
             try:
-                await self._kc.delete_organization(org_id)
+                await self._aprovisionamiento.delete_organization(org_id)
             except Exception as exc:  # noqa: BLE001
                 logger.error(
                     "no_se_pudo_borrar_la_organizacion",

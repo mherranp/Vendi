@@ -17,9 +17,11 @@ unitario:
   python-jose sabe verificar una firma RS256 (eso ya lo prueban
   `test_jwt_validator.py` y `test_keycloak_admin_orgs.py` contra el Keycloak del
   compose).
-- el **cliente de Keycloak de aprovisionamiento**, sustituido por un doble con
-  memoria. Los tests que sí deben tocar el Keycloak real están marcados
-  `integration` y van por `https://accounts.vendi.co`.
+- el **cliente del provisioner**, sustituido por un doble con memoria. Los
+  tests que sí deben tocar el camino real de aprovisionamiento están marcados
+  `integration` y van contra el `provisioner` del compose por
+  `http://127.0.0.1:8010` (el puerto que el override de desarrollo publica
+  solo en loopback).
 
 La base de datos NO se dobla en los tests marcados `integration`: RLS, los
 privilegios por rol y la policy del outbox solo existen en PostgreSQL, y un
@@ -69,11 +71,11 @@ class ValidadorFalso:
         return resultado
 
 
-class KeycloakFalso:
-    """Doble con memoria de `VendiKeycloakAprovisionamiento`.
+class AprovisionamientoFalso:
+    """Doble con memoria del `PuertoAprovisionamiento` (el provisioner).
 
     Guarda `alias -> (org_id, name, description)` para que los tests puedan
-    afirmar qué se le pidió a Keycloak, y expone `fallar_al_crear` para
+    afirmar qué se le pidió al provisioner, y expone `fallar_al_crear` para
     provocar la compensación del alta sin tener que apagar un contenedor.
     """
 
@@ -85,12 +87,12 @@ class KeycloakFalso:
 
     async def create_organization(self, tenant_id: uuid.UUID, name: str) -> str:
         if self.fallar_al_crear:
-            raise ExternalServiceError("Keycloak no respondió correctamente (create_organization)")
+            raise ExternalServiceError("El servicio de aprovisionamiento no responde")
         alias = str(tenant_id)
         if alias in self.organizaciones:
             raise ExternalServiceError("alias duplicado")
         org_id = f"org-{uuid.uuid4()}"
-        # Réplica exacta de lo que manda el cliente real: `name` es el alias
+        # Réplica exacta de lo que deja el camino real: `name` es el alias
         # (Keycloak exige nombre único por realm) y el nombre legible va en
         # `description`.
         self.organizaciones[alias] = {"id": org_id, "name": alias, "description": name[:255]}
@@ -98,7 +100,7 @@ class KeycloakFalso:
 
     async def delete_organization(self, org_id: str) -> None:
         if self.fallar_al_borrar:
-            raise ExternalServiceError("Keycloak no respondió correctamente (delete_organization)")
+            raise ExternalServiceError("El servicio de aprovisionamiento no responde")
         self.borradas.append(org_id)
         for alias, org in list(self.organizaciones.items()):
             if org["id"] == org_id:
@@ -153,6 +155,8 @@ def settings_de_prueba(**anulaciones) -> Settings:
         "platform_database_url": "postgresql+asyncpg://nadie:nada@127.0.0.1:1/inexistente",
         "redis_url": "",
         "keycloak_url": "http://keycloak-de-prueba:8080",
+        "keycloak_backend_client_secret": "secreto-de-prueba",
+        "provisioner_url": "http://provisioner-de-prueba:8000",
         "metrics_token": TOKEN_METRICAS,
         "log_json": False,
         "log_level": "WARNING",
@@ -169,12 +173,12 @@ def settings_de_prueba(**anulaciones) -> Settings:
     return Settings(**base)  # type: ignore[arg-type]
 
 
-def app_de_prueba(settings: Settings | None = None) -> tuple[FastAPI, ValidadorFalso, KeycloakFalso]:
+def app_de_prueba(settings: Settings | None = None) -> tuple[FastAPI, ValidadorFalso, AprovisionamientoFalso]:
     """La aplicación real con las dos fronteras externas dobladas."""
     aplicacion = crear_app(settings or settings_de_prueba())
     validador = ValidadorFalso()
-    keycloak = KeycloakFalso()
+    aprovisionamiento = AprovisionamientoFalso()
     aplicacion.state.jwt_validator = validador
     aplicacion.state.recursos.jwt_validator = validador
-    aplicacion.state.recursos.keycloak_aprovisionamiento = keycloak
-    return aplicacion, validador, keycloak
+    aplicacion.state.recursos.aprovisionamiento = aprovisionamiento
+    return aplicacion, validador, aprovisionamiento

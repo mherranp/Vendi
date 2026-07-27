@@ -33,7 +33,7 @@ def _crear(cliente, cabeceras, nombre: str) -> dict:
 
 
 def test_crear_devuelve_201_con_id_nombre_y_estado(app_con_base):
-    cliente, validador, keycloak = app_con_base
+    cliente, validador, aprovisionamiento = app_con_base
     cabeceras = _admin(cliente, validador)
 
     cuerpo = _crear(cliente, cabeceras, PREFIJO_PRUEBA + "Tienda Don Carlos")
@@ -51,13 +51,13 @@ def test_el_alta_crea_la_organizacion_con_alias_igual_al_tenant_id(app_con_base)
     ninguna consulta —ni a Keycloak ni a la base—. Si el alias dejara de ser el
     id, la resolución del tenant pasaría a costar un lookup por request.
     """
-    cliente, validador, keycloak = app_con_base
+    cliente, validador, aprovisionamiento = app_con_base
     cabeceras = _admin(cliente, validador)
 
     cuerpo = _crear(cliente, cabeceras, PREFIJO_PRUEBA + "Panadería La Espiga")
 
-    assert cuerpo["id"] in keycloak.organizaciones
-    org = keycloak.organizaciones[cuerpo["id"]]
+    assert cuerpo["id"] in aprovisionamiento.organizaciones
+    org = aprovisionamiento.organizaciones[cuerpo["id"]]
     assert org["id"] == cuerpo["kc_org_id"]
     # El `name` de la Organization es el UUID y NO el nombre comercial: Keycloak
     # exige nombre único por realm (medido: 409). Ver `create_organization`.
@@ -151,19 +151,19 @@ def test_renombrar_no_toca_keycloak(app_con_base):
 
     Es la consecuencia útil de que el `name` de la Organization sea el UUID.
     """
-    cliente, validador, keycloak = app_con_base
+    cliente, validador, aprovisionamiento = app_con_base
     cabeceras = _admin(cliente, validador)
     creado = _crear(cliente, cabeceras, PREFIJO_PRUEBA + "Antes")
-    antes = dict(keycloak.organizaciones[creado["id"]])
+    antes = dict(aprovisionamiento.organizaciones[creado["id"]])
 
-    keycloak.fallar_al_crear = True  # cualquier llamada de escritura fallaría
+    aprovisionamiento.fallar_al_crear = True  # cualquier llamada de escritura fallaría
     respuesta = cliente.patch(
         f"/api/v1/platform/tenants/{creado['id']}",
         json={"nombre": PREFIJO_PRUEBA + "Despues"},
         headers=cabeceras,
     )
     assert respuesta.status_code == 200
-    assert keycloak.organizaciones[creado["id"]] == antes
+    assert aprovisionamiento.organizaciones[creado["id"]] == antes
 
 
 def test_suspender(app_con_base):
@@ -194,7 +194,7 @@ def test_no_se_puede_eliminar_por_patch(app_con_base):
 
 
 def test_eliminar_es_borrado_logico_y_borra_la_organizacion(app_con_base):
-    cliente, validador, keycloak = app_con_base
+    cliente, validador, aprovisionamiento = app_con_base
     cabeceras = _admin(cliente, validador)
     creado = _crear(cliente, cabeceras, PREFIJO_PRUEBA + "Baja")
     org_id = creado["kc_org_id"]
@@ -210,8 +210,8 @@ def test_eliminar_es_borrado_logico_y_borra_la_organizacion(app_con_base):
     assert creado["id"] in [t["id"] for t in con_eliminados["items"]]
     # Y la organización de Keycloak se borra: deshabilitarla no impide el login
     # (medido en el spike) y solo dejaría basura en el realm.
-    assert org_id in keycloak.borradas
-    assert creado["id"] not in keycloak.organizaciones
+    assert org_id in aprovisionamiento.borradas
+    assert creado["id"] not in aprovisionamiento.organizaciones
 
 
 def test_eliminar_dos_veces_da_404_la_segunda(app_con_base):

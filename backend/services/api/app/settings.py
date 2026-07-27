@@ -51,14 +51,23 @@ class Settings(BaseSettings):
     # --- Dependencias ------------------------------------------------------
     redis_url: str = Field(description="DSN de Redis. Cache del estado de los negocios.")
     rabbitmq_url: str = ""
+    # URL interna del servicio `provisioner`. La credencial de
+    # `vendi-provisioning` (manage-realm) NO existe en este proceso a propósito
+    # — es el cierre de D-02 (ADR-027): vive solo en el provisioner, y las
+    # operaciones que la necesitan (alta/baja de negocios, siembra) se piden
+    # por HTTP interno. No hay campo para ese secreto ni con defecto vacío:
+    # que el nombre de la variable no exista en el esquema es la garantía de
+    # que ningún despliegue se la entrega a la API.
+    provisioner_url: str = Field(description="URL interna del servicio provisioner (alta/baja de negocios y siembra).")
 
     # --- Keycloak ----------------------------------------------------------
     keycloak_url: str = Field(description="URL base de Keycloak, sin barra final.")
     keycloak_realm: str = "vendi-co"
     keycloak_backend_client_id: str = "vendi-backend"
-    keycloak_backend_client_secret: str = ""
-    keycloak_provisioning_client_id: str = "vendi-provisioning"
-    keycloak_provisioning_client_secret: str = ""
+    # Obligatorio, sin defecto: la deuda conocida era que el defecto `""` dejaba
+    # arrancar la API sin credencial y el fallo aparecía tarde, en la primera
+    # llamada a Keycloak. Sin secreto el proceso no tiene nada que hacer vivo.
+    keycloak_backend_client_secret: str = Field(description="Secreto del cliente `vendi-backend` (solo manage-users).")
     # Audiencia que la API exige en el claim `aud`. Vacío = NO se valida, y eso
     # es una línea base peor de lo que parece: sin esta comprobación, cualquier
     # token legítimamente firmado por el realm `vendi-co` sirve contra la API,

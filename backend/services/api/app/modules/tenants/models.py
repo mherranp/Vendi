@@ -76,8 +76,8 @@ class Tenant(Base, TimestampMixin):
     #: Nombre legible del negocio. **No es único**: dos "Tienda Don Carlos" en
     #: la misma región son dos negocios distintos y ambos tienen derecho a
     #: existir. La identidad es el `id`. Ver la nota de
-    #: `VendiKeycloakAprovisionamiento.create_organization` sobre por qué el
-    #: `name` de la Organization NO es este nombre.
+    #: `vendi_core.auth.keycloak_aprovisionamiento.VendiKeycloakAprovisionamiento.create_organization`
+    #: sobre por qué el `name` de la Organization NO es este nombre.
     nombre: Mapped[str] = mapped_column(String(120), nullable=False)
     estado: Mapped[str] = mapped_column(
         String(16),

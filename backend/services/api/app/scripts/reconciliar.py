@@ -38,22 +38,19 @@ from app.modules.tenants.models import EstadoTenant, Tenant
 from app.modules.tenants.service import TenantService
 from app.settings import cargar_settings
 from vendi_core.audit.service import AuditService
-from vendi_core.auth.keycloak_admin import VendiKeycloakAprovisionamiento
 from vendi_core.db.engine import create_engine, dispose_engine
 from vendi_core.db.session import create_platform_session_factory
 from vendi_core.logging.setup import setup_logging
+from vendi_core.provisioning.cliente import ClienteAprovisionamiento
 
 log = structlog.get_logger("vendi.reconcile")
 
 
 async def reconciliar(borrar_huerfanas: bool = False) -> int:
     settings = cargar_settings()
-    kc = VendiKeycloakAprovisionamiento(
-        server_url=settings.keycloak_url_normalizada,
-        client_id=settings.keycloak_provisioning_client_id,
-        client_secret=settings.keycloak_provisioning_client_secret,
-        realm=settings.keycloak_realm,
-    )
+    # Las Organizations se tocan a través del provisioner (cierre de D-02): ni
+    # este script ni el proceso de la API tienen la credencial con manage-realm.
+    kc = ClienteAprovisionamiento(settings.provisioner_url)
 
     engine = create_engine(settings.platform_database_url)
     fabrica = create_platform_session_factory(engine)
@@ -67,7 +64,7 @@ async def reconciliar(borrar_huerfanas: bool = False) -> int:
             # en el constructor y no a mitad de la reconciliación.
             TenantService(
                 session=session,
-                keycloak=kc,
+                aprovisionamiento=kc,
                 audit=AuditService(session_factory=fabrica, service_name="reconcile"),
             )
             vivos = (
@@ -119,6 +116,7 @@ async def reconciliar(borrar_huerfanas: bool = False) -> int:
             primero += pagina
     finally:
         await dispose_engine(engine)
+        await kc.aclose()
 
     if huerfanas:
         if borrar_huerfanas:

@@ -1,8 +1,6 @@
-# Imagen de la API de Vendi.
-#
-# El contexto de build es `backend/` (la raíz del workspace uv), no
-# `services/api/`: uv necesita el pyproject y el lock de la raíz junto con
-# TODOS los miembros del workspace para resolver con `--frozen`.
+# Imagen del provisioner de Vendi. Mismo contexto de build que la API y el
+# worker (`backend/`, la raíz del workspace uv) y las mismas razones: un único
+# lockfile compartido por todos los miembros.
 FROM python:3.12-slim AS base
 
 RUN pip install --no-cache-dir uv
@@ -20,23 +18,14 @@ COPY services/provisioner/pyproject.toml services/provisioner/
 COPY services/api/app/ services/api/app/
 COPY services/worker/worker/ services/worker/worker/
 COPY services/provisioner/provisioner/ services/provisioner/provisioner/
-# Alembic: `scripts/migrate.sh` ejecuta `alembic upgrade head` dentro de esta
-# imagen desde /src/services/api, así que el .ini y las revisiones tienen que
-# viajar en ella. Sin esto, migrate.sh falla con "No config file 'alembic.ini'".
-COPY services/api/alembic.ini services/api/
-COPY services/api/alembic/ services/api/alembic/
 
 RUN uv sync --frozen --no-dev
 
 # --- Usuario sin privilegios -------------------------------------------------
-# Los contenedores corrían como root. Ni la API ni el worker necesitan root
-# para nada: no abren puertos por debajo de 1024 (la API escucha en 8000) ni
-# escriben fuera de /src y /tmp. Con root, cualquier ejecución de código
-# arbitraria dentro del contenedor empieza con todos los privilegios del
-# proceso, y el volumen o el montaje que se añada mañana se escribe como root.
-#
-# El UID/GID se fija (10001) para que un futuro volumen tenga dueño estable
-# entre reconstrucciones de la imagen.
+# Mismo patrón que la API y el worker: este proceso no necesita root para nada
+# (escucha en 8000, no escribe fuera de /src y /tmp), y menos aún ESTE proceso,
+# que es el que custodia la credencial con manage-realm. El UID/GID se fija
+# (10001) para que un futuro volumen tenga dueño estable entre reconstrucciones.
 #
 # El HOME sí se crea: `uv run` inicializa su caché en $HOME/.cache/uv y aborta
 # con «Failed to initialize cache ... Permission denied» si no puede escribir
@@ -47,9 +36,12 @@ RUN groupadd --gid 10001 vendi \
 ENV UV_CACHE_DIR=/home/vendi/.cache/uv
 USER vendi
 
-WORKDIR /src/services/api
+WORKDIR /src/services/provisioner
 
+# El EXPOSE es documentación: el compose NO publica este puerto. Solo se
+# alcanza desde la red interna (la API) y, en desarrollo, desde loopback por
+# el override, para los tests de integración.
 EXPOSE 8000
 
 CMD ["uv", "run", "--project", "/src", "--no-sync", \
-     "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+     "uvicorn", "provisioner.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -18,7 +18,7 @@ import uuid
 
 import pytest
 import pytest_asyncio
-from ayudas import PREFIJO_PRUEBA, KeycloakFalso, app_de_prueba, settings_de_prueba, usuario_de_negocio
+from ayudas import PREFIJO_PRUEBA, AprovisionamientoFalso, app_de_prueba, settings_de_prueba, usuario_de_negocio
 from ayudas import usuario_de_plataforma as _usuario_de_plataforma
 from fastapi.testclient import TestClient
 from sqlalchemy import text
@@ -68,7 +68,7 @@ async def test_el_servicio_rechaza_la_sesion_de_la_api(engines):
     fabrica_de_la_api = create_session_factory(engine_tenant)
     async with fabrica_de_la_api() as sesion:
         with pytest.raises(ErrorDeCableadoDelServicio) as excinfo:
-            TenantService(session=sesion, keycloak=KeycloakFalso(), audit=None)  # type: ignore[arg-type]
+            TenantService(session=sesion, aprovisionamiento=AprovisionamientoFalso(), audit=None)  # type: ignore[arg-type]
     assert "plataforma" in str(excinfo.value).lower()
 
 
@@ -95,7 +95,7 @@ async def test_con_la_sesion_de_plataforma_el_servicio_se_construye(engines):
     async with fabrica() as sesion:
         servicio = TenantService(
             session=sesion,
-            keycloak=KeycloakFalso(),
+            aprovisionamiento=AprovisionamientoFalso(),
             audit=AuditService(session_factory=fabrica, service_name="test"),
         )
     assert servicio is not None
@@ -111,9 +111,9 @@ def test_keycloak_caido_da_error_tipado_y_no_deja_fila(app_con_base):
     el sobre estándar y no un 500 con traza; (b) **no queda fila huérfana**, que
     es lo que la compensación existe para garantizar.
     """
-    cliente, validador, keycloak = app_con_base
+    cliente, validador, aprovisionamiento = app_con_base
     cabeceras = _admin(validador)
-    keycloak.fallar_al_crear = True
+    aprovisionamiento.fallar_al_crear = True
 
     respuesta = cliente.post(
         "/api/v1/platform/tenants",
@@ -140,9 +140,9 @@ async def test_el_alta_fallida_deja_su_rastro_de_auditoria(app_con_base, pg_plat
     Sin esto, el único registro de un intento fallido sería una línea de log que
     la rotación se lleva.
     """
-    cliente, validador, keycloak = app_con_base
+    cliente, validador, aprovisionamiento = app_con_base
     cabeceras = _admin(validador)
-    keycloak.fallar_al_crear = True
+    aprovisionamiento.fallar_al_crear = True
     nombre = PREFIJO_PRUEBA + "Fallido " + uuid.uuid4().hex[:8]
     cliente.post("/api/v1/platform/tenants", json={"nombre": nombre}, headers=cabeceras)
 
@@ -169,11 +169,11 @@ def test_la_baja_sigue_adelante_si_keycloak_no_responde(app_con_base):
 
     Si Keycloak no responde, el negocio ya está dado de baja —que es lo que
     corta el acceso— y la organización huérfana la recoge
-    `reconcile-keycloak.sh`. Al revés sería peor: organización borrada y negocio
+    `reconcile-aprovisionamiento.sh`. Al revés sería peor: organización borrada y negocio
     vivo, es decir, usuarios que dejan de entrar sin que nadie los haya dado de
     baja.
     """
-    cliente, validador, keycloak = app_con_base
+    cliente, validador, aprovisionamiento = app_con_base
     cabeceras = _admin(validador)
     creado = cliente.post(
         "/api/v1/platform/tenants",
@@ -181,7 +181,7 @@ def test_la_baja_sigue_adelante_si_keycloak_no_responde(app_con_base):
         headers=cabeceras,
     ).json()
 
-    keycloak.fallar_al_borrar = True
+    aprovisionamiento.fallar_al_borrar = True
     assert cliente.delete(f"/api/v1/platform/tenants/{creado['id']}", headers=cabeceras).status_code == 204
     assert cliente.get(f"/api/v1/platform/tenants/{creado['id']}", headers=cabeceras).status_code == 404
 
@@ -194,7 +194,7 @@ def test_dar_de_baja_y_recrear_con_el_mismo_nombre_funciona(app_con_base):
     ese mismo UUID (tampoco colisiona, aunque la organización anterior siguiera
     existiendo). Con el nombre comercial en `name`, Keycloak devolvería 409.
     """
-    cliente, validador, keycloak = app_con_base
+    cliente, validador, aprovisionamiento = app_con_base
     cabeceras = _admin(validador)
     nombre = PREFIJO_PRUEBA + "Reencarnado"
 
@@ -233,9 +233,9 @@ def app_con_cache(pg_app_url: str, pg_platform_url: str, limpiar_tenants_de_prue
         redis_url=REDIS_URL,
         tenant_estado_cache_ttl=60,
     )
-    aplicacion, validador, keycloak = app_de_prueba(settings)
+    aplicacion, validador, aprovisionamiento = app_de_prueba(settings)
     with TestClient(aplicacion, raise_server_exceptions=False) as cliente:
-        yield cliente, validador, keycloak
+        yield cliente, validador, aprovisionamiento
 
 
 def test_la_suspension_se_ve_al_instante_pese_al_cache_de_60s(app_con_cache):
@@ -278,9 +278,13 @@ def test_un_id_inexistente_tambien_se_cachea_y_no_martillea_la_base(app_con_cach
     assert cliente.get("/api/v1/tenants/me", headers=propias).status_code == 404
 
 
-# --- 4. Contra el Keycloak real ----------------------------------------------
+# --- 4. Contra el provisioner y el Keycloak reales ----------------------------
 
 KC_URL = os.getenv("VENDI_TEST_KEYCLOAK_URL", "https://accounts.vendi.co")
+# El puerto que el override de desarrollo publica SOLO en loopback. Los tests
+# corren en el anfitrión, así que hablan con el provisioner por ahí; la API le
+# habla por la red interna como `http://provisioner:8000`.
+PROVISIONER_URL = os.getenv("VENDI_TEST_PROVISIONER_URL", "http://127.0.0.1:8010")
 
 
 @pytest.mark.asyncio
@@ -292,11 +296,16 @@ async def test_keycloak_exige_nombre_unico_de_organizacion(exigir_stack_local):
     de quién es el certificado ANTES de transmitir el `client_secret`:
     `vendi.co` es un dominio registrado por un tercero.
 
+    Este test ejerce el cliente de Keycloak que usa el PROVISIONER, desde el
+    anfitrión y con el secreto leído del `.env`: es la única forma de medir el
+    comportamiento del IdP sin pasar por el servicio. Lo que la API hace con
+    ese comportamiento lo cubre el test siguiente, ya por HTTP.
+
     Si esto empezara a pasar (es decir, si Keycloak dejara de exigir nombre
     único), el desacople seguiría siendo correcto pero dejaría de ser
     obligatorio, y este test lo diría.
     """
-    from vendi_core.auth.keycloak_admin import VendiKeycloakAprovisionamiento
+    from vendi_core.auth.keycloak_aprovisionamiento import VendiKeycloakAprovisionamiento
 
     exigir_stack_local(KC_URL)
     secreto = os.getenv("VENDI_PROVISIONING_CLIENT_SECRET", "")
@@ -322,49 +331,48 @@ async def test_keycloak_exige_nombre_unico_de_organizacion(exigir_stack_local):
 
 
 @pytest.mark.asyncio
-async def test_el_alta_completa_contra_el_keycloak_real(pg_platform_url, exigir_stack_local, limpiar_tenants_de_prueba):
-    """El camino de aprovisionamiento entero, sin doble de Keycloak.
+async def test_el_alta_completa_a_traves_del_provisioner(pg_platform_url, limpiar_tenants_de_prueba):
+    """El camino de aprovisionamiento entero, por el provisioner HTTP.
 
     Es el único test que ejerce a la vez la transacción de plataforma, la
-    llamada real a Organizations y el encolado del evento.
+    llamada al provisioner (que a su vez llama a Organizations con la
+    credencial que la API ya NO tiene) y el encolado del evento. No necesita
+    `VENDI_PROVISIONING_CLIENT_SECRET` en el anfitrión: la credencial vive en
+    el contenedor del provisioner, que es exactamente lo que D-02 pedía.
     """
-    from vendi_core.auth.keycloak_admin import VendiKeycloakAprovisionamiento
-
-    exigir_stack_local(KC_URL)
-    secreto = os.getenv("VENDI_PROVISIONING_CLIENT_SECRET", "")
-    if not secreto:
-        pytest.fail("VENDI_PROVISIONING_CLIENT_SECRET no definido.")
+    from vendi_core.provisioning.cliente import ClienteAprovisionamiento
 
     engine = create_engine(pg_platform_url)
     fabrica = create_platform_session_factory(engine)
-    kc = VendiKeycloakAprovisionamiento(KC_URL, "vendi-provisioning", secreto)
+    provisioner = ClienteAprovisionamiento(PROVISIONER_URL)
     creado_id = None
     try:
         async with fabrica() as sesion:
             servicio = TenantService(
                 session=sesion,
-                keycloak=kc,
+                aprovisionamiento=provisioner,
                 audit=AuditService(session_factory=fabrica, service_name="test"),
             )
             tenant = await servicio.crear(PREFIJO_PRUEBA + "Alta Real")
             creado_id = tenant.id
             assert tenant.kc_org_id
 
-        org = await kc.get_organization_by_alias(creado_id)
+        org = await provisioner.get_organization_by_alias(creado_id)
         assert org is not None
         assert org["alias"] == str(creado_id)
 
         async with fabrica() as sesion:
             servicio = TenantService(
                 session=sesion,
-                keycloak=kc,
+                aprovisionamiento=provisioner,
                 audit=AuditService(session_factory=fabrica, service_name="test"),
             )
             await servicio.eliminar(creado_id)
-        assert await kc.get_organization_by_alias(creado_id) is None
+        assert await provisioner.get_organization_by_alias(creado_id) is None
     finally:
         if creado_id is not None:
-            org = await kc.get_organization_by_alias(creado_id)
+            org = await provisioner.get_organization_by_alias(creado_id)
             if org:
-                await kc.delete_organization(org["id"])
+                await provisioner.delete_organization(org["id"])
+        await provisioner.aclose()
         await engine.dispose()
