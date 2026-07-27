@@ -20,11 +20,16 @@ from __future__ import annotations
 from vendi_core.auth.context import UserContext
 from vendi_core.auth.policies import (
     PERM_AUDIT_READ,
+    PERM_CAJA_ABRIR,
+    PERM_CAJA_CERRAR,
+    PERM_CAJA_LEER,
+    PERM_CAJA_MOVIMIENTO,
     PERM_COMPRA_CREAR,
     PERM_INVENTARIO_AJUSTAR,
     PERM_PLATFORM_ADMIN,
     PERM_PRODUCTO_EDITAR,
     PERM_PRODUCTO_LEER,
+    PERM_REPORTE_LEER,
     PERM_TENANT_CREATE,
     PERM_TENANT_DELETE,
     PERM_TENANT_READ,
@@ -64,6 +69,11 @@ def test_el_catalogo_declara_los_permisos():
         PERM_VENTA_ANULAR,
         PERM_INVENTARIO_AJUSTAR,
         PERM_COMPRA_CREAR,
+        PERM_CAJA_LEER,
+        PERM_CAJA_ABRIR,
+        PERM_CAJA_CERRAR,
+        PERM_CAJA_MOVIMIENTO,
+        PERM_REPORTE_LEER,
     }
 
 
@@ -98,14 +108,16 @@ def test_ningun_rol_de_negocio_alcanza_la_consola_de_plataforma():
 
 
 def test_el_reparto_de_permisos_es_el_de_adr_023():
-    """El cajero VENDE pero no anula, no ajusta inventario ni compra: anular,
-    arquear y ajustar son los gestos con los que se desfalca una tienda y
-    quedan fuera de sus manos en el MVP (ADR-023). El almacenista no vende:
-    su trabajo es que el estante y el sistema digan lo mismo."""
-    assert PERMISOS_POR_ROL[ROL_CAJERO] == frozenset({PERM_PRODUCTO_LEER, PERM_VENTA_CREAR})
-    assert PERM_VENTA_ANULAR not in PERMISOS_POR_ROL[ROL_CAJERO]
-    assert PERM_INVENTARIO_AJUSTAR not in PERMISOS_POR_ROL[ROL_CAJERO]
-    assert PERM_COMPRA_CREAR not in PERMISOS_POR_ROL[ROL_CAJERO]
+    """El cajero ABRE su caja y registra movimientos, pero NO la cierra y NO
+    ve reportes: anular y arquear son los dos gestos con los que se desfalca
+    una tienda y quedan en manos del dueño en el MVP (ADR-023). El
+    almacenista no toca caja: su trabajo es que el estante y el sistema
+    digan lo mismo."""
+    assert PERMISOS_POR_ROL[ROL_CAJERO] == frozenset(
+        {PERM_PRODUCTO_LEER, PERM_VENTA_CREAR, PERM_CAJA_LEER, PERM_CAJA_ABRIR, PERM_CAJA_MOVIMIENTO}
+    )
+    assert PERM_CAJA_CERRAR not in PERMISOS_POR_ROL[ROL_CAJERO]
+    assert PERM_REPORTE_LEER not in PERMISOS_POR_ROL[ROL_CAJERO]
     assert PERMISOS_POR_ROL[ROL_ALMACENISTA] == frozenset(
         {PERM_PRODUCTO_LEER, PERM_PRODUCTO_EDITAR, PERM_INVENTARIO_AJUSTAR, PERM_COMPRA_CREAR}
     )
@@ -116,6 +128,11 @@ def test_el_reparto_de_permisos_es_el_de_adr_023():
         PERM_VENTA_ANULAR,
         PERM_INVENTARIO_AJUSTAR,
         PERM_COMPRA_CREAR,
+        PERM_CAJA_LEER,
+        PERM_CAJA_ABRIR,
+        PERM_CAJA_CERRAR,
+        PERM_CAJA_MOVIMIENTO,
+        PERM_REPORTE_LEER,
     } <= PERMISOS_POR_ROL[ROL_DUENO]
 
 
@@ -170,5 +187,8 @@ def test_el_grupo_de_un_rol_mapea_el_rol_y_sus_permisos():
     assert PERM_TENANT_READ in mapeo
     assert mapeo == sorted(mapeo), "el orden tiene que ser estable: la siembra hace diff contra él"
 
-    # El cajero ya vende (ADR-023): el grupo mapea el rol Y sus dos permisos.
-    assert roles_de_realm_del_grupo(ROL_CAJERO) == sorted({ROL_CAJERO, PERM_PRODUCTO_LEER, PERM_VENTA_CREAR})
+    # El cajero ya vende y opera su caja (ADR-023): el grupo mapea el rol Y
+    # sus cinco permisos (sin `caja:cerrar` ni `reporte:leer`).
+    assert roles_de_realm_del_grupo(ROL_CAJERO) == sorted(
+        {ROL_CAJERO, PERM_PRODUCTO_LEER, PERM_VENTA_CREAR, PERM_CAJA_LEER, PERM_CAJA_ABRIR, PERM_CAJA_MOVIMIENTO}
+    )

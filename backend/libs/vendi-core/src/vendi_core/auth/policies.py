@@ -85,6 +85,16 @@ PERM_VENTA_ANULAR = "venta:anular"
 PERM_INVENTARIO_AJUSTAR = "inventario:ajustar"
 PERM_COMPRA_CREAR = "compra:crear"
 
+# Caja y reportes (ADR-021/ADR-023). El cajero abre su caja y registra
+# movimientos, pero NO cierra ni ve reportes: cerrar/arquear es el segundo
+# gesto con el que se desfalca una tienda, junto a anular, y queda en manos
+# del dueño en el MVP. El almacenista no toca caja.
+PERM_CAJA_LEER = "caja:leer"
+PERM_CAJA_ABRIR = "caja:abrir"
+PERM_CAJA_CERRAR = "caja:cerrar"
+PERM_CAJA_MOVIMIENTO = "caja:movimiento"
+PERM_REPORTE_LEER = "reporte:leer"
+
 # Comodín para superadministradores de plataforma.
 PERM_WILDCARD = "*"
 
@@ -102,6 +112,11 @@ PERMISSION_CATALOG: tuple[tuple[str, str], ...] = (
     (PERM_VENTA_ANULAR, "venta"),
     (PERM_INVENTARIO_AJUSTAR, "inventario"),
     (PERM_COMPRA_CREAR, "compra"),
+    (PERM_CAJA_LEER, "caja"),
+    (PERM_CAJA_ABRIR, "caja"),
+    (PERM_CAJA_CERRAR, "caja"),
+    (PERM_CAJA_MOVIMIENTO, "caja"),
+    (PERM_REPORTE_LEER, "reporte"),
 )
 
 
@@ -127,16 +142,24 @@ _PERMISOS_DUENO = frozenset(
         PERM_VENTA_ANULAR,
         PERM_INVENTARIO_AJUSTAR,
         PERM_COMPRA_CREAR,
+        PERM_CAJA_LEER,
+        PERM_CAJA_ABRIR,
+        PERM_CAJA_CERRAR,
+        PERM_CAJA_MOVIMIENTO,
+        PERM_REPORTE_LEER,
     }
 )
 
-# ADR-023: el cajero consulta el catálogo y vende, pero NO edita el catálogo,
-# NO anula ventas, NO ajusta inventario y NO registra compras (anular, arquear
-# y ajustar son los gestos con los que se desfalca una tienda; son del dueño
-# en el MVP). El almacenista mantiene el catálogo, ajusta el inventario y
-# registra las compras; no vende ni toca caja ni fiado. El resto de permisos
-# de cada rol llega con su módulo.
-_PERMISOS_CAJERO: frozenset[str] = frozenset({PERM_PRODUCTO_LEER, PERM_VENTA_CREAR})
+# ADR-023: el cajero consulta el catálogo, vende, abre su caja y registra
+# movimientos, pero NO edita el catálogo, NO anula ventas, NO ajusta
+# inventario, NO registra compras, NO cierra la caja y NO ve reportes
+# (anular y arquear son los gestos con los que se desfalca una tienda; son
+# del dueño en el MVP). El almacenista mantiene el catálogo, ajusta el
+# inventario y registra las compras; no vende ni toca caja ni fiado. Los
+# permisos de fiado/cliente llegan con el módulo 5 (ADR-022).
+_PERMISOS_CAJERO: frozenset[str] = frozenset(
+    {PERM_PRODUCTO_LEER, PERM_VENTA_CREAR, PERM_CAJA_LEER, PERM_CAJA_ABRIR, PERM_CAJA_MOVIMIENTO}
+)
 _PERMISOS_ALMACENISTA: frozenset[str] = frozenset(
     {PERM_PRODUCTO_LEER, PERM_PRODUCTO_EDITAR, PERM_INVENTARIO_AJUSTAR, PERM_COMPRA_CREAR}
 )
