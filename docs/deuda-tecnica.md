@@ -9,7 +9,6 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 
 | # | Deuda | Vence | Dueño |
 |---|---|---|---|
-| D-02 | `manage-realm` en Keycloak (mitigado en la Etapa 3: partido en dos clientes) | Fase 1 (o cuando Keycloak permita acotar Organizations) | backend |
 | D-03 | El realm es semilla, no estado deseado continuo (mitigado en la Etapa 5: se aplica el subconjunto seguro) | Fase 1 | backend |
 
 Cerradas en la Etapa 5, con su evidencia al final de este documento: **D-01**
@@ -17,171 +16,12 @@ Cerradas en la Etapa 5, con su evidencia al final de este documento: **D-01**
 escribible por el rol de la API), **D-07** (`exchange` del outbox sin defensa) y
 **D-08** (el claim `groups` no se emite y `has_role()` era inerte).
 
+Cerrada en la Task 0.5.3 de Fase 1: **D-02** (`manage-realm` en el proceso de la
+API): el aprovisionamiento se movió al servicio `provisioner` (ADR-027).
+
 > Runbooks operativos relacionados: el procedimiento completo de respaldo y
 > restauración (qué se vuelca, qué NO, y cómo se promueve una copia a base
 > viva) está en [`docs/respaldo-y-restauracion.md`](respaldo-y-restauracion.md).
-
----
-
-## D-02 · `manage-realm` en la cuenta de servicio de Keycloak
-
-> **Actualizado en la Etapa 3 (pista backend): mitigado parcialmente.** El
-> privilegio está partido en dos credenciales. La deuda **no se cierra** —sigue
-> existiendo una credencial con `manage-realm` en el mismo proceso— pero deja de
-> estar en el cliente que usa toda la API. Lo nuevo está al final, en
-> «Mitigación aplicada».
-
-**Qué es.** La cuenta de servicio lleva dos roles de `realm-management`:
-`manage-realm` y `manage-users`. `manage-realm` permite además modificar
-ajustes del realm y leer los flujos de autenticación.
-
-**Por qué está.** No es una elección: en Keycloak 26.6.4 **toda** la API de
-Organizations exige `manage-realm`, incluso para leer. Medido con
-`scripts/spikes/kc-sa-roles-spike.sh`:
-
-```
-S1 · lo que pedía el QA: solo manage-users/view-*/query-*
-  NO  403  POST /organizations (alta de tenant)
-  NO  403  GET /organizations (reconcile)
-
-S3 · mínimo teórico: manage-realm + manage-users
-  OK  201  POST /organizations (alta de tenant)
-  OK  200  GET /organizations (reconcile)
-  ...
-  NO  403  !! POST /users/{id}/impersonation
-  NO  403  !! POST /clients
-  OK  204  !! PUT /realms/vendi-co   ← el riesgo residual
-```
-
-**Lo que sí se cerró** (esto ya no es deuda): `impersonation`, `view-realm`,
-`view-users`, `query-users` y `query-groups` se quitaron. El backend ya **no
-puede suplantar usuarios** ni crear clientes. De 7 roles a 2.
-
-**Riesgo residual — medido, no estimado.** La redacción anterior de este
-apartado («puede reescribir ajustes del realm y *leer* los flujos de
-autenticación») se quedaba corta y hacía parecer el riesgo menor de lo que es.
-Ejecutado contra el realm vivo con el secreto real de `vendi-backend`
-(`grant_type=client_credentials`), y revertido después:
-
-```
-GET  /admin/realms/vendi-co/authentication/flows   -> 200   (lee los flujos)
-POST /admin/realms/vendi-co/authentication/flows   -> 201   (CREA flujos)
-PUT  /admin/realms/vendi-co                        -> 204   (bruteForceProtected:false + registrationAllowed:true)
-```
-
-Es decir, quien comprometa el secreto de `vendi-backend` **no solo lee**: puede
-**crear flujos de autenticación y reenlazar `browserFlow`** (sacando el login
-con passkey y poniendo uno propio), **apagar la protección de fuerza bruta** y
-**abrir el auto-registro público** del realm. Combinado con `manage-users`, eso
-es un camino completo a cuenta de administrador de cualquier tenant sin tocar
-`realm-admin`.
-
-Lo que sigue **sin** poder hacer: crear clientes (`POST /clients` → 403),
-suplantar usuarios (`POST /users/{id}/impersonation` → 403) y asignarse
-`realm-admin`.
-
-Nota sobre el spike: `scripts/spikes/kc-sa-roles-spike.sh` marca
-`GET /authentication/flows` como «DEBE ser 403» y devuelve 200 en los cinco
-conjuntos, incluido el de solo lectura. La expectativa del spike es la
-equivocada, no el resultado: en Keycloak 26.6.4 ese endpoint lo cubre
-`view-realm`, que `manage-realm` incluye. Queda anotado para que nadie lo lea
-como un fallo pendiente.
-
-**Vencimiento: Fase 1**, o antes si Keycloak publica permisos granulares para
-Organizations (`admin-fine-grained-authz:v2` todavía no cubre ese recurso).
-
----
-
-### Mitigación aplicada en la Etapa 3: dos clientes confidenciales
-
-**Lo que se midió primero.** La pregunta que decide todo es: ¿qué necesita de
-verdad la API general, y se puede tener sin `manage-realm`? Matriz ejecutada
-contra el realm vivo de `vendi-co` (Keycloak 26.6.4, por
-`https://accounts.vendi.co`) creando un cliente sonda y rotándole los roles:
-
-```
-=== C1 · solo manage-users ===                     === C3 · manage-realm + manage-users ===
-  NO 403  GET /organizations                         OK 200  GET /organizations
-  NO 403  GET /organizations/{id}                    OK 200  GET /organizations/{id}
-  NO 403  GET /organizations/members/{id}/organizations   OK 200  (idem)
-  NO 403  GET /organizations/{id}/members            OK 200  GET /organizations/{id}/members
-  OK 200  GET /users/{id}                            OK 200  GET /users/{id}
-  NO 403  GET /roles                                 OK 200  GET /roles
-  OK 200  GET /groups                                OK 200  GET /groups
-
-=== C2 · manage-users + view-users + query-* ===   === C4 · solo manage-realm ===
-  (idéntico a C1: los view-*/query-* no aportan       OK 200  GET /organizations …
-   nada sobre Organizations)                          NO 403  GET /users/{id}
-                                                      NO 403  GET /groups
-```
-
-Conclusión: se confirma que **no hay subconjunto de roles de `realm-management`
-que dé acceso a Organizations sin `manage-realm`**, ni siquiera de lectura.
-
-**El hallazgo que decidió el diseño.** `GET /organizations/members/{id}/organizations`
-—el endpoint de `get_user_organizations`, que el informe del spike 1.1
-recomendaba como *fallback* del `TenantMiddleware` cuando el claim viene
-vacío— **también exige `manage-realm`**. Es decir: implementar ese fallback
-costaba poner `manage-realm` en el camino de cada petición de la API. Se
-descartó. Lo que arregla —un usuario multi-organización cuyo cliente olvidó
-pedir `scope=organization:*`— ya **falla cerrado** (403, nadie ve datos ajenos);
-lo que costaba es la capacidad de reescribir el realm entero desde cualquier
-petición. En su lugar, el 403 lleva el código `sin_organizacion_en_token` y un
-mensaje que dice qué falta, para que el frontend pueda reaccionar.
-
-> Nota de ruta, por si alguien la busca: `GET /users/{id}/organizations` **no
-> existe** en 26.6.4 y devuelve 404 con cualquier privilegio. La ruta buena es
-> `/organizations/members/{user_id}/organizations`, que es la que usa
-> python-keycloak 7.1.1.
-
-**Qué se implementó.** El privilegio se parte en dos credenciales:
-
-| Cliente | Roles de `realm-management` | Quién lo usa |
-| --- | --- | --- |
-| `vendi-backend` | `manage-users` | La API general (`VendiKeycloakAdmin`) |
-| `vendi-provisioning` | `manage-realm` + `manage-users` | Solo el alta y baja de negocios (`VendiKeycloakAprovisionamiento`) y `reconcile-keycloak.sh` |
-
-Efecto medido tras el cambio, con los secretos reales por
-`grant_type=client_credentials`:
-
-```
-=== vendi-backend (API general) ===        === vendi-provisioning (alta de negocios) ===
-  NO 403  GET  /organizations                OK 200  GET  /organizations
-  OK 200  GET  /users                        OK 200  GET  /users
-  NO 403  GET  /authentication/flows         OK 200  GET  /authentication/flows
-  NO 403  PUT  /realms/vendi-co              OK 204  PUT  /realms/vendi-co
-  NO 403  POST /clients                      NO 403  POST /clients
-```
-
-**Qué compra y qué no — sin adornos.** Compra: si el secreto de `vendi-backend`
-se filtra por un canal estrecho (una línea de log, un volcado de configuración,
-una traza de excepción sin sanear, un backup), el atacante obtiene gestión de
-usuarios, **no** reescritura del realm — ni crear flujos de autenticación, ni
-reenlazar `browserFlow` para sacar la passkey, ni apagar la protección de fuerza
-bruta, ni abrir el auto-registro.
-
-**No compra** protección contra ejecución de código en el proceso de la API: hoy
-las dos credenciales viven en el mismo contenedor, así que un RCE se lleva las
-dos. Decir lo contrario sería vender teatro. Cerrar eso exige mover el
-aprovisionamiento a otra unidad de despliegue, y eso cambia el contrato de la
-tarea 4.2 (el alta de negocio es síncrona y compensada), así que **queda como el
-paso siguiente de esta deuda**, no como algo hecho.
-
-**Qué lo mantiene honesto:**
-
-- `verify-setup.sh` check 21 comprueba **las dos** cuentas de servicio y falla
-  si a `vendi-backend` le aparece un rol de más.
-- `backend/tests/test_keycloak_admin_orgs.py::test_el_cliente_de_la_api_no_alcanza_organizations`
-  se pone rojo si alguien devuelve `manage-realm` a `vendi-backend`.
-- `reconcile-keycloak.sh` detecta la deriva de roles contra el JSON del realm.
-- El secreto de cada cliente se rota en cada despliegue, y **son distintos**:
-  dos credenciales con el mismo valor son una credencial.
-
-**Trampa de la que hay constancia:** la columna `description` de un cliente es
-`varchar(255)` en Keycloak. Un texto más largo revienta el import del realm con
-un 500 y un `BatchUpdateException` de JDBC, no con un error de validación. Las
-descripciones de los dos clientes están recortadas por eso; el porqué largo vive
-aquí.
 
 ---
 
@@ -283,6 +123,85 @@ tiene que resolverse o re-firmarse en Fase 1:
 - **Los 5 workflows de CI nunca se han ejecutado en GitHub Actions**: el
   repositorio no tiene remoto. Validados estáticamente y cada comando
   reproducido en local; el primer push real es la prueba pendiente.
+
+---
+
+## Cerradas en Fase 1
+
+### D-02 · `manage-realm` en la cuenta de servicio de Keycloak
+
+**Qué era.** En Keycloak 26.6.4 toda la API de Organizations exige
+`manage-realm` —medido: ningún subconjunto de roles de `realm-management`
+alcanza Organizations, ni para leer— y `manage-realm` es reescribir el realm:
+crear flujos de autenticación, reenlazar `browserFlow` (sacando el login con
+passkey), apagar la protección de fuerza bruta y abrir el auto-registro. La
+mitigación de la Etapa 3 partió el privilegio en dos clientes (`vendi-backend`
+con solo `manage-users`; `vendi-provisioning` con `manage-realm`), pero **las
+dos credenciales vivían en el proceso de la API**: un RCE se llevaba las dos.
+Las matrices completas de medición (spikes C1–C4, riesgo residual medido sobre
+el realm vivo) quedan en la historia de git de este archivo.
+
+**Cómo se cerró** (Task 0.5.3, opción A completa; decisión y riesgo residual
+en [ADR-027](adr/adr-027-provisioner-separado.md)). El aprovisionamiento se
+movió a una unidad de despliegue propia, `backend/services/provisioner`: es el
+único proceso con `VENDI_PROVISIONING_CLIENT_SECRET` y expone por la red
+interna (`vendi-net`, sin puertos publicados, sin router en Traefik) las
+operaciones acotadas —crear/borrar/consultar Organizations y la siembra del
+realm—, no la Admin API de Keycloak. La API dejó de recibir el secreto: el
+campo desapareció de sus `Settings` (ningún despliegue puede entregárselo) y
+`TenantService`, la siembra y el reconciliador hablan con el provisioner por
+HTTP interno (`vendi_core.provisioning.cliente`, con timeout, reintentos
+acotados y correlation-id). El alta de negocio sigue siendo síncrona y
+compensada; cambió el transporte, no el contrato. De paso,
+`keycloak_backend_client_secret` perdió el defecto `""`: la API ya no arranca
+sin credencial para fallar tarde.
+
+**Riesgo residual, sin adornos.** Quien comprometa la API todavía puede pedir
+al provisioner sus operaciones acotadas (crear/borrar organizaciones,
+sembrar). Es un daño real pero acotado: ya no puede reescribir los flujos de
+autenticación, apagar la protección de fuerza bruta ni abrir el auto-registro,
+porque el provisioner no expone eso y la credencial que lo permite no está en
+el proceso comprometido.
+
+**Evidencia** (stack real del compose, 2026-07-27):
+
+```
+$ docker compose exec api printenv KEYCLOAK_PROVISIONING_CLIENT_SECRET
+                                → (vacío: la API no la tiene)
+$ docker compose exec provisioner printenv KEYCLOAK_PROVISIONING_CLIENT_SECRET
+                                → (presente: el provisioner sí)
+
+$ bash scripts/seed.sh          # orquesta por HTTP; el secreto no pasa por la API
+[OK]    Siembra completa.
+
+$ bash scripts/verify-setup.sh
+[OK]    21. vendi-backend=manage-users · vendi-provisioning=manage-realm,manage-users
+[OK]    26. la API no tiene el secreto, el provisioner sí y responde, el borde da 404
+            y no hay puertos expuestos
+
+$ cd backend && uv run pytest -q -m 'not integration'
+335 passed
+$ uv run pytest -q -rs -m integration
+106 passed           # incluye test_el_alta_completa_a_traves_del_provisioner,
+                     # alta y baja reales por HTTP sin secreto en el anfitrión
+```
+
+**Candados:**
+
+- `verify-setup.sh` check 26: falla si el secreto aparece en el entorno de la
+  API, si el provisioner deja de responder, si el borde enruta
+  `provisioner.<dominio>` (debe ser 404) o si publica un puerto fuera de
+  loopback.
+- `verify-setup.sh` check 21 (ya existía): los roles mínimos de las dos
+  cuentas de servicio.
+- `tests/api/test_api_sin_secreto_de_provisioning.py`: la API se construye sin
+  la credencial y `Settings` no tiene campo que la acepte aunque esté en el
+  entorno.
+- `tests/api/test_tenants_provisioning.py::test_el_alta_completa_a_traves_del_provisioner`
+  (integration): el camino entero por HTTP, sin `VENDI_PROVISIONING_CLIENT_SECRET`
+  fuera del contenedor del provisioner.
+- `tests/test_keycloak_admin_orgs.py::test_el_cliente_de_la_api_no_alcanza_organizations`
+  (ya existía): `vendi-backend` sigue sin alcanzar Organizations.
 
 ---
 

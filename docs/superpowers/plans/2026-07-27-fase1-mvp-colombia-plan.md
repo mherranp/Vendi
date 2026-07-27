@@ -55,9 +55,9 @@
 
 ### Task 0.5.3: Cerrar o acotar D-02 (credencial `manage-realm` en el proceso de la API)
 
-- [ ] Opción A (completa): mover el aprovisionamiento a una unidad de despliegue separada (servicio `provisioner` propio, fuera de la API).
-- [ ] Opción B (acotada, si A se difiere): rotación documentada + alcance mínimo + runbook; registrar en `deuda-tecnica.md` por qué se difiere.
-- [ ] Verificación: `verify-setup.sh` check 21 (roles mínimos de service accounts) en verde + test que prueba que la API arranca sin la credencial de provisioning cuando el módulo está deshabilitado.
+- [x] Opción A (completa): mover el aprovisionamiento a una unidad de despliegue separada (servicio `provisioner` propio, fuera de la API). — *Cerrada 2026-07-27 con la opción A: servicio `backend/services/provisioner` (commits `6afb513` y `833f6d1`), decisión en ADR-027 y evidencia en `docs/deuda-tecnica.md` (D-02 cerrada).*
+- [ ] Opción B (acotada, si A se difiere): rotación documentada + alcance mínimo + runbook; registrar en `deuda-tecnica.md` por qué se difiere. — *No aplicada: la opción A no encontró bloqueo estructural.*
+- [x] Verificación: `verify-setup.sh` check 21 (roles mínimos de service accounts) en verde + test que prueba que la API arranca sin la credencial de provisioning cuando el módulo está deshabilitado. — *Check 21 y el nuevo check 26 (la API no tiene el secreto; el borde no alcanza el provisioner) en verde contra el stack real; `tests/api/test_api_sin_secreto_de_provisioning.py` prueba que la API se construye sin la credencial.*
 
 ---
 

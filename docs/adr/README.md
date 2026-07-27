@@ -39,6 +39,7 @@ y por qué.
 | [024](adr-024-escaner-codigos.md) | Escáner en el dispositivo contra catálogo local; alta rápida dentro de la venta | Firmada |
 | [025](adr-025-push-fcm.md) | FCM como canal push único de Fase 1, vía el evento único `notificacion.enviar` | Firmada |
 | [026](adr-026-ia-v1-alcance-tecnico.md) | IA v1: function calling sobre funciones deterministas bajo RLS; voz solo tier Pro | Firmada |
+| [027](adr-027-provisioner-separado.md) | Aprovisionamiento de negocios en un servicio `provisioner` separado (cierra D-02) | Firmada |
 
 Los ADR-001 … ADR-010 se decidieron antes de que existiera este directorio y
 vivían como filas de una tabla en `docs/plan-maestro.md` §0 (los 001–004 con su

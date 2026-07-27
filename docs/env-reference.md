@@ -59,7 +59,7 @@ despliegue con las de fábrica se note a simple vista.
 |---|---|---|
 | `KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD` | `admin` / — | administrador del **realm `master`**. Lo usan `reconcile-keycloak.sh` y `verify-setup.sh`; la aplicación **no** |
 | `VENDI_BACKEND_CLIENT_SECRET` | — | credencial de la API general. Solo `manage-users` |
-| `VENDI_PROVISIONING_CLIENT_SECRET` | — | credencial del alta y baja de negocios. `manage-realm` + `manage-users`. **Tiene que ser distinta de la anterior**: dos credenciales con el mismo valor son una credencial |
+| `VENDI_PROVISIONING_CLIENT_SECRET` | — | credencial del servicio `provisioner` (alta y baja de negocios). `manage-realm` + `manage-users`. **La API ya no la recibe** (ADR-027): solo la tienen el contenedor `provisioner` y el import del realm. **Tiene que ser distinta de la anterior**: dos credenciales con el mismo valor son una credencial |
 | `KEYCLOAK_AUDIENCE` | `vendi-backend` | audiencia exigida en el claim `aud`. **Vaciarla apaga la comprobación** |
 
 Sobre `KEYCLOAK_AUDIENCE`: el defecto no está vacío a propósito. Un despliegue

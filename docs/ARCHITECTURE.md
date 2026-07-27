@@ -128,14 +128,14 @@ Todo lo cosechado lleva el renombre `base_saas` → `vendi_core` en imports y
 | `keycloak_admin`: `create_service_account_client`, `ensure_platform_admin_client` | Los clientes vienen del realm como código. Además la cuenta de servicio no tiene `manage-clients` (medido: 403) |
 | `keycloak_admin`: `exchange_token_for_user` | Suplantación (RFC 8693). El rol `impersonation` se retiró en la Etapa 2 por ser un agujero de aislamiento multi-tenant en realm regional. El permiso `impersonate:user` tampoco está en `policies.py` |
 
-#### `keycloak_admin.py`: dos clases, no una (mitigación de D-02)
+#### `keycloak_admin.py` y `keycloak_aprovisionamiento.py`: dos clases en dos módulos (cierre de D-02)
 
 | Clase | Cliente de Keycloak | Roles de `realm-management` | Quién la usa |
 | --- | --- | --- | --- |
 | `VendiKeycloakAdmin` | `vendi-backend` | `manage-users` | La API general |
-| `VendiKeycloakAprovisionamiento` | `vendi-provisioning` | `manage-realm` + `manage-users` | Solo el alta y baja de negocios y el reconciliador |
+| `VendiKeycloakAprovisionamiento` | `vendi-provisioning` | `manage-realm` + `manage-users` | **Solo el servicio `provisioner`** (ADR-027): la API le pide el alta y la baja de negocios por HTTP interno; la siembra y el reconciliador también |
 
-Motivo medido y alcance real de la mitigación: `docs/deuda-tecnica.md`, D-02.
+Motivo medido y alcance real: `docs/deuda-tecnica.md`, D-02 (cerrada en la Task 0.5.3).
 
 #### `tenant/middleware.py`: qué **no** se portó del original
 
