@@ -140,13 +140,14 @@ Lo que está mal **a sabiendas**, con dueño y fecha, vive en
 
 | # | Deuda | Vence |
 |---|---|---|
-| D-02 | `manage-realm` sigue existiendo en una credencial del mismo proceso (mitigado: partido en dos clientes) | Fase 1 |
 | D-03 | El realm es semilla; la aplicación automática cubre solo el subconjunto seguro | Fase 1 |
 
 Cerradas en la Etapa 5, con su evidencia en el registro de deuda: **D-01**
 (ROPC), **D-04** (Keycloak sin `--optimized`), **D-06** (`alembic_version`
 escribible), **D-07** (`exchange` del outbox), **D-08** (claim `groups` /
-`has_role()` inerte).
+`has_role()` inerte). Cerrada en la Task 0.5.3 de Fase 1 (2026-07-27): **D-02**
+— el aprovisionamiento se movió al servicio `provisioner`, la única unidad de
+despliegue con `manage-realm` (ADR-027).
 
 ### Fuera del alcance de Fase 0, por diseño
 
