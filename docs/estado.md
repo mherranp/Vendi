@@ -174,6 +174,17 @@ crítico: las ventas offline de ADR-018 sobre la capa de sincronización de
 ADR-017—, cerrado con el gate de la Etapa 1.2 del plan maestro. Plan:
 [`docs/superpowers/plans/2026-07-28-modulo-ventas-plan.md`](superpowers/plans/2026-07-28-modulo-ventas-plan.md)
 (9 tareas TDD, commits `186b6ee`…`503499b`, cada una con revisión
+
+> **Post-cierre (mismo día).** Tras el gate, la revisión de rama y el QA
+> adversarial añadieron dos oleadas de correcciones ya en `main`: bloqueo
+> `FOR UPDATE` del producto contra el lost update de `stock_actual`
+> multi-caja (`49553da`), idempotencia del registro de dispositivos
+> (`3b342fc`), D-18 (margen del watermark del delta) y los fixes de los 4
+> bugs del QA (`fa290f5`: consolidación de movimientos por producto,
+> cuantización de `cantidad` a 3 decimales, `tipo='anulacion'` con
+> migración `0006`, 409 tipado en dispositivos). HEAD de código de cierre
+> real: `fa290f5` — run ci 30288968606 en verde: **222 integration +
+> 378 unitarios, 0 SKIPPED**.
 independiente registrada en `.superpowers/sdd/`).
 
 Los comandos del gate que exigen el stack (migrar, tests de integración,
