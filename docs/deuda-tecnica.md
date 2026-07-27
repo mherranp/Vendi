@@ -103,9 +103,10 @@ tier en `tenants`.
 **Por qué se aceptó.** Decisión 2 del plan del módulo catálogo: el plan maestro
 §5 registra a todo negocio nuevo en el trial de Pro (1 mes, sin tarjeta), así
 que el valor fijo coincide con la realidad del piloto. Lo diferido es solo la
-fuente del dato, no la verificación: los tests la ejercitan de verdad con
-`dependency_overrides` para `gratis` (alta 101 → 403) y `light` (se detiene en
-500).
+fuente del dato, no la verificación: los tests la ejercitan de verdad. En la
+API con `dependency_overrides` para `gratis` (alta 101 → 403), y en el
+servicio para `gratis` (alta 101) y `light` (la alta 501 lanza
+`limite_de_productos_alcanzado` con `details` `{"tier": "light", "limite": 500}`).
 
 **Riesgo si se olvida.** El día que se dé de alta un negocio por debajo de Pro
 sin haber cerrado esta deuda, su límite real (100 o 500) no se le aplicará:
@@ -115,10 +116,12 @@ heredará el de Pro (ilimitado).
 fuente real del tier). El único punto de cambio es la dependencia
 `tier_del_negocio`.
 
-**Candados mientras tanto** (verdes en el run de CI 30258309167, 2026-07-27):
+**Candados mientras tanto** (los dos primeros, verdes en el run de CI
+30258309167, 2026-07-27; el tercero se añadió en el fix post-review):
 
 - `backend/tests/api/test_catalogo_productos.py::test_el_limite_del_tier_da_403`
 - `backend/tests/test_catalogo_servicio.py::test_el_limite_del_tier_se_verifica_contra_las_filas_vivas`
+- `backend/tests/test_catalogo_servicio.py::test_el_limite_del_tier_light_se_detiene_en_500`
 
 ---
 

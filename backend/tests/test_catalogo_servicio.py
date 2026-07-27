@@ -238,6 +238,35 @@ async def test_el_limite_del_tier_se_verifica_contra_las_filas_vivas(pg_app_url,
         await engine.dispose()
 
 
+async def test_el_limite_del_tier_light_se_detiene_en_500(pg_app_url, pg_platform_url, limpiar_productos):
+    """ADR-010/ADR-019: el límite de `light` (500) se verifica igual que el
+    de `gratis`, contra las filas VIVAS del negocio. Las 500 filas se siembran
+    en un solo INSERT (500 altas por el servicio harían el test lento sin
+    probar nada nuevo); el alta que se prueba es la 501, por el camino real."""
+    valores = ", ".join(f"('{T1}', 'Producto {i:03d}', 100)" for i in range(500))
+    engine = create_async_engine(pg_platform_url)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text(f"INSERT INTO productos (tenant_id, nombre, precio_venta) VALUES {valores}"))
+    finally:
+        await engine.dispose()
+
+    engine = create_engine(pg_app_url)
+    factory = create_session_factory(engine)
+    marca = current_tenant_id.set(T1)
+    try:
+        async with factory() as s:
+            light = CatalogoService(session=s, tenant_id=T1, tier="light")
+            with pytest.raises(PermissionDeniedError) as exc:
+                await light.crear(ProductoCrear(nombre="El 501", precio_venta=100))
+            assert exc.value.code == "limite_de_productos_alcanzado"
+            assert exc.value.details == {"tier": "light", "limite": 500}
+            await s.rollback()
+    finally:
+        current_tenant_id.reset(marca)
+        await engine.dispose()
+
+
 async def test_el_padre_debe_existir_en_el_propio_tenant(pg_app_url, limpiar_productos):
     """Postgres NO aplica RLS al verificar la FK de `padre_id`: sin este
     chequeo, una variante podría colgar del producto de OTRO negocio."""
