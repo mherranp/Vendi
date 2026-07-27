@@ -274,7 +274,7 @@ def test_el_delta_baja_el_catalogo_y_las_tumbas(app_con_base):
     cabeceras, producto, dispositivo = _montar(cliente, validador, "Sync 10")
 
     desde = "2020-01-01T00:00:00+00:00"
-    respuesta = cliente.get(f"/api/v1/sync/delta?desde={desde}", headers=cabeceras)
+    respuesta = cliente.get("/api/v1/sync/delta", params={"desde": desde}, headers=cabeceras)
     assert respuesta.status_code == 200, respuesta.text
     cuerpo = respuesta.json()
     assert producto in [p["id"] for p in cuerpo["productos"]]
@@ -282,12 +282,12 @@ def test_el_delta_baja_el_catalogo_y_las_tumbas(app_con_base):
     hasta = cuerpo["hasta"]
 
     # Sin cambios desde el watermark devuelto: nada nuevo.
-    respuesta = cliente.get(f"/api/v1/sync/delta?desde={hasta}", headers=cabeceras)
+    respuesta = cliente.get("/api/v1/sync/delta", params={"desde": hasta}, headers=cabeceras)
     assert respuesta.json()["productos"] == []
 
     # Una baja lógica llega como tumba:
     assert cliente.delete(f"/api/v1/productos/{producto}", headers=cabeceras).status_code == 204
-    respuesta = cliente.get(f"/api/v1/sync/delta?desde={desde}", headers=cabeceras)
+    respuesta = cliente.get("/api/v1/sync/delta", params={"desde": desde}, headers=cabeceras)
     assert producto in respuesta.json()["eliminados"]
 
 
@@ -296,7 +296,7 @@ def test_el_delta_no_muestra_el_catalogo_del_vecino(app_con_base):
     _montar(cliente, validador, "Sync 11A", token="tok-d11a")
     cabeceras_b, _, _ = _montar(cliente, validador, "Sync 11B", token="tok-d11b")
 
-    respuesta = cliente.get("/api/v1/sync/delta?desde=2020-01-01T00:00:00+00:00", headers=cabeceras_b)
+    respuesta = cliente.get("/api/v1/sync/delta", params={"desde": "2020-01-01T00:00:00+00:00"}, headers=cabeceras_b)
     assert len(respuesta.json()["productos"]) == 1, "solo el producto del negocio B, no el del A"
 
 
