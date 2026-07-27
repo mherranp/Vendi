@@ -103,8 +103,30 @@ class VentasService:
         dispositivo = Dispositivo(tenant_id=self._tenant_id, nombre=datos.nombre)
         if datos.id is not None:
             dispositivo.id = datos.id
-        self._session.add(dispositivo)
-        await self._session.flush()
+        try:
+            async with self._session.begin_nested():
+                # El alta va DENTRO del savepoint (mismo motivo que en
+                # `_resolver_sesion_caja`): un `add` previo haría reventar el
+                # INSERT fuera del savepoint y la transacción quedaría
+                # abortada sin dónde revertir.
+                self._session.add(dispositivo)
+                await self._session.flush()
+        except IntegrityError as exc:
+            if "dispositivos_pkey" not in str(exc):
+                # Solo el choque de la PK se traduce (mismo criterio que
+                # `_traducir_integridad`): cualquier otro IntegrityError es
+                # un fallo real y debe propagarse.
+                raise
+            # Dos registros concurrentes con el mismo id: el perdedor esperó
+            # en el índice único al ganador y reventó al confirmar este. Tras
+            # el rollback del savepoint se re-lee: el registro es idempotente,
+            # se devuelve el existente (mismo patrón que el camino de ventas).
+            existente = await self._session.get(Dispositivo, datos.id)
+            if existente is not None:
+                return existente
+            # La fila que chocó es de OTRO negocio (invisible por RLS): no hay
+            # existente que devolver y el error original es la verdad.
+            raise
         logger.info("dispositivo_registrado", dispositivo_id=str(dispositivo.id))
         return dispositivo
 
