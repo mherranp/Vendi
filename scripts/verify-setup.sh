@@ -733,11 +733,17 @@ if aud_esperada not in aud:
     problemas.append(f"aud={aud or '(ninguna)'}, esperaba {aud_esperada}")
 if "dueno" not in roles:
     problemas.append("realm_access.roles no trae 'dueno' (deuda D-08: has_role() sería inerte)")
+for permiso in ("producto:leer", "producto:editar"):
+    if permiso not in roles:
+        problemas.append(
+            f"realm_access.roles no trae '{permiso}' (ADR-023: el grupo dueno debe mapearlo; "
+            "un permiso ausente del token del dueno es un bug de siembra, ejecuta scripts/seed.sh)"
+        )
 print("OK" if not problemas else " · ".join(problemas))
 PY
 )"
     if [ "${EJEMPLO}" = "OK" ]; then
-        ok "aud=${KEYCLOAK_AUDIENCE:-vendi-backend} y realm_access.roles con el rol de negocio"
+        ok "aud=${KEYCLOAK_AUDIENCE:-vendi-backend}, rol de negocio y permisos de catálogo en el token del dueño"
     elif [ -z "${EJEMPLO}" ]; then
         falla "no pude generar el token de ejemplo de vendi-web"
     else
