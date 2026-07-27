@@ -794,6 +794,25 @@ fi
 #     validación TLS reales; solo se sustituye la consulta DNS.
 # ---------------------------------------------------------------------------
 info "25. Las SPAs responden por su dominio (vendi.co, app., admin.)"
+# Solo se evalúa si las SPAs forman parte del stack levantado. El job de
+# integración de ci.yml no las construye a propósito (minutos de build que el
+# backend no necesita), y sin esta guarda el check fallaba en rojo contra un
+# stack que nunca pretendió tenerlas —la regla 1 de este script manda OMITIDO
+# cuando un check no se puede evaluar todavía. La guarda NO afloja el check
+# donde importa: un `docker compose up` crea SIEMPRE los contenedores (si el
+# build de una SPA falla, el propio up aborta antes de llegar aquí), así que
+# en un despliegue real las SPAs caídas siguen presentes —creadas pero sin
+# servir— y el FALLO salta igual que antes.
+SPAS_EN_STACK=1
+for SERVICIO_SPA in portal tenant admin; do
+    if [ -z "$("${COMPOSE[@]}" ps -aq "${SERVICIO_SPA}" 2>/dev/null)" ]; then
+        SPAS_EN_STACK=0
+        break
+    fi
+done
+if [ "${SPAS_EN_STACK}" = 0 ]; then
+    omite "25: las SPAs no forman parte de este stack (p. ej. el job de integración de ci.yml no las construye)"
+else
 PROBLEMAS_SPAS=""
 for HOST_SPA in "${BASE_DOMAIN}" "www.${BASE_DOMAIN}" "app.${BASE_DOMAIN}" "admin.${BASE_DOMAIN}"; do
     CODIGO_SPA="$(curl -s -o /dev/null -w '%{http_code}' "${CURL_TOPES[@]}" \
@@ -804,6 +823,7 @@ if [ -z "${PROBLEMAS_SPAS}" ]; then
     ok "las cuatro URLs de SPA devuelven 200 por Traefik con TLS validado"
 else
     falla "${PROBLEMAS_SPAS}(docker compose logs portal tenant admin)"
+fi
 fi
 
 # ---------------------------------------------------------------------------
