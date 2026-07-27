@@ -70,6 +70,10 @@ PERM_PLATFORM_ADMIN = "platform:admin"
 # Auditoría
 PERM_AUDIT_READ = "audit:read"
 
+# Catálogo de productos (ADR-019/ADR-023)
+PERM_PRODUCTO_LEER = "producto:leer"
+PERM_PRODUCTO_EDITAR = "producto:editar"
+
 # Comodín para superadministradores de plataforma.
 PERM_WILDCARD = "*"
 
@@ -81,6 +85,8 @@ PERMISSION_CATALOG: tuple[tuple[str, str], ...] = (
     (PERM_TENANT_DELETE, "tenant"),
     (PERM_PLATFORM_ADMIN, "platform"),
     (PERM_AUDIT_READ, "audit"),
+    (PERM_PRODUCTO_LEER, "producto"),
+    (PERM_PRODUCTO_EDITAR, "producto"),
 )
 
 
@@ -100,17 +106,16 @@ _PERMISOS_DUENO = frozenset(
         PERM_TENANT_READ,
         PERM_TENANT_UPDATE,
         PERM_AUDIT_READ,
+        PERM_PRODUCTO_LEER,
+        PERM_PRODUCTO_EDITAR,
     }
 )
 
-# Cajero y almacenista quedan declarados y VACÍOS a propósito. Sus permisos son
-# los del modelo de datos del MVP (ventas, inventario, cierres de caja), que es
-# el subproyecto 1 y no existe todavía. Se declaran ahora para que el grupo
-# exista en el realm desde el primer día —y así el alta de usuarios de la Etapa
-# 4 pueda asignarlo— pero inventarles permisos hoy sería inventarse el modelo de
-# permisos del MVP a ciegas.
-_PERMISOS_CAJERO: frozenset[str] = frozenset()
-_PERMISOS_ALMACENISTA: frozenset[str] = frozenset()
+# El reparto de ADR-023 para el catálogo: el cajero consulta el catálogo para
+# vender pero NO lo edita; el almacenista es quien lo mantiene. El resto de
+# permisos de cada rol llega con su módulo (ventas, caja, inventario...).
+_PERMISOS_CAJERO: frozenset[str] = frozenset({PERM_PRODUCTO_LEER})
+_PERMISOS_ALMACENISTA: frozenset[str] = frozenset({PERM_PRODUCTO_LEER, PERM_PRODUCTO_EDITAR})
 
 PERMISOS_POR_ROL: dict[str, frozenset[str]] = {
     ROL_DUENO: _PERMISOS_DUENO,
