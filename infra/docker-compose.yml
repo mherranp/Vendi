@@ -338,6 +338,14 @@ services:
       # secreto del cliente (verificado contra 26.6.4, no es teoría).
       KC_SPI_IMPORT_SINGLE_FILE_REPLACE_PLACEHOLDERS: "true"
       VENDI_BACKEND_CLIENT_SECRET: ${VENDI_BACKEND_CLIENT_SECRET:?VENDI_BACKEND_CLIENT_SECRET es obligatorio}
+      # El cliente `vendi-provisioning` también llega al realm por placeholder
+      # (realm-vendi-co.json) y la sustitución solo ve las variables de ESTE
+      # contenedor: sin ella, el cliente quedaba importado con un secreto que
+      # no es el del .env y todo el camino de aprovisionamiento —semilla
+      # incluida— recibía 401 unauthorized_client. Medido en los primeros runs
+      # del CI (30244366106, 30244366118), donde la base parte vacía y el
+      # import es el único origen del secreto.
+      VENDI_PROVISIONING_CLIENT_SECRET: ${VENDI_PROVISIONING_CLIENT_SECRET:?VENDI_PROVISIONING_CLIENT_SECRET es obligatorio}
       VENDI_BASE_DOMAIN: ${BASE_DOMAIN:-vendi.co}
     volumes:
       - ./keycloak/realm-vendi-co.json:/opt/keycloak/data/import/realm-vendi-co.json:ro
