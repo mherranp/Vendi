@@ -374,6 +374,24 @@ async def test_la_invariante_del_libro_tras_una_secuencia_mezclada(servicio, sem
     """El candado de ADR-020: tras ventas, una compra, una merma y un ajuste,
     `stock_actual = SUM(cantidad de los movimientos)`."""
     producto_id = semilla["producto"]
+    # La semilla fija el saldo inicial (10) con un INSERT directo de
+    # `stock_actual` — un atajo de fixture que en producción no existe: el
+    # producto nace con stock 0 (`ProductoCrear` ni siquiera acepta
+    # `stock_actual`) y TODO saldo entra por el libro. La invariante solo es
+    # comprobable si ese saldo inicial también es una fila del libro, así que
+    # se asienta como lo que sería en la vida real: un ajuste de apertura.
+    engine = create_async_engine(pg_platform_url)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO movimientos_inventario (tenant_id, tipo, cantidad, referencia_id, producto_id) "
+                    "VALUES (:t, 'ajuste', 10, :r, :p)"
+                ),
+                {"t": T1, "r": uuid.uuid4(), "p": producto_id},
+            )
+    finally:
+        await engine.dispose()
     # Venta -3 (por el punto único, como la aplicaría el sync).
     producto = await servicio._session.get(Producto, producto_id, with_for_update=True)
     await aplicar_movimiento(
