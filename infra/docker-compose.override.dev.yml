@@ -55,3 +55,12 @@ services:
   api:
     environment:
       DOCS_PUBLICOS: ${DOCS_PUBLICOS:-true}
+
+  # El provisioner, SOLO en loopback y SOLO en desarrollo: es la vía por la que
+  # los tests de integración (que corren en el anfitrión) ejercitan el camino
+  # de aprovisionamiento — mismo criterio que los puertos de postgres, redis y
+  # keycloak. En la base y en producción no publica nada: solo la API le habla,
+  # por la red interna.
+  provisioner:
+    ports:
+      - "127.0.0.1:8010:8000"

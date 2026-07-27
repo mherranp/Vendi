@@ -223,7 +223,7 @@ jobs:
         # arranque, no los minutos que cuestan las SPAs.
         run: |
           docker compose -f infra/docker-compose.yml -f infra/docker-compose.override.dev.yml \
-            up -d --wait traefik postgres redis rabbitmq minio keycloak api worker postgres-backup \
+            up -d --wait traefik postgres redis rabbitmq minio keycloak provisioner api worker postgres-backup \
                         prometheus grafana
 
       - name: Migrar y sembrar

@@ -16,8 +16,8 @@
 # Sin REGISTRY_URL el job se salta la construcción en vez de fallar con un
 # "invalid reference format" que no dice nada.
 #
-# Imágenes: `vendi-api`, `vendi-worker`, `vendi-keycloak`, `vendi-portal`,
-# `vendi-tenant` y `vendi-admin`.
+# Imágenes: `vendi-api`, `vendi-worker`, `vendi-provisioner`, `vendi-keycloak`,
+# `vendi-portal`, `vendi-tenant` y `vendi-admin`.
 #
 # Las TRES SPAs se publican aquí porque el despliegue (deploy.yml) solo copia
 # `infra/` a la VM: allí no hay `frontend/`, así que si la imagen no está en el
@@ -100,6 +100,7 @@ jobs:
         imagen:
           - { nombre: vendi-api,      contexto: backend,        dockerfile: backend/services/api/Dockerfile,     extra: "" }
           - { nombre: vendi-worker,   contexto: backend,        dockerfile: backend/services/worker/Dockerfile,  extra: "" }
+          - { nombre: vendi-provisioner, contexto: backend,     dockerfile: backend/services/provisioner/Dockerfile, extra: "" }
           - { nombre: vendi-keycloak, contexto: infra/keycloak, dockerfile: infra/keycloak/Dockerfile,           extra: "" }
           - { nombre: vendi-portal,   contexto: frontend,       dockerfile: frontend/Dockerfile,                 extra: "APP=vendi-portal" }
           - { nombre: vendi-tenant,   contexto: frontend,       dockerfile: frontend/Dockerfile,                 extra: "APP=vendi-tenant" }

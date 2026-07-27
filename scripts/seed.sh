@@ -58,7 +58,9 @@ BASE_DOMAIN="${BASE_DOMAIN:-vendi.co}"
 : "${SEED_ADMIN_PASSWORD:?falta SEED_ADMIN_PASSWORD; copia .env.example a .env}"
 : "${SEED_DUENO_PASSWORD:?falta SEED_DUENO_PASSWORD; copia .env.example a .env}"
 
-info "Asegurando que postgres, la API y Keycloak están arriba..."
+info "Asegurando que postgres, la API, el provisioner y Keycloak están arriba..."
+# `api` declara `depends_on: provisioner`, así que sube con ella: la siembra
+# le pide por HTTP interno todo lo que necesita manage-realm (D-02, ADR-027).
 "${COMPOSE[@]}" up -d postgres api keycloak
 
 # Las migraciones son requisito, no cortesía: sin la tabla `tenants` la siembra

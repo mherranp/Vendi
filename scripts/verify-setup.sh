@@ -827,6 +827,59 @@ fi
 fi
 
 # ---------------------------------------------------------------------------
+# 26. La credencial con manage-realm vive SOLO en el provisioner (D-02).
+#
+#     El cierre de D-02 (ADR-027) mueve `vendi-provisioning` a su propia
+#     unidad de despliegue. Cuatro comprobaciones, y las cuatro importan:
+#
+#     a. La API NO tiene el secreto en su entorno. Si lo tuviera, toda la
+#        separación sería decorativa: un RCE en la API volvería a alcanzar el
+#        realm entero. Se comprueba el entorno del contenedor, no el compose:
+#        es lo que hereda un proceso comprometido.
+#     b. El provisioner SÍ la tiene y responde /health. Sin él, el alta y la
+#        baja de negocios no tienen a quién llamar (PROVISIONER_URL).
+#     c. El borde no lo conoce: `provisioner.<dominio>` tiene que ser 404 en
+#        Traefik. Un router para este servicio lo expondría a Internet con
+#        manage-realm detrás.
+#     d. No publica puertos fuera de loopback. El override de desarrollo lo
+#        expone en 127.0.0.1:8010 para los tests de integración, igual que
+#        postgres o redis; cualquier otra cosa es un error de despliegue.
+# ---------------------------------------------------------------------------
+info "26. La credencial manage-realm vive solo en el provisioner y el borde no lo alcanza (D-02)"
+PROBLEMAS_PROVISIONER=""
+if [ -n "$(en_servicio api printenv KEYCLOAK_PROVISIONING_CLIENT_SECRET)" ]; then
+    PROBLEMAS_PROVISIONER="${PROBLEMAS_PROVISIONER}la API TIENE KEYCLOAK_PROVISIONING_CLIENT_SECRET en su entorno: D-02 reabierta. "
+fi
+if [ -z "$(en_servicio api printenv PROVISIONER_URL)" ]; then
+    PROBLEMAS_PROVISIONER="${PROBLEMAS_PROVISIONER}la API no tiene PROVISIONER_URL: el alta de negocios no tiene a quién llamar. "
+fi
+if [ -z "$(en_servicio provisioner printenv KEYCLOAK_PROVISIONING_CLIENT_SECRET)" ]; then
+    PROBLEMAS_PROVISIONER="${PROBLEMAS_PROVISIONER}el provisioner NO tiene la credencial (¿está arriba? docker compose logs provisioner). "
+fi
+if ! en_servicio provisioner python -c \
+    "import urllib.request,sys; b=urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read(); sys.exit(0 if b'\"ok\"' in b else 1)"; then
+    PROBLEMAS_PROVISIONER="${PROBLEMAS_PROVISIONER}el provisioner no responde /health (docker compose logs provisioner). "
+fi
+# Misma fijación de DNS que los checks 11 y 24: hostname, SNI y validación TLS
+# reales; solo se sustituye la consulta DNS. Lo que se mide es el ENRUTADO.
+CODIGO_PROV="$(curl -s --resolve "provisioner.${BASE_DOMAIN}:443:127.0.0.1" "${CURL_TOPES[@]}" \
+    -o /dev/null -w '%{http_code}' "https://provisioner.${BASE_DOMAIN}/health" 2>/dev/null)"
+CODIGO_PROV="${CODIGO_PROV:-000}"
+if [ "${CODIGO_PROV}" != "404" ]; then
+    PROBLEMAS_PROVISIONER="${PROBLEMAS_PROVISIONER}el borde responde ${CODIGO_PROV} para provisioner.${BASE_DOMAIN} (debería ser 404): hay un router que no debería existir. "
+fi
+PUERTO_PROV="$("${COMPOSE[@]}" port provisioner 8000 2>/dev/null | tr -d '[:space:]')"
+case "${PUERTO_PROV}" in
+    ""|127.0.0.1:*|::1:*) : ;;
+    *) PROBLEMAS_PROVISIONER="${PROBLEMAS_PROVISIONER}el provisioner publica su puerto fuera de loopback (${PUERTO_PROV}). " ;;
+esac
+if [ -z "${PROBLEMAS_PROVISIONER}" ]; then
+    ok "la API no tiene el secreto, el provisioner sí y responde, el borde da 404 y no hay puertos expuestos"
+else
+    falla "${PROBLEMAS_PROVISIONER}"
+fi
+
+# ---------------------------------------------------------------------------
 # Resumen.
 # ---------------------------------------------------------------------------
 echo ""

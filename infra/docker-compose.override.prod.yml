@@ -13,9 +13,9 @@
 # -----------------------------------------------------------------------------
 # IMÁGENES: en producción NO se construye, se despliega lo publicado
 # -----------------------------------------------------------------------------
-# Los seis servicios propios de Vendi (`api`, `worker`, `keycloak`, `portal`,
-# `tenant`, `admin`) llevan aquí un `image:` que apunta a una etiqueta CONCRETA
-# publicada por .github/workflows/release-images.yml.
+# Los siete servicios propios de Vendi (`api`, `worker`, `provisioner`,
+# `keycloak`, `portal`, `tenant`, `admin`) llevan aquí un `image:` que apunta a
+# una etiqueta CONCRETA publicada por .github/workflows/release-images.yml.
 #
 # No es una preferencia de estilo: `deploy.yml` sincroniza a la VM solo el
 # directorio `infra/`. En el servidor NO existen `../backend` ni `../frontend`,
@@ -144,6 +144,15 @@ services:
         limits:
           memory: 1G
           cpus: '1.0'
+
+  provisioner:
+    image: ${VENDI_IMAGE_REGISTRY:?VENDI_IMAGE_REGISTRY es obligatorio en producción}/vendi-provisioner:${VENDI_IMAGE_TAG:?VENDI_IMAGE_TAG es obligatorio en producción}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
 
   worker:
     image: ${VENDI_IMAGE_REGISTRY:?VENDI_IMAGE_REGISTRY es obligatorio en producción}/vendi-worker:${VENDI_IMAGE_TAG:?VENDI_IMAGE_TAG es obligatorio en producción}

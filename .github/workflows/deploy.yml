@@ -26,9 +26,10 @@
 # corto del commit que pasó `ci` y `e2e`, para que lo desplegado sea exactamente
 # lo verificado.
 #
-# **Qué se despliega.** Las seis imágenes propias de Vendi —`vendi-api`,
-# `vendi-worker`, `vendi-keycloak`, `vendi-portal`, `vendi-tenant` y
-# `vendi-admin`— salen del registro. Ninguna se construye en la VM: el `rsync`
+# **Qué se despliega.** Las siete imágenes propias de Vendi —`vendi-api`,
+# `vendi-worker`, `vendi-provisioner`, `vendi-keycloak`, `vendi-portal`,
+# `vendi-tenant` y `vendi-admin`— salen del registro. Ninguna se construye en
+# la VM: el `rsync`
 # de abajo copia solo `infra/`, así que allí no existen `../backend` ni
 # `../frontend`, que son los contextos de construcción del compose. De ahí el
 # `--no-build` del `up` y los `image:` obligatorios del override de producción.

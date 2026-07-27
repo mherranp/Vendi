@@ -369,6 +369,41 @@ services:
   # -----------------------------------------------------------------
   # Backend
   # -----------------------------------------------------------------
+  # El provisioner es la ÚNICA unidad de despliegue con la credencial de
+  # `vendi-provisioning` (manage-realm): el cierre de D-02 (ADR-027). La API le
+  # habla por HTTP interno para el alta y la baja de negocios; los scripts de
+  # siembra y reconciliación, que corren dentro del contenedor de la API,
+  # también. SIN `ports:` en la base: no sale de la red del compose — el
+  # override de desarrollo lo publica solo en loopback para los tests de
+  # integración, y el borde no tiene router para él (el check 26 de
+  # scripts/verify-setup.sh lo verifica).
+  provisioner:
+    logging: *default-logging
+    build:
+      context: ../backend
+      dockerfile: services/provisioner/Dockerfile
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: vendi-co
+      KEYCLOAK_PROVISIONING_CLIENT_ID: vendi-provisioning
+      # LA credencial que este servicio existe para custodiar. Es la misma
+      # variable del .env que el contenedor de Keycloak usa para el import del
+      # realm: las dos tienen que coincidir o todo lo de abajo devuelve 401.
+      KEYCLOAK_PROVISIONING_CLIENT_SECRET: ${VENDI_PROVISIONING_CLIENT_SECRET:?VENDI_PROVISIONING_CLIENT_SECRET es obligatorio}
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    # python:3.12-slim no trae curl ni wget: se usa urllib de la stdlib.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - vendi-net
+
   api:
     logging: *default-logging
     build:
@@ -388,11 +423,12 @@ services:
       KEYCLOAK_REALM: vendi-co
       KEYCLOAK_BACKEND_CLIENT_ID: vendi-backend
       KEYCLOAK_BACKEND_CLIENT_SECRET: ${VENDI_BACKEND_CLIENT_SECRET:?VENDI_BACKEND_CLIENT_SECRET es obligatorio}
-      # Segunda credencial de Keycloak, la única con manage-realm. La usa solo
-      # el camino de alta y baja de negocios (Organizations). Mitigación de
-      # D-02: ver docs/deuda-tecnica.md.
-      KEYCLOAK_PROVISIONING_CLIENT_ID: vendi-provisioning
-      KEYCLOAK_PROVISIONING_CLIENT_SECRET: ${VENDI_PROVISIONING_CLIENT_SECRET:?VENDI_PROVISIONING_CLIENT_SECRET es obligatorio}
+      # La credencial de `vendi-provisioning` (manage-realm) NO se entrega a
+      # este proceso: es el cierre de D-02 (ADR-027). El alta y la baja de
+      # negocios se piden al provisioner por HTTP interno, y el check 26 de
+      # scripts/verify-setup.sh verifica que el secreto no está en el entorno
+      # de este contenedor.
+      PROVISIONER_URL: http://provisioner:8000
       # Audiencia exigida en el claim `aud`. La emite el client scope
       # `vendi-audiencia` del realm (mapper `oidc-audience-mapper`) en los
       # tokens de vendi-web y vendi-admin. Sin esta comprobación, cualquier
@@ -425,6 +461,8 @@ services:
       redis:
         condition: service_healthy
       keycloak:
+        condition: service_healthy
+      provisioner:
         condition: service_healthy
     # python:3.12-slim no trae curl ni wget: se usa urllib de la stdlib.
     healthcheck:
