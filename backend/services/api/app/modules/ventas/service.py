@@ -49,7 +49,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.catalogo.models import Producto
 from app.modules.catalogo.schemas import ProductoSalida
-from app.modules.ventas.models import CajaSesion, Dispositivo, MovimientoInventario, Venta, VentaItem
+from app.modules.inventario.stock import aplicar_movimiento
+from app.modules.ventas.models import CajaSesion, Dispositivo, Venta, VentaItem
 from app.modules.ventas.schemas import (
     DeltaSalida,
     DispositivoRegistrar,
@@ -549,24 +550,27 @@ class VentasService:
     async def _mover_stock(
         self, producto: Producto, delta: Decimal, *, referencia_id: uuid.UUID, tipo: str = "venta"
     ) -> None:
-        """Un movimiento en el libro + la proyección, en la misma transacción
-        (ADR-020). El signo lo pone quien llama: la venta descuenta
-        (`tipo='venta'`), su anulación repone (`tipo='anulacion'`). El stock
-        puede quedar negativo y es legítimo.
+        """Un movimiento en el libro + la proyección + la alerta de umbral,
+        todo en la misma transacción (ADR-020). El signo lo pone quien llama:
+        la venta descuenta (`tipo='venta'`), su anulación repone
+        (`tipo='anulacion'`). El stock puede quedar negativo y es legítimo.
+
+        Desde el módulo 3, la aplicación vive en el punto único
+        `inventario.stock.aplicar_movimiento` (decisión 1 del plan de
+        inventario): es lo que hace que una venta que cruza el umbral emita
+        `inventario.alerta_stock` sin que este servicio sepa nada de niveles.
 
         Quien llama carga el producto con `with_for_update=True` (ver
         `_registrar_venta` y `_anular_venta`): el read-modify-write de
         `stock_actual` solo es seguro con la fila bloqueada hasta el commit."""
-        self._session.add(
-            MovimientoInventario(
-                tenant_id=self._tenant_id,
-                tipo=tipo,
-                cantidad=delta,
-                referencia_id=referencia_id,
-                producto_id=producto.id,
-            )
+        await aplicar_movimiento(
+            self._session,
+            tenant_id=self._tenant_id,
+            producto=producto,
+            delta=delta,
+            tipo=tipo,
+            referencia_id=referencia_id,
         )
-        producto.stock_actual += delta
 
     async def _emitir(self, evento: str, venta: Venta, *, data: dict) -> None:
         """Una sola vez por operación aceptada (ADR-017): el que llama aquí ya

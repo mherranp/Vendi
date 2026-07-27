@@ -36,6 +36,7 @@ BORRADO = (
     "DELETE FROM dispositivos WHERE tenant_id = ANY(:ids)",
     "DELETE FROM productos WHERE tenant_id = ANY(:ids)",
     "DELETE FROM outbox_messages WHERE routing_key LIKE '%.venta.%'",
+    "DELETE FROM outbox_messages WHERE routing_key LIKE '%.inventario.%'",
 )
 
 
@@ -181,6 +182,14 @@ async def test_el_stock_puede_quedar_negativo_y_la_venta_se_acepta(servicio, sem
     await servicio._session.commit()
     stock = await _uno(pg_platform_url, "SELECT stock_actual FROM productos WHERE id = :p", p=semilla["producto2"])
     assert stock.stock_actual == Decimal("-2")
+    # Desde el módulo 3 (cierre de D-12), el negativo además NOTIFICA: cruzar
+    # a agotado emitió exactamente una alerta con el payload mínimo.
+    alertas = await _uno(
+        pg_platform_url,
+        "SELECT payload->'data'->>'nivel' AS nivel FROM outbox_messages WHERE routing_key = :k",
+        k=f"{T1}.inventario.alerta_stock",
+    )
+    assert alertas.nivel == "agotado"
 
 
 async def test_el_reloj_del_cliente_es_dato_y_la_verdad_es_recibida_en(servicio, semilla, pg_platform_url):

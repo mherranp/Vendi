@@ -36,6 +36,7 @@ BORRADO = (
     "DELETE FROM dispositivos WHERE tenant_id = ANY(:ids)",
     "DELETE FROM productos WHERE tenant_id = ANY(:ids)",
     "DELETE FROM outbox_messages WHERE routing_key LIKE '%.venta.%'",
+    "DELETE FROM outbox_messages WHERE routing_key LIKE '%.inventario.%'",
 )
 
 
