@@ -78,6 +78,15 @@ jobs:
             https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-linux-amd64
           chmod +x /tmp/mkcert
           sudo mv /tmp/mkcert /usr/local/bin/mkcert
+          # libnss3-tools trae certutil, pero la base NSS del usuario todavía
+          # no existe en un runner limpio: `mkcert -install` avisa «no Firefox
+          # and/or Chrome/Chromium security databases found» y NO instala la
+          # CA en el almacén del que Chromium (Playwright) lee la confianza —
+          # el navegador rechazaba https://app.vendi.co con
+          # ERR_CERT_AUTHORITY_INVALID (medido en el run 30245815581). Se crea
+          # la base vacía antes de instalar.
+          mkdir -p "${HOME}/.pki/nssdb"
+          certutil -N --empty-password -d "sql:${HOME}/.pki/nssdb"
           mkcert -install
           mkdir -p infra/certs
           mkcert -cert-file infra/certs/vendi.co.pem \
