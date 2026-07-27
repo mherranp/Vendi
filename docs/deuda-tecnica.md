@@ -21,8 +21,9 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 | D-19 | El reenvío de una compra con el mismo `id` y payload distinto devuelve la existente en silencio (asimetría con ajustes y ventas) | Fase 1 (antes del piloto) | backend |
 | D-20 | El `FOR UPDATE` del producto que exige `aplicar_movimiento` es convención documentada, no enforced | Fase 1 (antes del piloto o al primer llamante nuevo) | backend |
 | D-21 | El sync de ventas bloquea los productos en el orden del ticket: deadlock teórico multi-producto (heredado del módulo ventas) | Fase 1 (antes del piloto) | backend |
-| D-22 | Falta el test literal `inventario.ajustar` → `tipo_desconocido` que la decisión 3 del plan dice fijado (lo cubre el genérico) | Fase 1 (Etapa 1.4, QA) | backend |
 | D-23 | El reintento de un ajuste cuyo producto fue dado de baja después devuelve 422 `producto_no_encontrado` en vez de la respuesta idempotente original | Fase 1 (antes del piloto) | backend |
+| D-24 | Un ajuste con el `id` de otro tenant recibe 409 `ajuste_id_divergente` (efecto de la RLS que oculta la fila; criterio no firmado, espejo de `dispositivo_id_en_conflicto`) | Fase 1 (antes del piloto) | backend |
+| D-25 | Una compra con `costo_unitario = 0` deja `ultimo_costo = 0` y el P&L mostrará margen del 100% hasta la próxima compra con costo real (decisión de producto pendiente) | Fase 1 (antes del piloto) | backend |
 
 Cerradas en la Etapa 5, con su evidencia al final de este documento: **D-01**
 (ROPC), **D-04** (Keycloak sin `--optimized`), **D-06** (`alembic_version`
@@ -39,6 +40,10 @@ operación sin `datos` es un 422 de pydantic, no una `rechazada` del lote.
 Cerrada en la Tarea 11 del módulo inventario (Fase 1, Etapa 1.2): **D-12**
 (el stock sin alertas de umbral): el punto único de aplicación de movimientos
 emite `inventario.alerta_stock` al cruzar un nivel hacia abajo.
+
+Cerrada en el QA adversarial del módulo inventario (Fase 1, Etapa 1.4): **D-22**
+(el test literal `inventario.ajustar` → `tipo_desconocido` que la decisión 3
+del plan daba por fijado y solo cubría el genérico).
 
 > Runbooks operativos relacionados: el procedimiento completo de respaldo y
 > restauración (qué se vuelca, qué NO, y cómo se promueve una copia a base
@@ -471,33 +476,6 @@ por `producto_id` antes de bloquear, la misma receta de la compra.
 
 ---
 
-## D-22 · Falta el test literal `inventario.ajustar` → `tipo_desconocido`
-
-**Qué es.** La decisión 3 del plan del módulo firma que un lote con
-`tipo: "inventario.ajustar"` sale `rechazada` con `tipo_desconocido` y dice
-«hay test que lo fija». Lo que existe es el genérico
-(`test_un_tipo_desconocido_es_rechazada_no_422`, con un tipo inventado, y el
-adversarial con inyección SQL): el comportamiento está cubierto, el literal
-del plan no.
-
-**Por qué se aceptó.** Cobertura real del comportamiento con dos tests; el
-literal solo añadiría el nombre propio del caso que la decisión documenta.
-
-**Riesgo si se olvida.** Mínimo: si alguien registra `inventario.ajustar`
-como tipo del sync en el futuro (rompiendo la decisión 3: los ajustes son
-online-obligatorios y NO viajan por el lote), ningún test lo pone rojo con
-nombre propio — lo pillaría la revisión, no la suite.
-
-**Vencimiento: Fase 1, Etapa 1.4 (QA adversarial del módulo).** Añadir el
-test literal.
-
-**Candados mientras tanto:**
-
-- `backend/tests/test_ventas_servicio.py::test_un_tipo_desconocido_es_rechazada_no_422`
-- `backend/tests/test_ventas_adversarial.py::test_un_tipo_con_inyeccion_sql_es_tipo_desconocido_y_no_pasa_nada`
-
----
-
 ## D-23 · El reintento de un ajuste sobre un producto dado de baja no es idempotente
 
 **Qué es.** En `InventarioService.registrar_ajuste` el bloqueo/validación del
@@ -531,6 +509,79 @@ necesita del producto en la fila del ajuste, o devolviendo el nivel sin él).
 
 - `backend/tests/test_inventario_servicio.py::test_el_reintento_del_ajuste_devuelve_lo_mismo_sin_mover_stock`
   (el reintento con el producto vivo sí es idempotente)
+
+---
+
+## D-24 · Un ajuste con el `id` de otro tenant recibe 409 `ajuste_id_divergente`
+
+**Qué es.** En `InventarioService.registrar_ajuste`, un ajuste cuyo `id` ya
+existe EN OTRO negocio no lo ve la RLS: el SELECT del reintento no encuentra
+nada, el INSERT choca contra `ajustes_inventario_pkey` y
+`_flush_traduciendo_integridad` lo traduce a 409 `ajuste_id_divergente` — el
+mismo código que «mismo id con payload distinto en TU negocio», aunque aquí
+no hay divergencia sino colisión con una fila invisible. Es el espejo de
+`dispositivo_id_en_conflicto` (ventas): el criterio «la RLS decide qué
+existe y el motivo no distingue ajeno de divergente» no está firmado para
+los ajustes.
+
+**Por qué se aceptó.** Detectado por el QA adversarial del módulo y
+dictaminado aceptable: el 409 es tipado (nunca un 500), no fuga datos del
+vecino (el detalle lleva los campos del PAYLOAD del llamante, no la fila
+ajena), y fuera de un ataque la colisión de UUID entre tenants es
+despreciable. Queda como decisión registrada pendiente de firma, no como
+bug.
+
+**Riesgo si se olvida.** Un cliente que reutiliza ids (migración desde otro
+sistema, generador de UUID roto) recibe un mensaje («ya existe con datos
+distintos») que describe un caso que no es el suyo, y si el criterio se
+firma distinto en ventas, ajustes y dispositivos quedan desalineados sin
+que nadie lo note.
+
+**Vencimiento: Fase 1, antes del piloto.** Firmar el criterio: aceptar el
+409 como decisión (espejo explícito de `dispositivo_id_en_conflicto`) o
+distinguir los motivos, y alinear el mensaje con lo que el cliente puede
+hacer al respecto.
+
+**Candados mientras tanto:**
+
+- `backend/tests/test_inventario_adversarial.py::test_el_ajuste_con_id_de_otro_tenant_es_409`
+  (integration, corre en CI): el 409 es tipado, sin fila, sin movimiento y
+  sin fuga del dato ajeno.
+- `backend/tests/test_inventario_adversarial.py::test_el_ajuste_con_producto_de_otro_tenant_es_422_sin_fuga`:
+  el mismo criterio RLS-decide para el producto del ajuste.
+
+---
+
+## D-25 · Una compra con `costo_unitario = 0` deja `ultimo_costo = 0` y el P&L mostrará margen del 100%
+
+**Qué es.** El schema de compras admite `costo_unitario_centavos = 0`
+(`ge=0`: la bonificación del proveedor es un caso real) y
+`registrar_compra` copia ese 0 a `productos.ultimo_costo` — el dato que el
+P&L costea (ADR-006/020). Desde esa compra y hasta la próxima con costo
+real, el P&L calculará margen del 100% sobre cada venta del producto.
+
+**Por qué se aceptó.** Rechazar el 0 prohibiría las bonificaciones, y
+«no tocar `ultimo_costo` cuando el costo es 0» dejaría costeado con un
+precio que ya no es el de la última compra (la invariante firmada es que
+`ultimo_costo` ES el costo de la última compra). Es una decisión de
+producto pendiente: ¿permitir costo 0 tal cual, o exigir una confirmación
+explícita (p. ej. `observaciones` obligatoria cuando el total es 0)?
+
+**Riesgo si se olvida.** Un error de digitación (la factura decía 2000 y se
+tecleó 0) infla silenciosamente el margen que el tendero ve en el P&L; el
+dato se «cura» solo con la próxima compra, que puede no llegar nunca para
+un producto de baja rotación.
+
+**Vencimiento: Fase 1, antes del piloto.** Tomar la decisión de producto
+(permitir, confirmar o requerir observaciones) y reflejarla en el schema o
+en el servicio con su test.
+
+**Candados mientras tanto:**
+
+- `backend/tests/test_inventario_adversarial.py::test_la_compra_de_costo_cero_deja_ultimo_costo_en_cero`
+  (integration, corre en CI): el comportamiento actual queda fijado —
+  total 0, `ultimo_costo` 0, stock sumado — para que cualquier cambio sea
+  una decisión explícita, no un efecto colateral.
 
 ---
 
@@ -750,6 +801,52 @@ $ uv run pytest tests/test_inventario_alertas.py -q
   demuestra la alerta de `agotado`.
 - `backend/tests/test_inventario_servicio.py::test_comprar_no_emite_alerta_aunque_salga_del_rojo`:
   la compra que repone stock no alerta (re-arma el umbral).
+
+---
+
+### D-22 · Faltaba el test literal `inventario.ajustar` → `tipo_desconocido`
+
+**Qué era.** La decisión 3 del plan del módulo firma que un lote con
+`tipo: "inventario.ajustar"` sale `rechazada` con `tipo_desconocido` y dice
+«hay test que lo fija», pero lo que existía era el genérico
+(`test_un_tipo_desconocido_es_rechazada_no_422`, con un tipo inventado, y el
+adversarial con inyección SQL): el comportamiento estaba cubierto, el
+literal del plan no.
+
+**Cómo se cerró** (QA adversarial del módulo, commit `c949048` — su
+vencimiento firmado: «Fase 1, Etapa 1.4»). El test literal
+`backend/tests/test_inventario_adversarial.py::test_el_lote_con_tipo_inventario_ajustar_es_tipo_desconocido_y_no_toca_nada`:
+un lote con el tipo propio y un payload de ajuste perfectamente formado —no
+una basura cualquiera— sale `rechazada` con `tipo_desconocido`, y ni fila
+de ajuste, ni movimiento, ni stock tocado. Si alguien registra
+`inventario.ajustar` como tipo del sync en el futuro, ESTE test se pone
+rojo con nombre propio.
+
+**Evidencia** (run ci 30309869727 sobre `f8fa154`, 2026-07-27; el test es
+integration y corre contra el PostgreSQL real del CI):
+
+```
+$ gh run view 30309869727 --log   # job «backend / pytest -m integration (stack real)»
+300 passed, 402 deselected        # incluye
+                                  # test_el_lote_con_tipo_inventario_ajustar_es_tipo_desconocido_y_no_toca_nada
+```
+
+El run también cubrió los dos runs rojos anteriores: 30307855551 (sobre
+`c949048`, donde nació el test) y 30308638352 (sobre `5071c29`) lo
+ejecutaron y pasó, pero el job quedó rojo por el aritmético de umbrales de
+`test_el_nivel_se_deriva_del_minimo_vigente...` (con mínimo 30 el stock 10
+ya es crítico y nunca hay cruce bajo → crítico; corregido a mínimo 12 en
+`9dd0215`) y por el flake de reloj de
+`test_el_mismo_lote_dos_veces_deja_una_venta_un_movimiento_y_un_evento`
+(el lote se construía por envío con `datetime.now()`; corregido en
+`f8fa154` construyéndolo una sola vez).
+
+**Candados:**
+
+- El propio test literal, en CI sobre PostgreSQL real en cada push.
+- `backend/tests/test_ventas_servicio.py::test_un_tipo_desconocido_es_rechazada_no_422`
+  y `backend/tests/test_ventas_adversarial.py::test_un_tipo_con_inyeccion_sql_es_tipo_desconocido_y_no_pasa_nada`
+  (los genéricos que ya cubrían el comportamiento, vigentes).
 
 ---
 
