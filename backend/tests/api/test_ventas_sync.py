@@ -51,22 +51,24 @@ def _registrar_dispositivo(cliente, cabeceras) -> str:
     return respuesta.json()["id"]
 
 
+def _operacion_venta(producto_id: str, secuencia: int = 1) -> dict:
+    return {
+        "id": str(uuid.uuid4()),
+        "tipo": "venta.crear",
+        "secuencia": secuencia,
+        "datos": {
+            "consecutivo_local": secuencia,
+            "medio_pago": "efectivo",
+            "total_centavos": 2500,
+            "creada_en_cliente": datetime.now(UTC).isoformat(),
+            "items": [{"producto_id": producto_id, "cantidad": "1", "precio_unitario_centavos": 2500}],
+        },
+    }
+
+
 def _lote(dispositivo_id: str, producto_id: str, *operaciones: dict) -> dict:
     if not operaciones:
-        operaciones = (
-            {
-                "id": str(uuid.uuid4()),
-                "tipo": "venta.crear",
-                "secuencia": 1,
-                "datos": {
-                    "consecutivo_local": 1,
-                    "medio_pago": "efectivo",
-                    "total_centavos": 2500,
-                    "creada_en_cliente": datetime.now(UTC).isoformat(),
-                    "items": [{"producto_id": producto_id, "cantidad": "1", "precio_unitario_centavos": 2500}],
-                },
-            },
-        )
+        operaciones = (_operacion_venta(producto_id),)
     return {"dispositivo_id": dispositivo_id, "operaciones": list(operaciones)}
 
 
@@ -153,6 +155,30 @@ def test_un_tenant_inyectado_en_el_payload_da_422(app_con_base):
 
     respuesta = cliente.post("/api/v1/sync/lotes", json=lote, headers=cabeceras)
     assert respuesta.status_code == 422
+    assert respuesta.json()["code"] == "campos_desconocidos"
+
+
+def test_el_422_por_campo_desconocido_no_aplica_nada_del_lote(app_con_base):
+    """La garantía firmada del 422: el lote entero hace rollback. La venta
+    válida que compartía lote con la operación contaminada NO quedó a
+    medias — al reenviarla sola debe salir `aceptada`; si saliera
+    `duplicada`, habría commit parcial (un bug, no un test roto)."""
+    cliente, validador, _ = app_con_base
+    cabeceras, producto, dispositivo = _montar(cliente, validador, "Sync 13")
+
+    venta_valida = _operacion_venta(producto, secuencia=1)
+    venta_contaminada = _operacion_venta(producto, secuencia=2)
+    venta_contaminada["datos"]["tenant_id"] = str(uuid.uuid4())
+
+    respuesta = cliente.post(
+        "/api/v1/sync/lotes", json=_lote(dispositivo, producto, venta_valida, venta_contaminada), headers=cabeceras
+    )
+    assert respuesta.status_code == 422
+    assert respuesta.json()["code"] == "campos_desconocidos"
+
+    reenvio = cliente.post("/api/v1/sync/lotes", json=_lote(dispositivo, producto, venta_valida), headers=cabeceras)
+    assert reenvio.status_code == 200, reenvio.text
+    assert [r["resultado"] for r in reenvio.json()["resultados"]] == ["aceptada"]
 
 
 def test_el_lote_se_corta_en_200_operaciones(app_con_base):
@@ -196,6 +222,33 @@ def test_el_cajero_sincroniza_y_vende_pero_su_anulacion_se_rechaza(app_con_base)
     # Y el dueño sí:
     respuesta = cliente.post("/api/v1/sync/lotes", json=lote_anula, headers=dueno)
     assert [r["resultado"] for r in respuesta.json()["resultados"]] == ["aceptada"]
+
+
+def test_el_lote_mixto_del_cajero_acepta_la_venta_y_rechaza_la_anulacion(app_con_base):
+    """ADR-023 dentro del mismo lote: la creación del cajero sale `aceptada`
+    y su anulación `rechazada` con `permiso_ausente`, ambas en la misma
+    respuesta 200 — la cola del cajero no se detiene por la anulación."""
+    cliente, validador, _ = app_con_base
+    negocio = _crear_negocio(cliente, validador, "Sync 14")
+    dueno = _cabeceras_de(validador, ROL_DUENO, negocio, "tok-d14")
+    cajero = _cabeceras_de(validador, ROL_CAJERO, negocio, "tok-c14")
+    producto = _alta_producto(cliente, dueno)
+    dispositivo = _registrar_dispositivo(cliente, cajero)
+
+    venta = _operacion_venta(producto, secuencia=1)
+    anulacion = {
+        "id": str(uuid.uuid4()),
+        "tipo": "venta.anular",
+        "secuencia": 2,
+        "datos": {"venta_id": venta["id"]},
+    }
+
+    respuesta = cliente.post("/api/v1/sync/lotes", json=_lote(dispositivo, producto, venta, anulacion), headers=cajero)
+
+    assert respuesta.status_code == 200, respuesta.text
+    resultados = respuesta.json()["resultados"]
+    assert [r["resultado"] for r in resultados] == ["aceptada", "rechazada"]
+    assert resultados[1]["motivo"] == "permiso_ausente"
 
 
 def test_un_negocio_suspendido_no_sincroniza(app_con_base):
