@@ -281,9 +281,12 @@ class CajaService:
 
     async def registrar_movimiento(self, datos: MovimientoCrear) -> CajaMovimiento:
         """Ingreso o egreso manual, atado a la sesión ABIERTA (sin ella, 409
-        `caja_sin_sesion_abierta`). Idempotente por el `id` del cliente
-        (REQUERIDO, decisión 6): reintento idéntico → la fila existente, sin
-        duplicar ni re-emitir; divergente → 409 `movimiento_id_divergente`."""
+        `caja_sin_sesion_abierta`). La sesión se lee `FOR UPDATE` (mismo
+        patrón que el cierre y el sync): el movimiento se serializa con el
+        cierre y jamás se inserta contra una sesión ya cerrada. Idempotente
+        por el `id` del cliente (REQUERIDO, decisión 6): reintento idéntico →
+        la fila existente, sin duplicar ni re-emitir; divergente → 409
+        `movimiento_id_divergente`."""
         existente = await self._session.get(CajaMovimiento, datos.id)
         if existente is not None:
             divergentes = [
@@ -299,7 +302,7 @@ class CajaService:
                 )
             logger.info("caja_movimiento_idempotente", movimiento_id=str(existente.id))
             return existente
-        sesion = await self._sesion_abierta()
+        sesion = await self._sesion_abierta(bloqueo=True)
         if sesion is None:
             raise ConflictError(
                 "No hay una caja abierta: abre la caja antes de registrar movimientos.",
@@ -370,11 +373,12 @@ class CajaService:
         CONGELA en las columnas de la sesión (ADR-021). Desde entonces nada
         lo reabre: ni una venta tardía, ni una anulación posterior.
 
-        La fila se bloquea `FOR UPDATE` hasta el commit: el cierre y el sync
-        (que desde este módulo también bloquea la sesión al resolverla,
-        decisión 5) se serializan — una venta jamás queda insertada contra
-        una sesión ya cerrada. El reintento con el MISMO conteo devuelve el
-        arqueo congelado sin recalcular (decisión 6); con otro conteo es 409.
+        La fila se bloquea `FOR UPDATE` hasta el commit: el cierre, el alta
+        de movimientos (que bloquea la sesión al resolverla) y el sync
+        (decisión 5) se serializan — ni una venta ni un movimiento jamás
+        quedan insertados contra una sesión ya cerrada. El reintento con el
+        MISMO conteo devuelve el arqueo congelado sin recalcular (decisión
+        6); con otro conteo es 409.
         """
         sesion = await self._session.get(CajaSesion, sesion_id, with_for_update=True)
         if sesion is None:
@@ -432,8 +436,15 @@ class CajaService:
 
     # --- Internas ----------------------------------------------------------------
 
-    async def _sesion_abierta(self) -> CajaSesion | None:
+    async def _sesion_abierta(self, *, bloqueo: bool = False) -> CajaSesion | None:
         consulta = select(CajaSesion).where(CajaSesion.estado == "abierta")
+        if bloqueo:
+            # El alta del movimiento bloquea la fila igual que el cierre y el
+            # sync: el movimiento se serializa con el cierre y, si llega
+            # tarde, la re-lectura ya no la encuentra abierta y recibe el 409
+            # — nunca se inserta contra una sesión ya cerrada (pasaría la FK
+            # pero desaparecería de todo arqueo).
+            consulta = consulta.with_for_update()
         return (await self._session.execute(consulta)).scalar_one_or_none()
 
     @staticmethod

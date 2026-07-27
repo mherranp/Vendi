@@ -259,6 +259,32 @@ async def test_el_movimiento_es_idempotente_y_el_divergente_es_409(servicio, pg_
     assert "monto" in exc.value.details["campos"]
 
 
+async def test_el_movimiento_que_llega_tras_el_cierre_es_409_sin_fila_fantasma(servicio, pg_platform_url):
+    """La carrera movimiento-vs-cierre: la sesión abierta se lee `FOR UPDATE`
+    también en el alta del movimiento (mismo patrón que el cierre), así el
+    movimiento se serializa con él. El que llega tarde recibe el 409 tipado
+    de «sin sesión abierta» — NUNCA una fila insertada contra la sesión ya
+    cerrada, que pasaría la FK pero desaparecería de todo arqueo: el
+    congelado no la incluye y el de la sesión siguiente tampoco."""
+    sesion = await servicio.abrir_sesion(SesionAbrir.model_validate({"base_inicial": 0}))
+    await servicio._session.commit()
+    await servicio.cerrar_sesion(sesion.id, SesionCerrar.model_validate({"contado": 0}))
+    await servicio._session.commit()
+
+    with pytest.raises(ConflictError) as exc:
+        await servicio.registrar_movimiento(
+            _movimiento(5000, tipo="egreso", categoria="retiro_dueno", motivo="Retiro tardío")
+        )
+    assert exc.value.code == "caja_sin_sesion_abierta"
+    # Con el rol plataforma (BYPASSRLS): ninguna fila fantasma quedó insertada.
+    fila = await _uno(
+        pg_platform_url,
+        "SELECT count(*) AS n FROM caja_movimientos WHERE tenant_id = :t",
+        t=T1,
+    )
+    assert fila.n == 0
+
+
 # --- El arqueo --------------------------------------------------------------------
 
 
@@ -346,6 +372,58 @@ async def test_el_reintento_del_cierre_devuelve_lo_congelado_y_el_otro_conteo_es
     with pytest.raises(ConflictError) as exc:
         await servicio.cerrar_sesion(sesion.id, SesionCerrar.model_validate({"contado": 100}))
     assert exc.value.code == "caja_ya_cerrada"
+
+
+async def test_dos_cierres_concurrentes_cierran_la_sesion_una_sola_vez(servicio, pg_app_url, semilla, pg_platform_url):
+    """El cierre bloquea la fila `FOR UPDATE` (mismo patrón que el sync): dos
+    cierres sobre la MISMA sesión se serializan — uno cierra, el otro recibe
+    el 409 tipado de «ya cerrada con otro conteo», nunca un 500. UN solo
+    evento `caja.sesion_cerrada` en el outbox y el arqueo congelado una vez,
+    con el conteo del cierre ganador."""
+    sesion = await servicio.abrir_sesion(SesionAbrir.model_validate({"base_inicial": 50000}))
+    await servicio._session.commit()
+
+    async def cierre_con_sesion_propia(contado: int):
+        engine = create_engine(pg_app_url)
+        factory = create_session_factory(engine)
+        marca = current_tenant_id.set(T1)
+        try:
+            async with factory() as s:
+                servicio_propio = CajaService(session=s, tenant_id=T1, actor_id="dueno-prueba", puede_cerrar=True)
+                try:
+                    arqueo = await servicio_propio.cerrar_sesion(
+                        sesion.id, SesionCerrar.model_validate({"contado": contado})
+                    )
+                    await s.commit()
+                    return ("cerrada", arqueo)
+                except ConflictError as exc:
+                    await s.rollback()
+                    assert exc.value.code == "caja_ya_cerrada"
+                    return ("conflicto", exc)
+        finally:
+            current_tenant_id.reset(marca)
+            await engine.dispose()
+
+    resultados = await asyncio.gather(
+        cierre_con_sesion_propia(50000), cierre_con_sesion_propia(51000), return_exceptions=True
+    )
+    for resultado in resultados:
+        if isinstance(resultado, BaseException):
+            raise resultado
+    assert sorted(etiqueta for etiqueta, _ in resultados) == ["cerrada", "conflicto"]
+    ganador = next(arqueo for etiqueta, arqueo in resultados if etiqueta == "cerrada")
+
+    fila = await _uno(
+        pg_platform_url,
+        "SELECT (SELECT count(*) FROM outbox_messages WHERE routing_key = :k) AS eventos, "
+        "(SELECT count(*) FROM caja_sesiones WHERE id = :s AND estado = 'cerrada' AND cerrada_por IS NOT NULL "
+        "AND cerrada_en IS NOT NULL AND efectivo_esperado IS NOT NULL AND efectivo_contado IS NOT NULL "
+        "AND diferencia IS NOT NULL AND efectivo_contado = :contado) AS congeladas",
+        k=f"{T1}.caja.sesion_cerrada",
+        s=sesion.id,
+        contado=ganador.efectivo_contado,
+    )
+    assert (fila.eventos, fila.congeladas) == (1, 1)
 
 
 async def test_cerrar_una_sesion_desconocida_es_404_sin_fuga(servicio):
