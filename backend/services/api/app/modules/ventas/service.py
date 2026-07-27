@@ -441,10 +441,15 @@ class VentasService:
         sesion = (await self._session.execute(consulta)).scalar_one_or_none()
         if sesion is not None:
             return sesion
-        nueva = CajaSesion(tenant_id=self._tenant_id, abierta_por=self._actor_id, base_inicial=0)
-        self._session.add(nueva)
         try:
             async with self._session.begin_nested():
+                # El alta va DENTRO del savepoint: `begin_nested()` hace flush
+                # de lo pendiente al tomar su snapshot, ANTES de emitir el
+                # SAVEPOINT — un `add` previo haría reventar el INSERT fuera
+                # del savepoint y la transacción quedaría abortada sin dónde
+                # revertir (InvalidRequestError en el re-read de la ganadora).
+                nueva = CajaSesion(tenant_id=self._tenant_id, abierta_por=self._actor_id, base_inicial=0)
+                self._session.add(nueva)
                 await self._session.flush()
         except IntegrityError as exc:
             if "ux_caja_sesion_abierta" not in str(exc):

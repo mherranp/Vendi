@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -191,7 +191,10 @@ async def test_el_reloj_del_cliente_es_dato_y_la_verdad_es_recibida_en(servicio,
     assert [r.resultado for r in resultados] == ["aceptada"]
     await servicio._session.commit()
     fila = await _uno(pg_platform_url, "SELECT creada_en_cliente, recibida_en FROM ventas WHERE tenant_id = :t", t=T1)
-    assert fila.creada_en_cliente.year == 1999, "el dato del ticket se conserva tal cual"
+    # `timestamptz` guarda el INSTANTE: la lectura llega en UTC (2000-01-01
+    # 04:00Z), así que se compara el instante, no la hora de pared del cliente.
+    esperado = datetime(1999, 12, 31, 23, 0, tzinfo=timezone(timedelta(hours=-5)))
+    assert fila.creada_en_cliente == esperado, "el dato del ticket se conserva tal cual"
     assert fila.recibida_en.year >= 2026, "la verdad temporal es del servidor"
 
 
