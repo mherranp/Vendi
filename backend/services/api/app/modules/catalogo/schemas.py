@@ -6,6 +6,18 @@ cada cambio en estos modelos es un cambio de contrato: se regenera
 
 Dinero en centavos enteros (`precio_venta`, `ultimo_costo`); cantidades en
 `Decimal` (`stock_minimo`, `stock_actual`), nunca flotante (ADR-019/ADR-018).
+
+Cotas superiores de la entrada: ningún valor válido puede desbordar su
+columna (un `DataError` de Postgres saldría como 500, no como 422):
+
+- `precio_venta` ≤ `TOPE_PRECIO` = 2^31-1: la columna es `Integer` y en
+  centavos ese tope ya son ~21 millones de pesos, muy por encima de cualquier
+  precio real de una tienda de barrio.
+- `stock_minimo` ≤ `TOPE_STOCK`: el máximo exacto que cabe en `Numeric(14, 3)`.
+- Los textos ya llevan `max_length` acorde a su columna (`nombre` 160 =
+  `String(160)`; `codigo_barras` y `categoria` son `Text` y su tope es de
+  negocio, no de columna) e `iva_pct` solo admite 0/5/19, que cabe en
+  `Numeric(5, 2)`.
 """
 
 from __future__ import annotations
@@ -20,8 +32,19 @@ from app.modules.catalogo.models import TARIFAS_DE_IVA, UNIDADES_DE_MEDIDA
 
 LARGO_MAX_NOMBRE = 160
 
+#: Tope de la columna `Integer` de Postgres (2^31 - 1).
+TOPE_PRECIO = 2_147_483_647
 
-def _limpiar_texto(valor: str) -> str:
+#: El máximo exacto que cabe en `Numeric(14, 3)`: 14 dígitos, 3 decimales.
+TOPE_STOCK = Decimal("99999999999.999")
+
+
+def _limpiar_texto(valor: object) -> object:
+    # Corre ANTES de la validación de tipo (mode="before"): lo que no sea str
+    # pasa intacto para que pydantic lo rechace como 422. Intentar limpiarlo
+    # reventaría con AttributeError dentro del validador y saldría como 500.
+    if not isinstance(valor, str):
+        return valor
     return " ".join(valor.split())
 
 
@@ -55,9 +78,9 @@ class ProductoCrear(BaseModel):
     codigo_barras: str | None = Field(default=None, max_length=64)
     categoria: str | None = Field(default=None, max_length=120)
     unidad_medida: str = "unidad"
-    precio_venta: int = Field(ge=0)
+    precio_venta: int = Field(ge=0, le=TOPE_PRECIO)
     iva_pct: Decimal = Decimal("0")
-    stock_minimo: Decimal = Field(default=Decimal("0"), ge=0)
+    stock_minimo: Decimal = Field(default=Decimal("0"), ge=0, le=TOPE_STOCK)
     padre_id: uuid.UUID | None = None
 
     # La limpieza va ANTES de las constraints (mode="before"): un nombre de
@@ -81,9 +104,9 @@ class ProductoActualizar(BaseModel):
     codigo_barras: str | None = Field(default=None, max_length=64)
     categoria: str | None = Field(default=None, max_length=120)
     unidad_medida: str | None = None
-    precio_venta: int | None = Field(default=None, ge=0)
+    precio_venta: int | None = Field(default=None, ge=0, le=TOPE_PRECIO)
     iva_pct: Decimal | None = None
-    stock_minimo: Decimal | None = Field(default=None, ge=0)
+    stock_minimo: Decimal | None = Field(default=None, ge=0, le=TOPE_STOCK)
     padre_id: uuid.UUID | None = None
 
     # Igual que en ProductoCrear: la limpieza va antes de `min_length=1`.

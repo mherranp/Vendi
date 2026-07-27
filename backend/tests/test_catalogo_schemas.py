@@ -89,6 +89,42 @@ def test_actualizar_rechaza_los_mismos_valores_invalidos():
         ProductoActualizar(unidad_medida="arroba")
 
 
+def test_el_nombre_que_no_es_texto_se_rechaza_como_422_no_como_500():
+    """El validador de limpieza corre en mode="before", antes de la validación
+    de tipo: si intentara limpiar un int/lista/dict reventaría con
+    AttributeError y el catch-all lo devolvería como 500. Lo no-texto pasa
+    intacto y lo rechaza pydantic con el ValidationError estándar (422)."""
+    for invalido in (123, [], {}):
+        with pytest.raises(ValidationError):
+            ProductoCrear(nombre=invalido, precio_venta=100)
+        with pytest.raises(ValidationError):
+            ProductoActualizar(nombre=invalido)
+
+
+def test_el_precio_cabe_en_el_integer_de_la_columna():
+    """`precio_venta` es Integer (máx. 2^31-1): sin cota, un valor mayor
+    llegaba a la base y el DataError salía como 500 en vez de 422."""
+    assert ProductoCrear(nombre="Arroz", precio_venta=2_147_483_647).precio_venta == 2_147_483_647
+    with pytest.raises(ValidationError):
+        ProductoCrear(nombre="Arroz", precio_venta=2_147_483_648)
+    assert ProductoActualizar(precio_venta=2_147_483_647).precio_venta == 2_147_483_647
+    with pytest.raises(ValidationError):
+        ProductoActualizar(precio_venta=2_147_483_648)
+
+
+def test_el_stock_minimo_cabe_en_el_numeric_de_la_columna():
+    """`stock_minimo` es Numeric(14, 3): el máximo que cabe es
+    99_999_999_999.999. Un valor con más de 14 dígitos desbordaba la columna
+    y el DataError de Postgres salía como 500."""
+    tope = Decimal("99999999999.999")
+    assert ProductoCrear(nombre="Arroz", precio_venta=100, stock_minimo=tope).stock_minimo == tope
+    with pytest.raises(ValidationError):
+        ProductoCrear(nombre="Arroz", precio_venta=100, stock_minimo=Decimal("100000000000"))
+    assert ProductoActualizar(stock_minimo=tope).stock_minimo == tope
+    with pytest.raises(ValidationError):
+        ProductoActualizar(stock_minimo=Decimal("100000000000"))
+
+
 def test_salida_expone_el_stock_y_el_costo_solo_como_lectura():
     """`stock_actual` y `ultimo_costo` están en la salida (los lee el POS) y
     NO en los schemas de entrada (los mueven inventario y compras, ADR-020)."""
