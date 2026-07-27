@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 # Importar los modelos los registra en `Base.metadata`. Sin estos imports el
 # test pasaría porque no habría nada que revisar: el peor de los falsos verdes.
+from app.modules.catalogo.models import Producto  # noqa: F401
 from vendi_core.audit.models import AuditLog  # noqa: F401
 from vendi_core.db.base import (
     TABLAS_DE_PLATAFORMA,
