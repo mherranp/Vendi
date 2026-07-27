@@ -59,6 +59,23 @@ def test_el_nombre_se_limpia_de_espacios():
     assert ProductoCrear(nombre="  Arroz   500g ", precio_venta=100).nombre == "Arroz 500g"
 
 
+def test_el_nombre_no_puede_quedar_vacio_tras_la_limpieza():
+    """`min_length=1` se evalúa antes de la limpieza: un nombre de puros
+    espacios pasaba la constraint y quedaba en "" sin CHECK que lo salvara.
+    La limpieza va primero y el nombre vacío se rechaza."""
+    with pytest.raises(ValidationError):
+        ProductoCrear(nombre="   ", precio_venta=100)
+    with pytest.raises(ValidationError):
+        ProductoCrear(nombre="", precio_venta=100)
+
+
+def test_actualizar_rechaza_un_nombre_que_queda_vacio():
+    """En el PATCH un nombre presente pero vacío tras limpiar es un error,
+    no un "no lo toques": para eso está `None`."""
+    with pytest.raises(ValidationError):
+        ProductoActualizar(nombre="   ")
+
+
 def test_actualizar_es_todo_opcional_y_none_es_no_tocar():
     datos = ProductoActualizar()
     assert datos.model_dump(exclude_unset=True) == {}

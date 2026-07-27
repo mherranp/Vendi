@@ -60,7 +60,9 @@ class ProductoCrear(BaseModel):
     stock_minimo: Decimal = Field(default=Decimal("0"), ge=0)
     padre_id: uuid.UUID | None = None
 
-    _nombre_limpio = field_validator("nombre")(lambda v: _limpiar_texto(v))
+    # La limpieza va ANTES de las constraints (mode="before"): un nombre de
+    # puros espacios debe chocar con `min_length=1`, no colarse como "".
+    _nombre_limpio = field_validator("nombre", mode="before")(lambda v: _limpiar_texto(v))
     _ean_normalizado = field_validator("codigo_barras")(_normalizar_ean)
     _unidad_valida = field_validator("unidad_medida")(_validar_unidad)
     _iva_valido = field_validator("iva_pct")(_validar_iva)
@@ -84,7 +86,8 @@ class ProductoActualizar(BaseModel):
     stock_minimo: Decimal | None = Field(default=None, ge=0)
     padre_id: uuid.UUID | None = None
 
-    _nombre_limpio = field_validator("nombre")(lambda v: None if v is None else _limpiar_texto(v))
+    # Igual que en ProductoCrear: la limpieza va antes de `min_length=1`.
+    _nombre_limpio = field_validator("nombre", mode="before")(lambda v: None if v is None else _limpiar_texto(v))
     _ean_normalizado = field_validator("codigo_barras")(_normalizar_ean)
     _unidad_valida = field_validator("unidad_medida")(lambda v: None if v is None else _validar_unidad(v))
     _iva_valido = field_validator("iva_pct")(lambda v: None if v is None else _validar_iva(v))
