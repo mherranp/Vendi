@@ -289,6 +289,44 @@ jobs:
       - run: npm run format:check
 
   # ---------------------------------------------------------------------------
+  frontend-contratos:
+    name: frontend / contratos (codegen + contraste WCAG)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Candado de codegen contra el OpenAPI congelado
+        # Diseñado en la Etapa 5, nunca cableado: la cabecera del cliente
+        # generado (data-access/src/lib/api-client/index.ts) afirmaba que «el
+        # CI la detecta con codegen + git diff --exit-code» y no era verdad.
+        # Se regenera contra el contrato CONGELADO (docs/api/openapi-fase0.json)
+        # y no contra la API viva: este job no levanta el stack de 12
+        # contenedores, y el esquema congelado es además el único modo
+        # reproducible — la API viva solo se genera igual si no ha cambiado.
+        # `git diff --exit-code` convierte cualquier deriva en rojo: si la API
+        # cambió, el paso correcto es regenerar el esquema congelado y el
+        # cliente juntos y commitearlos en el mismo cambio.
+        run: |
+          set -euo pipefail
+          CODEGEN_SCHEMA_FILE=docs/api/openapi-fase0.json bash ../scripts/codegen-api-client.sh
+          git diff --exit-code
+      - name: Candado de contraste WCAG 2.1 AA (ui-kit)
+        # Diseñado en la Etapa 5 con la nota «pensado para engancharse también
+        # como paso de CI en la Etapa 5» y, efectivamente, no estaba en ningún
+        # workflow. Parsea el SCSS real de _tokens.scss: es la segunda fuente
+        # de verdad mecánica, no una copia de valores que se queda vieja.
+        run: npm run verificar:contraste
+
+  # ---------------------------------------------------------------------------
   frontend-test:
     name: frontend / ng test
     runs-on: ubuntu-latest
