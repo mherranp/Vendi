@@ -236,7 +236,17 @@ async def test_dos_compras_concurrentes_del_mismo_producto_dejan_el_stock_exacto
             current_tenant_id.reset(marca)
             await engine.dispose()
 
-    await asyncio.gather(compra_con_sesion_propia("5"), compra_con_sesion_propia("7"))
+    # `return_exceptions=True` y relanzar DESPUÉS: sin esto, si una de las dos
+    # compras muere (p. ej. elegida víctima de un deadlock), `gather` propaga
+    # de inmediato y la tarea superviviente sigue corriendo durante el
+    # teardown del fixture — su commit aterriza a mitad del borrado y rompe la
+    # limpieza con una violación de FK fantasma.
+    resultados = await asyncio.gather(
+        compra_con_sesion_propia("5"), compra_con_sesion_propia("7"), return_exceptions=True
+    )
+    for resultado in resultados:
+        if isinstance(resultado, BaseException):
+            raise resultado
     fila = await _uno(
         pg_platform_url,
         "SELECT stock_actual FROM productos WHERE id = :p",

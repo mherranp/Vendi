@@ -47,7 +47,21 @@ async def limpiar_tenants_de_prueba(pg_platform_url: str):
                     text("DELETE FROM outbox_messages WHERE payload->>'tenant_id' = ANY(:ids)"),
                     {"ids": [str(i) for i in ids]},
                 )
-                for tabla in ("movimientos_inventario", "ventas_items", "ventas", "caja_sesiones", "dispositivos"):
+                # Orden de borrado = orden de las FK (RESTRICT): los
+                # movimientos, los ítems y los ajustes referencian productos;
+                # los ítems referencian además su compra; la venta referencia
+                # dispositivo y sesión de caja. Borrar en otro orden rompe la
+                # re-entrada de la suite con una violación de FK.
+                for tabla in (
+                    "movimientos_inventario",
+                    "compra_items",
+                    "ajustes_inventario",
+                    "compras",
+                    "ventas_items",
+                    "ventas",
+                    "caja_sesiones",
+                    "dispositivos",
+                ):
                     await conn.execute(
                         text(f"DELETE FROM {tabla} WHERE tenant_id = ANY(:ids)"),
                         {"ids": list(ids)},

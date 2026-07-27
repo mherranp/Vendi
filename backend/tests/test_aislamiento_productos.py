@@ -28,8 +28,18 @@ async def productos_de_prueba(pg_platform_url: str):
     """Una fila por negocio, con el MISMO EAN en los dos (válido: el índice
     único es por tenant). Limpia antes y después: la suite es re-entrante."""
     engine = create_async_engine(pg_platform_url)
-    async with engine.begin() as conn:
+
+    async def _borrar(conn) -> None:
+        # Los movimientos, los ítems de compra, los ajustes y los ítems de
+        # venta referencian productos con FK RESTRICT: si una corrida anterior
+        # murió a mitad de otro archivo, hay que borrarlos ANTES que los
+        # productos o el DELETE revienta.
+        for tabla in ("movimientos_inventario", "compra_items", "ajustes_inventario", "ventas_items"):
+            await conn.execute(text(f"DELETE FROM {tabla} WHERE tenant_id = ANY(:ids)"), {"ids": [T1, T2]})
         await conn.execute(text("DELETE FROM productos WHERE tenant_id = ANY(:ids)"), {"ids": [T1, T2]})
+
+    async with engine.begin() as conn:
+        await _borrar(conn)
         for tenant in (T1, T2):
             await conn.execute(
                 text(
@@ -41,7 +51,7 @@ async def productos_de_prueba(pg_platform_url: str):
         yield
     finally:
         async with engine.begin() as conn:
-            await conn.execute(text("DELETE FROM productos WHERE tenant_id = ANY(:ids)"), {"ids": [T1, T2]})
+            await _borrar(conn)
         await engine.dispose()
 
 

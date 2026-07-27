@@ -102,7 +102,13 @@ class InventarioService:
         for item in sorted(datos.items, key=lambda i: i.producto_id):
             # Ordenados por producto_id (decisión 9): dos compras concurrentes
             # con productos solapados adquieren los bloqueos en el MISMO orden
-            # y no se interbloquean.
+            # y no se interbloquean. El FOR UPDATE se toma ANTES de insertar el
+            # ítem: el INSERT de la FK `compra_items → productos` toma un FOR
+            # KEY SHARE sobre la fila del producto, y adquirir ese KEY SHARE
+            # antes del FOR UPDATE es una escalada de bloqueo que interbloquea
+            # dos compras concurrentes del MISMO producto (A tiene KEY SHARE y
+            # pide FOR UPDATE; B tiene KEY SHARE y pide FOR UPDATE).
+            producto = await self._producto_bloqueado(item.producto_id)
             self._session.add(
                 CompraItem(
                     tenant_id=self._tenant_id,
@@ -112,7 +118,6 @@ class InventarioService:
                     costo_unitario_centavos=item.costo_unitario_centavos,
                 )
             )
-            producto = await self._producto_bloqueado(item.producto_id)
             await aplicar_movimiento(
                 self._session,
                 tenant_id=self._tenant_id,

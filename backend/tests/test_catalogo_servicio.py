@@ -30,16 +30,27 @@ pytestmark = pytest.mark.integration
 @pytest_asyncio.fixture
 async def limpiar_productos(pg_platform_url: str):
     engine = create_async_engine(pg_platform_url)
-    async with engine.begin() as conn:
-        await conn.execute(text("DELETE FROM productos WHERE tenant_id = ANY(:ids)"), {"ids": [T1, T2]})
-        await conn.execute(
-            text("DELETE FROM outbox_messages WHERE routing_key LIKE 'producto.%' OR routing_key LIKE '%.producto.%'")
-        )
+
+    async def _borrar() -> None:
+        async with engine.begin() as conn:
+            # Los movimientos, los ítems de compra, los ajustes y los ítems de
+            # venta referencian productos con FK RESTRICT: si una corrida
+            # anterior murió a mitad de otro archivo, hay que borrarlos ANTES
+            # que los productos o el DELETE revienta (la suite es re-entrante).
+            for tabla in ("movimientos_inventario", "compra_items", "ajustes_inventario", "ventas_items"):
+                await conn.execute(text(f"DELETE FROM {tabla} WHERE tenant_id = ANY(:ids)"), {"ids": [T1, T2]})
+            await conn.execute(text("DELETE FROM productos WHERE tenant_id = ANY(:ids)"), {"ids": [T1, T2]})
+            await conn.execute(
+                text(
+                    "DELETE FROM outbox_messages WHERE routing_key LIKE 'producto.%' OR routing_key LIKE '%.producto.%'"
+                )
+            )
+
+    await _borrar()
     try:
         yield
     finally:
-        async with engine.begin() as conn:
-            await conn.execute(text("DELETE FROM productos WHERE tenant_id = ANY(:ids)"), {"ids": [T1, T2]})
+        await _borrar()
         await engine.dispose()
 
 
