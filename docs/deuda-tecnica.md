@@ -13,12 +13,15 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 | D-09 | El tier del negocio se resuelve como `pro` para todos (módulo catálogo, decisión 2 del plan) | Fase 1 (módulo de suscripciones) | backend |
 | D-10 | `ventas.cliente_id` no tiene FK: la tabla `clientes` es del módulo 5 | Fase 1 (módulo 5, clientes-fiado) | backend |
 | D-11 | `caja_sesiones` existe y se puebla (apertura implícita del sync) sin endpoints propios | Fase 1 (módulo 4, caja) | backend |
-| D-12 | El stock no tiene alertas de umbral: el negativo es visible en `stock_actual` pero nadie notifica | Fase 1 (módulo 3, inventario) | backend |
 | D-13 | Carrera TOCTOU del cupo de tier del catálogo: dos altas concurrentes dejan 101/100 (QA adversarial) | Fase 1 (antes del piloto) | backend |
 | D-15 | `exigir_venta_anular` está definido y exportado sin endpoint que lo use | Fase 1 (módulo 4; si nada lo usa, se borra) | backend |
 | D-16 | El check 23 de `verify-setup.sh` no tiene prueba negativa ejecutada (nadie lo ha visto fallar) | Fase 1 (Etapa 1.5) | backend |
 | D-17 | `alembic check` (deriva metadata↔DDL) no corre en CI | Fase 1 | backend |
 | D-18 | El watermark del delta se fija con `now()` antes de leer: una edición confirmada en la ventana se pierde para ese dispositivo | Fase 1 (antes del piloto) | backend |
+| D-19 | El reenvío de una compra con el mismo `id` y payload distinto devuelve la existente en silencio (asimetría con ajustes y ventas) | Fase 1 (antes del piloto) | backend |
+| D-20 | El `FOR UPDATE` del producto que exige `aplicar_movimiento` es convención documentada, no enforced | Fase 1 (antes del piloto o al primer llamante nuevo) | backend |
+| D-21 | El sync de ventas bloquea los productos en el orden del ticket: deadlock teórico multi-producto (heredado del módulo ventas) | Fase 1 (antes del piloto) | backend |
+| D-22 | Falta el test literal `inventario.ajustar` → `tipo_desconocido` que la decisión 3 del plan dice fijado (lo cubre el genérico) | Fase 1 (Etapa 1.4, QA) | backend |
 
 Cerradas en la Etapa 5, con su evidencia al final de este documento: **D-01**
 (ROPC), **D-04** (Keycloak sin `--optimized`), **D-06** (`alembic_version`
@@ -31,6 +34,10 @@ API): el aprovisionamiento se movió al servicio `provisioner` (ADR-027).
 Cerrada en la Tarea 8 del módulo inventario (Fase 1, Etapa 1.2): **D-14**
 (`OperacionSync.datos` opcional en el contrato): el campo es requerido y la
 operación sin `datos` es un 422 de pydantic, no una `rechazada` del lote.
+
+Cerrada en la Tarea 11 del módulo inventario (Fase 1, Etapa 1.2): **D-12**
+(el stock sin alertas de umbral): el punto único de aplicación de movimientos
+emite `inventario.alerta_stock` al cruzar un nivel hacia abajo.
 
 > Runbooks operativos relacionados: el procedimiento completo de respaldo y
 > restauración (qué se vuelca, qué NO, y cómo se promueve una copia a base
@@ -204,34 +211,6 @@ eventos de caja.
 
 ---
 
-## D-12 · El stock no tiene alertas de umbral
-
-**Qué es.** El sync descuenta stock por deltas en `movimientos_inventario` y
-actualiza la proyección `stock_actual`, pero no evalúa `stock_minimo`: un
-producto puede quedar en cero o en negativo (legítimo según ADR-020) sin que
-nadie se entere.
-
-**Por qué se aceptó.** Decisión 1 del plan: las alertas de tres niveles con
-`inventario.alerta_stock` se difirieron al módulo 3 porque su consumidor es
-el módulo de notificaciones (ADR-025), que aún no existe — emitir un evento
-que nadie consume no avisa a nadie.
-
-**Riesgo si se olvida.** El tendero se entera del quiebre de stock cuando el
-cliente lo pide, no antes. El dato no se pierde: `stock_actual` viaja en cada
-producto del `GET /sync/delta`, así que el dispositivo ya puede mostrarlo.
-
-**Vencimiento: Fase 1, módulo 3 (inventario y alertas).**
-
-**Candados mientras tanto:**
-
-- `stock_actual` actualizado en la misma transacción del lote (probado en
-  `test_aplicar_una_venta_descuenta_stock_abre_sesion_implicita_y_emite_evento`)
-  y servido por el delta del sync.
-- El `tipo` de `movimientos_inventario` ya admite `venta`, `compra`,
-  `ajuste` y `merma`: el módulo 3 no migra nada.
-
----
-
 ## D-13 · Carrera TOCTOU del cupo de tier del catálogo
 
 **Qué es.** `_exigir_cupo` cuenta las filas vivas y luego inserta: con 99
@@ -382,6 +361,139 @@ ventana y el solape es inocuo porque el cliente hace upsert por id.
 - `backend/tests/test_ventas_servicio.py::test_el_delta_devuelve_los_cambios_desde_el_watermark`
   fija el contrato del watermark (lo pone el reloj del servidor, ADR-017): al
   aplicar el margen, ese test es el que hay que ajustar.
+
+---
+
+## D-19 · El reenvío de una compra con otro payload no detecta la divergencia
+
+**Qué es.** `InventarioService.registrar_compra`: si llega una compra con un
+`id` ya registrado, devuelve la existente **sin comparar** `proveedor_nombre`,
+`fecha` ni los ítems. Es una asimetría con los ajustes (mismo `id` + payload
+distinto = 409 `ajuste_id_divergente`) y con las ventas del sync (mismo `id`
+divergente = `rechazada` con motivo y `detalles`).
+
+**Por qué se aceptó.** Detectada en la revisión de cierre del módulo
+inventario (Tarea 11). La compra siguió el patrón del catálogo
+(`ProductoCrear`: el reenvío devuelve la existente), y el plan solo firmó la
+divergencia explícida donde hay delta relativo o stock offline de por medio
+(ajustes y ventas). La compra es un gesto síncrono del dueño o almacenista
+cuyo reenvío legítimo es idéntico (retry de red).
+
+**Riesgo si se olvida.** Una app que reintenta con el mismo `id` pero datos
+corregidos (el usuario editó la factura tras el timeout) recibe un 201 con la
+compra VIEJA y cree que la corrección quedó grabada: el stock y
+`ultimo_costo` reflejan el primer envío y nadie se entera.
+
+**Vencimiento: Fase 1, antes del piloto.** Arreglo: comparar el payload como
+`_reintento_de_ajuste` y devolver un 409 tipado (p. ej.
+`compra_id_divergente`).
+
+**Candados mientras tanto:**
+
+- La idempotencia sí está probada para el reenvío idéntico:
+  `test_inventario_servicio.py::test_registrar_compra_es_idempotente_por_el_id_del_cliente`
+  y `tests/api/test_inventario_api.py::test_la_compra_es_idempotente_por_el_id_del_cliente`
+  (sin doble fila, stock ni evento).
+- El libro es inmutable y la corrección manual ya existe: un ajuste con
+  motivo, camino probado de punta a punta.
+
+---
+
+## D-20 · El `FOR UPDATE` del producto es convención, no enforcement
+
+**Qué es.** `aplicar_movimiento` (`inventario/stock.py`) asume que quien
+llama cargó el producto con `with_for_update=True`: es un contrato escrito
+en el docstring, y nada en el código lo exige. Un futuro llamante que cargue
+el producto sin el bloqueo reabre el lost update de `stock_actual` (el que
+el fix `49553da` cerró en ventas) y rompe la comparación antes/después de la
+alerta.
+
+**Por qué se aceptó.** Los cuatro llamantes actuales (venta, anulación,
+compra, ajuste/merma) bloquean, y hay tests de carrera que lo demuestran
+(`test_dos_compras_concurrentes_del_mismo_producto_dejan_el_stock_exacto`,
+las carreras multi-caja de ventas). Forzarlo dentro de `aplicar_movimiento`
+sería un SELECT extra por movimiento o una introspección frágil del estado
+de la sesión.
+
+**Riesgo si se olvida.** Un módulo futuro (importación masiva, traspasos)
+que llame a `aplicar_movimiento` sin el bloqueo compila, pasa los tests de
+unidad y corrompe el stock solo bajo concurrencia real.
+
+**Vencimiento: Fase 1, antes del piloto o al primer llamante nuevo** (lo que
+llegue antes): endurecer el punto único o revisar el llamante con este
+mismo estándar.
+
+**Candados mientras tanto:**
+
+- El riesgo está concentrado: hay UN sitio donde vive el contrato (el
+  docstring del punto único), no cinco copias.
+- Los tests de carrera verdes en CI mueren si alguien quita el bloqueo de
+  los caminos actuales.
+
+---
+
+## D-21 · El sync de ventas bloquea los productos en el orden del ticket
+
+**Qué es.** `VentasService` adquiere el `FOR UPDATE` de cada producto en el
+orden en que los ítems vienen en el ticket del cliente (`for item in
+datos.items`). Dos ventas multi-producto concurrentes con los mismos
+productos en orden inverso adquieren los bloqueos en orden opuesto:
+deadlock teórico (un `DeadlockDetected` de Postgres, no una corrupción). Las
+compras de este módulo sí ordenan por `producto_id` (decisión 9); la venta
+hereda el riesgo del módulo ventas y este plan lo anotó como superficie de
+QA, no como arreglo.
+
+**Por qué se aceptó.** El ticket offline es un hecho que hay que aceptar tal
+cual (su orden es del cliente), y corregirlo es tocar el camino crítico del
+sync — fuera del alcance de este módulo, que solo refactorizó
+`_mover_stock` para delegar en el punto único. Los deltas ya se consolidan
+por producto antes de mover (fix del BUG-1 del QA), así que ordenar por
+`producto_id` antes de bloquear no cambiaría el resultado, solo el orden de
+adquisición.
+
+**Riesgo si se olvida.** Dos cajas sincronizando a la vez tickets con el
+mismo surtido en orden distinto: un deadlock ocasional → la operación falla
+y el lote se reintenta. La idempotencia absorbe el reintento; el daño es
+latencia y un error ruidoso, no corrupción — pero es un 500 esperando la
+hora pico del piloto.
+
+**Vencimiento: Fase 1, antes del piloto.** Arreglo: ordenar los productos
+por `producto_id` antes de bloquear, la misma receta de la compra.
+
+**Candados mientras tanto:**
+
+- La idempotencia del sync hace el reintento seguro: un lote abortado por
+  deadlock se reenvía y termina `aceptada`/`duplicada` sin doble efecto
+  (probado en `test_sync_idempotente.py`).
+- Requiere dos cajas activas con surtido solapado en el mismo instante:
+  plausible en el piloto, de ahí el vencimiento.
+
+---
+
+## D-22 · Falta el test literal `inventario.ajustar` → `tipo_desconocido`
+
+**Qué es.** La decisión 3 del plan del módulo firma que un lote con
+`tipo: "inventario.ajustar"` sale `rechazada` con `tipo_desconocido` y dice
+«hay test que lo fija». Lo que existe es el genérico
+(`test_un_tipo_desconocido_es_rechazada_no_422`, con un tipo inventado, y el
+adversarial con inyección SQL): el comportamiento está cubierto, el literal
+del plan no.
+
+**Por qué se aceptó.** Cobertura real del comportamiento con dos tests; el
+literal solo añadiría el nombre propio del caso que la decisión documenta.
+
+**Riesgo si se olvida.** Mínimo: si alguien registra `inventario.ajustar`
+como tipo del sync en el futuro (rompiendo la decisión 3: los ajustes son
+online-obligatorios y NO viajan por el lote), ningún test lo pone rojo con
+nombre propio — lo pillaría la revisión, no la suite.
+
+**Vencimiento: Fase 1, Etapa 1.4 (QA adversarial del módulo).** Añadir el
+test literal.
+
+**Candados mientras tanto:**
+
+- `backend/tests/test_ventas_servicio.py::test_un_tipo_desconocido_es_rechazada_no_422`
+- `backend/tests/test_ventas_adversarial.py::test_un_tipo_con_inyeccion_sql_es_tipo_desconocido_y_no_pasa_nada`
 
 ---
 
@@ -556,6 +668,51 @@ $ CODEGEN_SCHEMA_FILE=docs/api/openapi-fase0.json bash scripts/codegen-api-clien
 - `backend/tests/test_ventas_servicio.py::test_datos_mal_formados_rechazan_la_operacion_no_el_lote`
   (vigente): `datos` presentes pero inválidos siguen siendo `rechazada` con
   `datos_invalidos` sin arrastrar el lote.
+
+---
+
+### D-12 · El stock no tenía alertas de umbral
+
+**Qué era.** El sync descontaba stock por deltas y actualizaba la proyección
+`stock_actual`, pero nadie evaluaba `stock_minimo`: un producto podía quedar
+en cero o en negativo (legítimo según ADR-020) sin que nadie se enterara.
+
+**Cómo se cerró** (módulo inventario, Tareas 5 y 11 — su vencimiento
+firmado). El nivel se deriva de `stock_minimo` (agotado `<= 0`, crítico
+`< stock_minimo / 2`, bajo `< stock_minimo`, bordes estrictos) y se evalúa en
+el punto ÚNICO por el que pasa todo movimiento
+(`backend/services/api/app/modules/inventario/stock.py`,
+`aplicar_movimiento`): con la fila del producto bloqueada `FOR UPDATE`, el
+`stock_actual` antes del delta ES el estado post-commit del movimiento
+anterior, así que la comparación es una función pura sin columna que
+mantener. El evento `inventario.alerta_stock` (payload mínimo sin PII,
+`resource_type="producto"`, clave `<tenant_id>.inventario.alerta_stock`) se
+emite SOLO cuando el nivel empeora: nunca por movimiento, nunca al
+recuperarse, nunca dos veces por el mismo cruce, y viaja en la misma
+transacción que el movimiento. El servicio de ventas delega en el punto
+único, así que una venta que cruza un umbral también alerta. Su consumidor
+(el módulo de notificaciones, ADR-025) sigue sin existir: el evento queda
+publicado en el outbox para cuando llegue.
+
+**Evidencia** (run ci 30305515191 sobre `2d08df9`, 2026-07-27; los tests son
+integration y corren contra el PostgreSQL real del CI):
+
+```
+$ uv run pytest tests/test_inventario_alertas.py -q
+14 passed            # bordes estrictos; cruce único; anti-spam de la cola
+                     # de sync; recuperación y nuevo cruce; la duplicada no re-emite
+```
+
+**Candados:**
+
+- `backend/tests/test_inventario_alertas.py` (14 tests): un evento por cruce
+  aunque haya N movimientos bajo el mismo umbral; recuperarse no emite y
+  volver a cruzar sí; la operación `duplicada` del sync no re-emite.
+- `backend/tests/test_ventas_servicio.py::test_el_stock_puede_quedar_negativo_y_la_venta_se_acepta`
+  (reforzado en este módulo): el negativo sigue siendo legítimo y ahora
+  demuestra la alerta de `agotado`.
+- `backend/tests/test_inventario_servicio.py::test_comprar_no_emite_alerta_aunque_salga_del_rojo`:
+  la compra que repone stock no alerta (re-arma el umbral).
 
 ---
 

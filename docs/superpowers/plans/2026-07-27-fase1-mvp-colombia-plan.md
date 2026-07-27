@@ -84,7 +84,7 @@
 **Orden (por dependencias):**
 1. `modulo-catalogo` (base de todo: productos) — plan: `2026-07-28-modulo-catalogo-plan.md` — **CERRADO 2026-07-27** (gate verificado; evidencia comando+salida en `docs/estado.md`)
 2. `modulo-ventas` + soporte de sincronización offline en la API (endpoints idempotentes de sync) — el módulo crítico — plan: `2026-07-28-modulo-ventas-plan.md` — **CERRADO 2026-07-27** (gate verificado; evidencia comando+salida en `docs/estado.md`)
-3. `modulo-inventario` + alertas
+3. `modulo-inventario` + alertas — plan: `2026-07-28-modulo-inventario-plan.md` — **CERRADO 2026-07-27** (gate verificado; evidencia comando+salida en `docs/estado.md`)
 4. `modulo-caja` + P&L/forecast (ADR-006)
 5. `modulo-clientes-fiado` (ADR-009)
 6. `modulo-ia-v1` (ADR-007 + ADR-026)
@@ -97,7 +97,7 @@
 - [x] Eventos de outbox emitidos según su ADR; `pytest -m integration` verde; `ruff` verde.
 - [x] Permisos del módulo (ADR-023) sembrados en el realm y exigidos por el check 23 de `verify-setup.sh`: cada módulo nuevo extiende ese check con los suyos, así la letra de ADR-023 se completa módulo a módulo.
 
-*(Marcado por el módulo catálogo (2026-07-27 — run de CI 30260179984) y reverificado ítem a ítem por el módulo ventas (2026-07-27 — run de CI 30283626280); la lista se reusa y se vuelve a verificar por cada módulo siguiente.)*
+*(Marcado por el módulo catálogo (2026-07-27 — run de CI 30260179984) y reverificado ítem a ítem por el módulo ventas (2026-07-27 — run de CI 30283626280) y por el módulo inventario (2026-07-27 — run de CI 30305515191); la lista se reusa y se vuelve a verificar por cada módulo siguiente.)*
 
 ## Etapa 1.3 — Frontend web y móvil (paralela a 1.2, medio paso detrás)
 

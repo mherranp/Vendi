@@ -3297,7 +3297,7 @@ git commit -m "Contrato OpenAPI con las rutas de inventario y compras, datos req
 - Modify: `docs/estado.md` (sección nueva del módulo inventario, con fecha de corte y evidencia comando+salida)
 - Modify: `docs/deuda-tecnica.md` (D-12 y D-14 pasan a «Cerradas en Fase 1» con su evidencia)
 
-- [ ] **Paso 1: ejecutar el gate completo del módulo** (idéntico al de cualquier módulo de la Etapa 1.2):
+- [x] **Paso 1: ejecutar el gate completo del módulo** (idéntico al de cualquier módulo de la Etapa 1.2):
 
 ```bash
 bash scripts/migrate.sh
@@ -3314,23 +3314,23 @@ bash scripts/verify-setup.sh 2>&1 | grep -E "^\[(OK|FALLO)\]" | tail -3
 ```
 
 Gate por módulo (del plan maestro de Fase 1), verificado ítem a ítem:
-- [ ] Migración con RLS + índice + grants, revisada por el agente de seguridad.
-- [ ] Tests de integración con aislamiento cross-tenant nuevo por tabla (`test_aislamiento_inventario.py`: las tres tablas), 0 SKIPPED.
-- [ ] Los candados firmados de ADR-020: alerta única por cruce (N movimientos bajo el mismo umbral = 1 evento; recuperación + nuevo cruce = 2) e invariante del libro (`stock_actual = SUM(movimientos)` tras secuencia mezclada de venta, compra, merma y ajuste).
-- [ ] El gatillo de D-14 ejecutado: `OperacionSync.datos` requerido, con su test de 422 y el contrato regenerado.
-- [ ] OpenAPI congelado actualizado + codegen + `contrato.ts` sigue compilando.
-- [ ] Eventos de outbox emitidos según ADR-020 (`compra.registrada`, `inventario.alerta_stock` solo al cruzar hacia abajo, clave `<tenant_id>.<evento>`); `pytest -m integration` verde; `ruff` verde.
+- [x] Migración con RLS + índice + grants, revisada por el agente de seguridad.
+- [x] Tests de integración con aislamiento cross-tenant nuevo por tabla (`test_aislamiento_inventario.py`: las tres tablas), 0 SKIPPED.
+- [x] Los candados firmados de ADR-020: alerta única por cruce (N movimientos bajo el mismo umbral = 1 evento; recuperación + nuevo cruce = 2) e invariante del libro (`stock_actual = SUM(movimientos)` tras secuencia mezclada de venta, compra, merma y ajuste).
+- [x] El gatillo de D-14 ejecutado: `OperacionSync.datos` requerido, con su test de 422 y el contrato regenerado.
+- [x] OpenAPI congelado actualizado + codegen + `contrato.ts` sigue compilando.
+- [x] Eventos de outbox emitidos según ADR-020 (`compra.registrada`, `inventario.alerta_stock` solo al cruzar hacia abajo, clave `<tenant_id>.<evento>`); `pytest -m integration` verde; `ruff` verde.
 
-- [ ] **Paso 2: actualizar `docs/estado.md`.** Añadir una sección «Módulo inventario (Fase 1, Etapa 1.2)» con: fecha de corte, qué se entregó (las tres tablas, el punto único de movimientos y alertas, las compras con `ultimo_costo`, los ajustes online idempotentes, los permisos y su reparto, las 6 rutas, D-12 y D-14 cerradas), y **al lado de cada afirmación el comando que la demuestra** con su salida pegada (regla del documento: no promete nada que un comando no demuestre).
+- [x] **Paso 2: actualizar `docs/estado.md`.** Añadir una sección «Módulo inventario (Fase 1, Etapa 1.2)» con: fecha de corte, qué se entregó (las tres tablas, el punto único de movimientos y alertas, las compras con `ultimo_costo`, los ajustes online idempotentes, los permisos y su reparto, las 6 rutas, D-12 y D-14 cerradas), y **al lado de cada afirmación el comando que la demuestra** con su salida pegada (regla del documento: no promete nada que un comando no demuestre).
 
-- [ ] **Paso 3: cerrar D-12 y D-14 en `docs/deuda-tecnica.md`.** Mover ambas entradas a la sección «Cerradas en Fase 1», cada una con qué era, cómo se cerró y la evidencia comando+salida:
+- [x] **Paso 3: cerrar D-12 y D-14 en `docs/deuda-tecnica.md`.** Mover ambas entradas a la sección «Cerradas en Fase 1», cada una con qué era, cómo se cerró y la evidencia comando+salida:
 
 - **D-12** (el stock no tiene alertas de umbral): se cerró con `inventario/stock.py` (nivel derivado en el punto único de aplicación de movimientos; evento `inventario.alerta_stock` solo al cruzar hacia abajo). Evidencia: `uv run pytest tests/test_inventario_alertas.py -q` → 14 passed (cruce único, anti-spam de la cola de sync, recuperación y nuevo cruce, bordes exactos); el test reforzado del stock negativo que ahora demuestra la alerta de agotado.
 - **D-14** (`OperacionSync.datos` opcional): se cerró haciendo el campo requerido (Tarea 8). Evidencia: `uv run pytest tests/test_ventas_schemas.py -q -k sin_datos` → 1 passed, y `"datos" in required` en el `OperacionSync` del OpenAPI congelado.
 
 No tocar D-10, D-11, D-13, D-15, D-16, D-17, D-18: viven sus propios vencimientos. Si el ejecutor registra deuda nueva (p. ej. lo que el QA encuentre en la superficie de abajo), que sea con el formato del registro (qué es, por qué se aceptó, riesgo, vencimiento, candados mientras tanto).
 
-- [ ] **Paso 4: commit de cierre**
+- [x] **Paso 4: commit de cierre**
 
 ```bash
 git add docs/estado.md docs/deuda-tecnica.md

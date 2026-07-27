@@ -313,21 +313,172 @@ contrato), **D-15** (`exigir_venta_anular` sin consumidor todavía), **D-16**
 (el check 23 no tiene prueba negativa ejecutada) y **D-17** (`alembic check`
 fuera del CI).
 
+> *(Actualización al cierre del módulo inventario, 2026-07-27: **D-12** y
+> **D-14** quedaron **cerradas** — el punto único de movimientos emite
+> `inventario.alerta_stock` y `OperacionSync.datos` es requerido. Evidencia
+> en la sección siguiente y en el registro de deuda.)*
+
+---
+
+## Módulo inventario (Fase 1, Etapa 1.2)
+
+Fecha de corte: **2026-07-27**. Tercer módulo de negocio del MVP —el
+inventario de ADR-020 completo: compras, ajustes online y alertas de
+umbral—, cerrado con el gate de la Etapa 1.2 del plan maestro. Plan:
+[`docs/superpowers/plans/2026-07-28-modulo-inventario-plan.md`](superpowers/plans/2026-07-28-modulo-inventario-plan.md)
+(11 tareas TDD, commits `9dfb26f`…`2d08df9`, cada una con revisión
+independiente registrada en `.superpowers/sdd/`).
+
+Los comandos del gate que exigen el stack (migrar, tests de integración,
+`verify-setup.sh`) se citan desde el CI, que los ejecuta contra PostgreSQL,
+RabbitMQ y Keycloak reales en cada push: el run de corte es el `ci`
+**30305515191** sobre el SHA `2d08df9`, con los 11 jobs en verde
+(`gh run view 30305515191`).
+
+### Qué se entregó, y el comando que lo demuestra
+
+**Tres tablas nuevas con RLS, índices y grants (ADR-020/023).** `compras`,
+`compra_items` y `ajustes_inventario` en la migración `0007`, aplicada hasta
+head en el stack del CI. `movimientos_inventario` no se tocó: su CHECK ya
+admite `compra`/`ajuste`/`merma` desde la 0005 (decisión 6 del plan):
+
+```
+$ bash scripts/migrate.sh          # run ci 30305515191, job «pytest -m integration»
+INFO  [alembic.runtime.migration] Running upgrade 0006 -> 0007, Inventario y compras: `compras`, `compra_items` y `ajustes_inventario` (ADR-020/023).
+0007 (head)
+```
+
+Las tres heredan los cuatro privilegios por defecto de `vendi_app`: el
+candado invertido (`test_privilegios_de_vendi_app.py`) pasa sin edición, y
+el de cobertura RLS (`test_rls_coverage.py`) cubre las tres tablas.
+
+**Aislamiento cross-tenant contra PostgreSQL real, 0 SKIPPED.** 10 tests
+nuevos en `backend/tests/test_aislamiento_inventario.py` (las tres tablas:
+SELECT/UPDATE acotados por la policy, INSERT con `tenant_id` ajeno bloqueado
+por `WITH CHECK`). El job de CI convierte cualquier `SKIPPED` en fallo, así
+que «passed» aquí significa que corrieron todos:
+
+```
+$ uv run pytest -q -m integration  # run ci 30305515191
+275 passed, 402 deselected
+```
+
+**El punto único de movimientos y las alertas de umbral (ADR-020; cierre de
+D-12).** Todo cambio de stock —venta, anulación, compra, ajuste, merma— pasa
+por `aplicar_movimiento`
+(`backend/services/api/app/modules/inventario/stock.py`): inserta la fila
+del libro, actualiza la proyección `stock_actual` y evalúa el cruce
+comparando el nivel antes/después dentro del bloqueo `FOR UPDATE` (el nivel
+se deriva de `stock_minimo`; no hay columna que mantener, decisión 2).
+`inventario.alerta_stock` se emite SOLO cuando el nivel empeora: nunca por
+movimiento, nunca al recuperarse, nunca dos veces por el mismo cruce. El
+servicio de ventas delega en él (`VentasService._mover_stock` conserva su
+firma). 14 tests en `backend/tests/test_inventario_alertas.py` (bordes
+estrictos, cruce único, anti-spam de la cola de sync, recuperación y nuevo
+cruce), más el test reforzado del stock negativo
+(`test_ventas_servicio.py::test_el_stock_puede_quedar_negativo_y_la_venta_se_acepta`),
+que ahora demuestra la alerta de `agotado`.
+
+**Los candados firmados de ADR-020.** Alerta única por cruce
+(`test_dos_ventas_seguidas_por_debajo_del_minimo_emiten_una_sola_alerta`,
+`test_recuperarse_no_emite_y_volver_a_cruzar_si`,
+`test_la_operacion_duplicada_no_reemite_la_alerta`) e invariante del libro
+(`test_inventario_servicio.py::test_la_invariante_del_libro_tras_una_secuencia_mezclada`:
+`stock_actual = SUM(movimientos)` tras una secuencia mezclada de venta,
+compra, merma y ajuste), verdes en el run de corte.
+
+**Compras con `ultimo_costo` y ajustes online idempotentes.** 16 tests de
+servicio (`backend/tests/test_inventario_servicio.py`) y 12 de API
+(`backend/tests/api/test_inventario_api.py`), todos integration: la compra
+inserta movimientos tipo `compra`, actualiza `stock_actual` y `ultimo_costo`
+y emite `compra.registrada` en una sola transacción, con el total calculado
+por el servidor por línea en centavos enteros (decisión 7), los ítems
+bloqueados en orden de `producto_id` (decisión 9, anti-deadlock:
+`test_dos_compras_concurrentes_del_mismo_producto_dejan_el_stock_exacto`) e
+idempotencia por el `id` del cliente. El ajuste es online-obligatorio
+(ADR-020): calcula su delta contra el stock del servidor en el momento del
+conteo, exige `motivo`, y su reintento con el mismo `id` es un no-op que
+devuelve lo grabado — con payload divergente es 409 `ajuste_id_divergente`
+(`test_el_mismo_id_de_ajuste_con_otro_payload_es_409`). NADA de esto entra
+al lote del sync (decisión 3): son endpoints REST puros.
+
+**Permisos y reparto (ADR-023).** `inventario:ajustar` y `compra:crear` en
+el catálogo cerrado de 14: dueño todo, almacenista ambos, cajero NADA (403
+`permiso_ausente` en compras y ajustes:
+`test_el_cajero_no_compra_ni_ve_compras`,
+`test_el_cajero_no_ajusta_ni_ve_ajustes`; el estado de stock lo lee
+cualquier rol con `producto:leer`, decisión 10). El check 23 de
+`verify-setup.sh`, extendido por este módulo, exige los seis permisos contra
+el realm vivo en el CI:
+
+```
+[OK]    aud=vendi-backend, rol de negocio y permisos de catálogo, ventas e inventario en el token del dueño
+[OK]    27 en verde · 2 omitidos · 0 fallos (de 29)
+```
+
+**Cuatro rutas nuevas (seis endpoints) en el contrato congelado, con
+`datos` requerido (cierre de D-14):**
+
+```
+$ python3 -c "import json; d=json.load(open('docs/api/openapi-fase0.json'));"
+  (rutas y métodos de inventario/compras, y 'datos' en el required de OperacionSync)
+/api/v1/compras ['get', 'post']
+/api/v1/compras/{compra_id} ['get']
+/api/v1/inventario/ajustes ['get', 'post']
+/api/v1/inventario/stock ['get']
+datos requerido: True
+```
+
+**Eventos de outbox según ADR-020** (`compra.registrada`,
+`inventario.alerta_stock` solo al cruzar hacia abajo, clave
+`<tenant_id>.<evento>`), emitidos en la misma transacción que la escritura —
+un rollback se lleva el movimiento Y la alerta (decisión 14):
+`test_registrar_compra_mueve_stock_actualiza_ultimo_costo_y_emite_evento` y
+los 14 de alertas.
+
+**Suite completa verde, lint verde, contrato sin deriva.**
+
+```
+$ uv run pytest -q -m 'not integration'   # run ci 30305515191; reproducido en local
+402 passed, 275 deselected
+$ uv run pytest -q -m integration         # run ci 30305515191
+275 passed, 402 deselected
+$ uv run ruff check .                     # job «ruff + mypy» del CI; reproducido en local
+All checks passed!
+$ CODEGEN_SCHEMA_FILE=docs/api/openapi-fase0.json bash scripts/codegen-api-client.sh && git status --short
+(exit 0 y `git status` vacío: el cliente TS regenerado es idéntico al commiteado)
+```
+
+`contrato.ts` sigue compilando: el job `frontend / contratos`, los cuatro
+`ng build` y `ng test` del mismo run, en verde. Los demás workflows sobre el
+SHA de corte (`gh run list`): `e2e` 30305515198 y `android` 30305515782,
+todos success.
+
+**Deuda registrada al cierre** (detalle, riesgo y candados en
+[`docs/deuda-tecnica.md`](deuda-tecnica.md)), detectada en las revisiones
+del módulo: **D-19** (el reenvío de una compra con el mismo `id` y payload
+distinto no detecta la divergencia: devuelve la existente en silencio),
+**D-20** (el `FOR UPDATE` del producto es convención documentada, no
+enforced), **D-21** (el sync de ventas bloquea los productos en el orden del
+ticket: deadlock teórico multi-producto, heredado) y **D-22** (falta el test
+literal `inventario.ajustar` → `tipo_desconocido`; lo cubre el genérico).
+Cerradas en este módulo: **D-12** y **D-14**.
+
 ---
 
 ## La suite de tests
 
 ```
 cd backend && uv run pytest -q
-576 passed
+677 passed
 ```
 
-De ellos, **200 son `integration`** (cifra de Fase 0: 106; el crecimiento viene de
-los módulos catálogo y ventas, ver sus secciones): hablan con el PostgreSQL, el
+De ellos, **275 son `integration`** (cifra de Fase 0: 106; el crecimiento viene de
+los módulos catálogo, ventas e inventario, ver sus secciones): hablan con el PostgreSQL, el
 RabbitMQ y el Keycloak del compose, y con la API por su dominio. **No se omiten**
 si el servicio falta: fallan con un mensaje que dice qué falta. Un test que
 desaparece del recuento no prueba nada, y el job de CI convierte cualquier
-`SKIPPED` en fallo. *(Actualizado al HEAD 0e02c29, run ci 30283626280.)*
+`SKIPPED` en fallo. *(Actualizado al HEAD 2d08df9, run ci 30305515191.)*
 
 Frontend: 250 specs (`npx ng test --watch=false`), más 2 specs E2E de
 Playwright (`npm run e2e`: login con passkey y CRUD de negocio) contra el
