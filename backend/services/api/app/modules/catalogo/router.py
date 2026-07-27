@@ -43,14 +43,15 @@ _RESPUESTAS_COMUNES = {
 }
 
 
-def _ocultar_costo_a_quien_no_compra(salida: ProductoSalida, actor: UserContext) -> ProductoSalida:
+def ocultar_costo_a_quien_no_compra(salida: ProductoSalida, actor: UserContext) -> ProductoSalida:
     """Anula `ultimo_costo` cuando el actor no tiene `compra:crear`.
 
     Mismo criterio que el flag `puede_anular` de ventas (decisión 12 del
     plan): el veredicto se deriva del token en el borde y la autorización lee
     solo el JWT — el servicio no conoce claims. Se aplica en TODA respuesta
     de producto, no solo en las de lectura: la regla es del dato, no del
-    endpoint.
+    endpoint. Es pública porque el delta del sync (`ventas/router.py`) sirve
+    los mismos `ProductoSalida` y cumple la misma regla con ella.
     """
     if not has_permission(actor, PERM_COMPRA_CREAR):
         salida.ultimo_costo = None
@@ -74,7 +75,7 @@ async def crear_producto(
 ) -> ProductoSalida:
     """Acepta el `id` que traiga el cliente (ADR-017): reenviar la misma
     creación devuelve el producto ya creado, sin duplicar fila ni evento."""
-    return _ocultar_costo_a_quien_no_compra(ProductoSalida.model_validate(await servicio.crear(datos)), actor)
+    return ocultar_costo_a_quien_no_compra(ProductoSalida.model_validate(await servicio.crear(datos)), actor)
 
 
 @router.get(
@@ -93,7 +94,7 @@ async def listar_productos(
 ) -> PagedList[ProductoSalida]:
     filas, total = await servicio.listar(skip=skip, limit=limit, q=q, categoria=categoria)
     return PagedList[ProductoSalida](
-        items=[_ocultar_costo_a_quien_no_compra(ProductoSalida.model_validate(f), actor) for f in filas],
+        items=[ocultar_costo_a_quien_no_compra(ProductoSalida.model_validate(f), actor) for f in filas],
         total=total,
         skip=skip,
         limit=limit,
@@ -113,7 +114,7 @@ async def buscar_por_codigo(
 ) -> ProductoSalida:
     """El camino del escáner (ADR-024): un EAN resuelve a exactamente un
     producto, gracias al índice único parcial."""
-    return _ocultar_costo_a_quien_no_compra(
+    return ocultar_costo_a_quien_no_compra(
         ProductoSalida.model_validate(await servicio.buscar_por_codigo(codigo)), actor
     )
 
@@ -129,7 +130,7 @@ async def ver_producto(
     servicio: CatalogoService = Depends(servicio_de_catalogo),
     actor: UserContext = Depends(exigir_producto_leer),
 ) -> ProductoSalida:
-    return _ocultar_costo_a_quien_no_compra(ProductoSalida.model_validate(await servicio.obtener(producto_id)), actor)
+    return ocultar_costo_a_quien_no_compra(ProductoSalida.model_validate(await servicio.obtener(producto_id)), actor)
 
 
 @router.patch(
@@ -149,7 +150,7 @@ async def actualizar_producto(
 ) -> ProductoSalida:
     """No acepta `stock_actual` ni `ultimo_costo`: el stock lo mueven los
     movimientos de inventario y el costo las compras (ADR-020)."""
-    return _ocultar_costo_a_quien_no_compra(
+    return ocultar_costo_a_quien_no_compra(
         ProductoSalida.model_validate(await servicio.actualizar(producto_id, datos)), actor
     )
 

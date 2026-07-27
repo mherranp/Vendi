@@ -300,18 +300,18 @@ async def test_el_ajuste_al_alza_no_emite_y_rearma_el_umbral_para_la_venta(servi
 
 
 async def test_el_nivel_se_deriva_del_minimo_vigente_no_del_que_habia_al_alertar(servicio, semilla, pg_platform_url):
-    """El tendero sube el mínimo de 4 a 30 ENTRE movimientos. Como el nivel se
+    """El tendero sube el mínimo de 4 a 12 ENTRE movimientos. Como el nivel se
     deriva y no se persiste (decisión 2), el siguiente movimiento compara con el
     mínimo VIGENTE: 10 → 9 es bajo → bajo (no emite) y 9 → 3 es bajo → crítico
     (emite `critico`, el nivel del mínimo nuevo — no el `ok` que diría el 4
     viejo)."""
     engine = create_async_engine(pg_platform_url)
     async with engine.begin() as conn:
-        await conn.execute(text("UPDATE productos SET stock_minimo = 30 WHERE id = :p"), {"p": semilla["producto"]})
+        await conn.execute(text("UPDATE productos SET stock_minimo = 12 WHERE id = :p"), {"p": semilla["producto"]})
     await engine.dispose()
 
-    await _aplicar(servicio, semilla, "-1")  # 10 → 9 con mínimo 30: bajo → bajo. NO emite.
-    await _aplicar(servicio, semilla, "-6")  # 9 → 3 con mínimo 30: bajo → crítico. EMITE.
+    await _aplicar(servicio, semilla, "-1")  # 10 → 9 con mínimo 12: bajo → bajo. NO emite.
+    await _aplicar(servicio, semilla, "-6")  # 9 → 3 con mínimo 12: bajo → crítico. EMITE.
     assert await _alertas(pg_platform_url) == ["critico"]
 
 

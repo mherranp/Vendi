@@ -20,6 +20,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, status
 
+from app.modules.catalogo.router import ocultar_costo_a_quien_no_compra
 from app.modules.ventas.dependencies import (
     exigir_producto_leer,
     exigir_venta_crear,
@@ -114,15 +115,23 @@ async def sincronizar_lote(
 async def delta_de_sync(
     desde: datetime = Query(description="Watermark devuelto como `hasta` por el delta anterior (o una fecha inicial)"),
     servicio: VentasService = Depends(servicio_de_ventas),
-    _actor: UserContext = Depends(exigir_producto_leer),
+    actor: UserContext = Depends(exigir_producto_leer),
 ) -> DeltaSalida:
     """El drenado hacia los dispositivos (ADR-017): productos modificados
     desde `desde` y tumbas de los dados de baja. El próximo watermark es el
     `hasta` de la respuesta — lo pone el reloj del servidor, nunca el del
-    cliente."""
+    cliente.
+
+    Los productos del delta son `ProductoSalida` y cumplen la regla del
+    dato: `ultimo_costo` viaja solo para quien tiene `compra:crear`. El
+    cajero sincroniza el catálogo al IndexedDB del POS con el costo en null
+    — el campo SIGUE presente en el contrato, como en los endpoints del
+    catálogo."""
     if desde.tzinfo is None or desde.tzinfo.utcoffset(desde) is None:
         # FastAPI parsea "2020-01-01" como datetime naive sin error; un
         # watermark sin zona no dice nada (mismo criterio que
         # `creada_en_cliente` en los schemas).
         raise ValidationError("El parámetro `desde` debe traer zona horaria (offset).", code="fecha_sin_zona")
-    return await servicio.delta_productos(desde)
+    salida = await servicio.delta_productos(desde)
+    salida.productos = [ocultar_costo_a_quien_no_compra(p, actor) for p in salida.productos]
+    return salida

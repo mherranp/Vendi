@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 import pytest
 from ayudas import PREFIJO_PRUEBA, usuario_con_rol, usuario_de_plataforma
 
-from vendi_core.auth.policies import ROL_CAJERO, ROL_DUENO
+from vendi_core.auth.policies import ROL_ALMACENISTA, ROL_CAJERO, ROL_DUENO
 
 pytestmark = pytest.mark.integration
 
@@ -323,3 +323,42 @@ def test_el_delta_valida_el_watermark(app_con_base):
     respuesta = cliente.get("/api/v1/sync/delta?desde=2020-01-01", headers=cabeceras)
     assert respuesta.status_code == 422
     assert respuesta.json()["code"] == "fecha_sin_zona"
+
+
+def test_el_delta_sirve_el_costo_solo_a_quien_tiene_compra_crear(app_con_base):
+    """La fuga residual del fix C1: el cajero sincroniza el catálogo al
+    IndexedDB del POS por este endpoint, así que la misma regla de los
+    endpoints de productos aplica aquí — `ultimo_costo` viaja solo para
+    quien tiene `compra:crear` y el campo SIGUE presente (null) en el
+    contrato que el POS consume. Dueño y almacenista reciben el costo real
+    que su compra fijó."""
+    cliente, validador, _ = app_con_base
+    negocio = _crear_negocio(cliente, validador, "Sync 13")
+    dueno = _cabeceras_de(validador, ROL_DUENO, negocio, "tok-d13")
+    cajero = _cabeceras_de(validador, ROL_CAJERO, negocio, "tok-c13")
+    almacenista = _cabeceras_de(validador, ROL_ALMACENISTA, negocio, "tok-a13")
+    producto = _alta_producto(cliente, dueno)
+    compra = cliente.post(
+        "/api/v1/compras",
+        json={
+            "proveedor_nombre": "Distribuidora La 33",
+            "items": [{"producto_id": producto, "cantidad": "10", "costo_unitario_centavos": 2000}],
+        },
+        headers=dueno,
+    )
+    assert compra.status_code == 201, compra.text
+
+    desde = {"desde": "2020-01-01T00:00:00+00:00"}
+
+    respuesta = cliente.get("/api/v1/sync/delta", params=desde, headers=cajero)
+    assert respuesta.status_code == 200, respuesta.text
+    (unico,) = respuesta.json()["productos"]
+    assert unico["id"] == producto
+    assert "ultimo_costo" in unico, "el campo sigue en el contrato que el POS consume"
+    assert unico["ultimo_costo"] is None
+
+    for cabeceras in (dueno, almacenista):
+        respuesta = cliente.get("/api/v1/sync/delta", params=desde, headers=cabeceras)
+        assert respuesta.status_code == 200, respuesta.text
+        (unico,) = respuesta.json()["productos"]
+        assert unico["ultimo_costo"] == 2000

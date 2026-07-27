@@ -2915,7 +2915,7 @@
     },
     "/api/v1/sync/delta": {
       "get": {
-        "description": "El drenado hacia los dispositivos (ADR-017): productos modificados\ndesde `desde` y tumbas de los dados de baja. El próximo watermark es el\n`hasta` de la respuesta — lo pone el reloj del servidor, nunca el del\ncliente.",
+        "description": "El drenado hacia los dispositivos (ADR-017): productos modificados\ndesde `desde` y tumbas de los dados de baja. El próximo watermark es el\n`hasta` de la respuesta — lo pone el reloj del servidor, nunca el del\ncliente.\n\nLos productos del delta son `ProductoSalida` y cumplen la regla del\ndato: `ultimo_costo` viaja solo para quien tiene `compra:crear`. El\ncajero sincroniza el catálogo al IndexedDB del POS con el costo en null\n— el campo SIGUE presente en el contrato, como en los endpoints del\ncatálogo.",
         "operationId": "delta_de_sync_api_v1_sync_delta_get",
         "parameters": [
           {

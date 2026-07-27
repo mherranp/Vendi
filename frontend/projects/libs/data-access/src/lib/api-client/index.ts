@@ -273,6 +273,12 @@ export interface paths {
          *     desde `desde` y tumbas de los dados de baja. El próximo watermark es el
          *     `hasta` de la respuesta — lo pone el reloj del servidor, nunca el del
          *     cliente.
+         *
+         *     Los productos del delta son `ProductoSalida` y cumplen la regla del
+         *     dato: `ultimo_costo` viaja solo para quien tiene `compra:crear`. El
+         *     cajero sincroniza el catálogo al IndexedDB del POS con el costo en null
+         *     — el campo SIGUE presente en el contrato, como en los endpoints del
+         *     catálogo.
          */
         get: operations["delta_de_sync_api_v1_sync_delta_get"];
         put?: never;
