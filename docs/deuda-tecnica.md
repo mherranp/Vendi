@@ -174,6 +174,13 @@ $ docker compose exec provisioner printenv KEYCLOAK_PROVISIONING_CLIENT_SECRET
 $ bash scripts/seed.sh          # orquesta por HTTP; el secreto no pasa por la API
 [OK]    Siembra completa.
 
+# Alta y baja reales ejecutadas DENTRO del proceso de la API (TenantService →
+# provisioner → Keycloak), con limpieza al final:
+tenant_creado        kc_org_id=15360eb2-ebac-4925-aceb-3a0faf0d8f08 tenant_id=f590499d-601b-464c-a940-13b915b1c709
+org en keycloak via provisioner: True
+tenant_eliminado     tenant_id=f590499d-601b-464c-a940-13b915b1c709
+org tras la baja: None
+
 $ bash scripts/verify-setup.sh
 [OK]    21. vendi-backend=manage-users · vendi-provisioning=manage-realm,manage-users
 [OK]    26. la API no tiene el secreto, el provisioner sí y responde, el borde da 404

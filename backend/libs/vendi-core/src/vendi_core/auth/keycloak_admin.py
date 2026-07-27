@@ -34,11 +34,13 @@ inquilino y suplantaba usuarios. Casi nada de eso sobrevive.
 Los métodos de Organizations sobre python-keycloak 7.1.1 (`a_create_organization`,
 `a_organization_user_add`, ...), con `alias = str(tenant_id)` — confirmado por el
 spike (pregunta 4: Keycloak acepta el UUID con guiones y lo devuelve literal).
+Viven en `keycloak_aprovisionamiento.py`, no aquí: ver la siguiente sección.
 
 ## Por qué DOS clases en DOS módulos — cierre de D-02
 
-Medido contra el realm vivo de `vendi-co` en Keycloak 26.6.4 (matriz completa en
-`docs/deuda-tecnica.md`, D-02): **ningún subconjunto de roles de
+Medido contra el realm vivo de `vendi-co` en Keycloak 26.6.4 (la matriz completa
+quedó en la historia de `docs/deuda-tecnica.md`, D-02): **ningún subconjunto de
+roles de
 `realm-management` da acceso a la API de Organizations sin `manage-realm`** — ni
 siquiera para leer. Y `manage-realm` permite reescribir el realm entero: crear
 flujos de autenticación, reenlazar `browserFlow` (sacando el login con passkey),
