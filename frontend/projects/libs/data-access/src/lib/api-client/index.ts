@@ -13,6 +13,27 @@
  */
 
 export interface paths {
+    "/api/v1/dispositivos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Registrar un dispositivo del negocio
+         * @description Acepta el `id` que traiga el cliente (ADR-017): re-registrar con el
+         *     mismo id devuelve el existente, sin duplicar fila.
+         */
+        post: operations["registrar_dispositivo_api_v1_dispositivos_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/tenants": {
         parameters: {
             query?: never;
@@ -142,6 +163,71 @@ export interface paths {
         patch: operations["actualizar_producto_api_v1_productos__producto_id__patch"];
         trace?: never;
     };
+    "/api/v1/sync/delta": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Descargar los cambios del catálogo desde un watermark
+         * @description El drenado hacia los dispositivos (ADR-017): productos modificados
+         *     desde `desde` y tumbas de los dados de baja. El próximo watermark es el
+         *     `hasta` de la respuesta — lo pone el reloj del servidor, nunca el del
+         *     cliente.
+         */
+        get: operations["delta_de_sync_api_v1_sync_delta_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sync/lotes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Aplicar un lote de operaciones de la cola del dispositivo
+         * @description Una transacción por lote, un resultado por operación
+         *     (`aceptada`/`duplicada`/`rechazada`), en el orden del lote.
+         *
+         *     HTTP 200 aunque haya operaciones rechazadas: el lote SE PROCESÓ; el
+         *     desenlace de cada operación viaja en su resultado. Los 4xx de este
+         *     endpoint significan «el request entero es inválido», no «una operación
+         *     falló».
+         *
+         *     Idempotencia y divergencia (decisión 4 del plan): reenviar una operación
+         *     con el mismo `id` y un payload IDÉNTICO responde `duplicada` (no-op, sin
+         *     evento); el mismo `id` con cualquier campo del hecho distinto (ítems,
+         *     total, medio de pago, cliente, consecutivo, dispositivo,
+         *     `creada_en_cliente` o estado) responde `rechazada` con motivo
+         *     `venta_id_divergente` y los campos que difieren en `detalles.campos` —
+         *     jamás un no-op silencioso.
+         *
+         *     Doble verdad temporal (ADR-017/018): `creada_en_cliente` es el dato del
+         *     ticket y se guarda tal cual; al comparar un reintento contra la venta ya
+         *     aceptada se ignoran los microsegundos (la columna `timestamptz` no los
+         *     conserva en el viaje de ida y vuelta), así que una diferencia sub-segundo
+         *     NO convierte un reintento legítimo en `venta_id_divergente`. El orden de
+         *     aplicación es el de recepción y el watermark del delta lo pone el reloj
+         *     del servidor, nunca el del cliente.
+         */
+        post: operations["sincronizar_lote_api_v1_sync_lotes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tenants/me": {
         parameters: {
             query?: never;
@@ -234,6 +320,46 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * DeltaSalida
+         * @description El drenado de datos de referencia hacia el dispositivo (ADR-017).
+         *
+         *     `hasta` es la marca del SERVIDOR que el dispositivo guarda y devuelve
+         *     como próximo `desde`: el watermark nunca lo pone el reloj del cliente.
+         *     `eliminados` son tumbas: el dispositivo los quita de su IndexedDB.
+         */
+        DeltaSalida: {
+            /** Eliminados */
+            eliminados: string[];
+            /**
+             * Hasta
+             * Format: date-time
+             */
+            hasta: string;
+            /** Productos */
+            productos: components["schemas"]["ProductoSalida"][];
+        };
+        /** DispositivoRegistrar */
+        DispositivoRegistrar: {
+            /** Id */
+            id?: string | null;
+            /** Nombre */
+            nombre: string;
+        };
+        /** DispositivoSalida */
+        DispositivoSalida: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Nombre */
+            nombre: string;
+            /** Ultima Secuencia */
+            ultima_secuencia: number;
+            /** Ultima Sync */
+            ultima_sync?: string | null;
+        };
         /** ErrorResponse */
         ErrorResponse: {
             /**
@@ -263,6 +389,40 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** LoteSync */
+        LoteSync: {
+            /**
+             * Dispositivo Id
+             * Format: uuid
+             */
+            dispositivo_id: string;
+            /** Operaciones */
+            operaciones: components["schemas"]["OperacionSync"][];
+        };
+        /**
+         * OperacionSync
+         * @description Una operación de la cola del dispositivo.
+         *
+         *     `tipo` es texto libre acotado, no Literal: un tipo desconocido (cliente y
+         *     servidor de versiones distintas) es `rechazada` por operación, no un 422
+         *     del lote entero (decisión 6). `datos` viaja como dict y lo valida el
+         *     servicio contra `VentaCrearSync`/`VentaAnularSync` por la misma razón.
+         */
+        OperacionSync: {
+            /** Datos */
+            datos?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Secuencia */
+            secuencia: number;
+            /** Tipo */
+            tipo: string;
         };
         /** PagedList[ProductoSalida] */
         PagedList_ProductoSalida_: {
@@ -374,6 +534,44 @@ export interface components {
             unidad_medida: string;
         };
         /**
+         * RespuestaLote
+         * @description Un resultado por operación, en el MISMO orden del lote.
+         */
+        RespuestaLote: {
+            /** Resultados */
+            resultados: components["schemas"]["ResultadoOperacion"][];
+        };
+        /**
+         * ResultadoOperacion
+         * @description El desenlace de UNA operación del lote (ADR-017):
+         *
+         *     - `aceptada`: se aplicó (venta registrada/anulada, stock movido, evento
+         *       encolado — todo en la transacción del lote).
+         *     - `duplicada`: ya estaba aplicada exactamente igual; no-op sin evento.
+         *     - `rechazada`: bien formada pero negada por el dominio; `motivo` es el
+         *       `code` estable y `detalles` el contexto (campos divergentes, etc.).
+         */
+        ResultadoOperacion: {
+            /** Detalles */
+            detalles?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Motivo */
+            motivo?: string | null;
+            /**
+             * Resultado
+             * @enum {string}
+             */
+            resultado: "aceptada" | "duplicada" | "rechazada";
+            /** Tipo */
+            tipo: string;
+        };
+        /**
          * TenantActualizar
          * @description Todo opcional: es un PATCH. `None` significa "no lo toques".
          */
@@ -424,6 +622,57 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    registrar_dispositivo_api_v1_dispositivos_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DispositivoRegistrar"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DispositivoSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listar_tenants_api_v1_platform_tenants_get: {
         parameters: {
             query?: {
@@ -1072,6 +1321,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delta_de_sync_api_v1_sync_delta_get: {
+        parameters: {
+            query: {
+                /** @description Watermark devuelto como `hasta` por el delta anterior (o una fecha inicial) */
+                desde: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeltaSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    sincronizar_lote_api_v1_sync_lotes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoteSync"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RespuestaLote"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

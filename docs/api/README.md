@@ -47,6 +47,9 @@ qué cambió en el contrato.
 | `GET /api/v1/productos` | `producto:leer` | listado paginado (`PagedList`) con `q` (nombre) y `categoria` |
 | `GET /api/v1/productos/por-codigo/{codigo}` | `producto:leer` | el camino del escáner: un EAN → un producto |
 | `GET/PATCH/DELETE /api/v1/productos/{id}` | `producto:leer` / `producto:editar` | ver, editar (sin `stock_actual` ni `ultimo_costo`), borrado lógico |
+| `POST /api/v1/dispositivos` | `venta:crear` | registro de dispositivo; acepta `id` del cliente (idempotente, ADR-017) |
+| `POST /api/v1/sync/lotes` | `venta:crear` | lote de ≤200 operaciones; 200 con resultado por operación (`aceptada`/`duplicada`/`rechazada`); eventos una sola vez por aceptada |
+| `GET /api/v1/sync/delta` | `producto:leer` | cambios del catálogo desde `desde`; `hasta` es el próximo watermark (reloj del servidor); `eliminados` son tumbas |
 
 Todos los errores usan el mismo sobre: `{"success": false, "message": "...",
 "code": "..."}`. El `code` es estable y es el que debe consumir el frontend para
@@ -54,4 +57,12 @@ decidir qué mensaje mostrar — `tenant_suspendido`, `requiere_platform_admin`,
 `sin_organizacion_en_token`, `tenant_no_especificado`, `token_ausente`,
 `token_invalido`, `producto_no_encontrado`, `codigo_barras_duplicado`,
 `producto_id_duplicado`, `padre_no_encontrado`, `padre_es_el_mismo`,
-`limite_de_productos_alcanzado`, `permiso_ausente`.
+`limite_de_productos_alcanzado`, `permiso_ausente`, `dispositivo_no_encontrado`,
+`fecha_sin_zona`, `campos_desconocidos`.
+
+En `POST /api/v1/sync/lotes` los rechazos de una operación NO son errores HTTP:
+viajan en `ResultadoOperacion.motivo` cuando el resultado es `rechazada`. Los
+motivos estables son `tipo_desconocido`, `datos_invalidos`,
+`venta_id_divergente`, `producto_no_encontrado`, `consecutivo_duplicado`,
+`fiado_requiere_cliente`, `cliente_solo_en_fiado`, `total_incoherente`,
+`venta_no_encontrada`, `permiso_ausente`.

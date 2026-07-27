@@ -1,6 +1,102 @@
 {
   "components": {
     "schemas": {
+      "DeltaSalida": {
+        "description": "El drenado de datos de referencia hacia el dispositivo (ADR-017).\n\n`hasta` es la marca del SERVIDOR que el dispositivo guarda y devuelve\ncomo próximo `desde`: el watermark nunca lo pone el reloj del cliente.\n`eliminados` son tumbas: el dispositivo los quita de su IndexedDB.",
+        "properties": {
+          "eliminados": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Eliminados",
+            "type": "array"
+          },
+          "hasta": {
+            "format": "date-time",
+            "title": "Hasta",
+            "type": "string"
+          },
+          "productos": {
+            "items": {
+              "$ref": "#/components/schemas/ProductoSalida"
+            },
+            "title": "Productos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "hasta",
+          "productos",
+          "eliminados"
+        ],
+        "title": "DeltaSalida",
+        "type": "object"
+      },
+      "DispositivoRegistrar": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "nombre": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Nombre",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nombre"
+        ],
+        "title": "DispositivoRegistrar",
+        "type": "object"
+      },
+      "DispositivoSalida": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "nombre": {
+            "title": "Nombre",
+            "type": "string"
+          },
+          "ultima_secuencia": {
+            "title": "Ultima Secuencia",
+            "type": "integer"
+          },
+          "ultima_sync": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ultima Sync"
+          }
+        },
+        "required": [
+          "id",
+          "nombre",
+          "ultima_secuencia"
+        ],
+        "title": "DispositivoSalida",
+        "type": "object"
+      },
       "ErrorResponse": {
         "properties": {
           "code": {
@@ -57,6 +153,66 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LoteSync": {
+        "additionalProperties": false,
+        "properties": {
+          "dispositivo_id": {
+            "format": "uuid",
+            "title": "Dispositivo Id",
+            "type": "string"
+          },
+          "operaciones": {
+            "items": {
+              "$ref": "#/components/schemas/OperacionSync"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Operaciones",
+            "type": "array"
+          }
+        },
+        "required": [
+          "dispositivo_id",
+          "operaciones"
+        ],
+        "title": "LoteSync",
+        "type": "object"
+      },
+      "OperacionSync": {
+        "additionalProperties": false,
+        "description": "Una operación de la cola del dispositivo.\n\n`tipo` es texto libre acotado, no Literal: un tipo desconocido (cliente y\nservidor de versiones distintas) es `rechazada` por operación, no un 422\ndel lote entero (decisión 6). `datos` viaja como dict y lo valida el\nservicio contra `VentaCrearSync`/`VentaAnularSync` por la misma razón.",
+        "properties": {
+          "datos": {
+            "additionalProperties": true,
+            "title": "Datos",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "secuencia": {
+            "maximum": 9.223372036854776e+18,
+            "minimum": 1.0,
+            "title": "Secuencia",
+            "type": "integer"
+          },
+          "tipo": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tipo",
+          "secuencia"
+        ],
+        "title": "OperacionSync",
         "type": "object"
       },
       "PagedList_ProductoSalida_": {
@@ -191,6 +347,7 @@
           "precio_venta": {
             "anyOf": [
               {
+                "maximum": 2147483647.0,
                 "minimum": 0.0,
                 "type": "integer"
               },
@@ -203,6 +360,7 @@
           "stock_minimo": {
             "anyOf": [
               {
+                "maximum": 99999999999.999,
                 "minimum": 0.0,
                 "type": "number"
               },
@@ -301,6 +459,7 @@
             "title": "Padre Id"
           },
           "precio_venta": {
+            "maximum": 2147483647.0,
             "minimum": 0.0,
             "title": "Precio Venta",
             "type": "integer"
@@ -308,6 +467,7 @@
           "stock_minimo": {
             "anyOf": [
               {
+                "maximum": 99999999999.999,
                 "minimum": 0.0,
                 "type": "number"
               },
@@ -428,6 +588,76 @@
           "stock_minimo"
         ],
         "title": "ProductoSalida",
+        "type": "object"
+      },
+      "RespuestaLote": {
+        "description": "Un resultado por operación, en el MISMO orden del lote.",
+        "properties": {
+          "resultados": {
+            "items": {
+              "$ref": "#/components/schemas/ResultadoOperacion"
+            },
+            "title": "Resultados",
+            "type": "array"
+          }
+        },
+        "required": [
+          "resultados"
+        ],
+        "title": "RespuestaLote",
+        "type": "object"
+      },
+      "ResultadoOperacion": {
+        "description": "El desenlace de UNA operación del lote (ADR-017):\n\n- `aceptada`: se aplicó (venta registrada/anulada, stock movido, evento\n  encolado — todo en la transacción del lote).\n- `duplicada`: ya estaba aplicada exactamente igual; no-op sin evento.\n- `rechazada`: bien formada pero negada por el dominio; `motivo` es el\n  `code` estable y `detalles` el contexto (campos divergentes, etc.).",
+        "properties": {
+          "detalles": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detalles"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "motivo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo"
+          },
+          "resultado": {
+            "enum": [
+              "aceptada",
+              "duplicada",
+              "rechazada"
+            ],
+            "title": "Resultado",
+            "type": "string"
+          },
+          "tipo": {
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tipo",
+          "resultado"
+        ],
+        "title": "ResultadoOperacion",
         "type": "object"
       },
       "TenantActualizar": {
@@ -570,12 +800,79 @@
     }
   },
   "info": {
-    "description": "\nAPI regional de Vendi. Fase 1: fundación + catálogo de productos.\n\nEl negocio (tenant) se resuelve del claim `organization` del token: el alias de\nla Organization de Keycloak **es** el identificador del negocio. Un usuario que\npertenece a varios negocios indica cuál con la cabecera `X-Tenant-Id`, y solo\npuede elegir entre los que ya trae su token.\n",
+    "description": "\nAPI regional de Vendi. Fase 1: fundación + catálogo + ventas con sync offline.\n\nEl negocio (tenant) se resuelve del claim `organization` del token: el alias de\nla Organization de Keycloak **es** el identificador del negocio. Un usuario que\npertenece a varios negocios indica cuál con la cabecera `X-Tenant-Id`, y solo\npuede elegir entre los que ya trae su token.\n",
     "title": "Vendi API",
     "version": "0.1.0"
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/dispositivos": {
+      "post": {
+        "description": "Acepta el `id` que traiga el cliente (ADR-017): re-registrar con el\nmismo id devuelve el existente, sin duplicar fila.",
+        "operationId": "registrar_dispositivo_api_v1_dispositivos_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispositivoRegistrar"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispositivoSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Registrar un dispositivo del negocio",
+        "tags": [
+          "ventas"
+        ]
+      }
+    },
     "/api/v1/platform/tenants": {
       "get": {
         "operationId": "listar_tenants_api_v1_platform_tenants_get",
@@ -1497,6 +1794,144 @@
         "summary": "Actualizar un producto",
         "tags": [
           "catalogo"
+        ]
+      }
+    },
+    "/api/v1/sync/delta": {
+      "get": {
+        "description": "El drenado hacia los dispositivos (ADR-017): productos modificados\ndesde `desde` y tumbas de los dados de baja. El próximo watermark es el\n`hasta` de la respuesta — lo pone el reloj del servidor, nunca el del\ncliente.",
+        "operationId": "delta_de_sync_api_v1_sync_delta_get",
+        "parameters": [
+          {
+            "description": "Watermark devuelto como `hasta` por el delta anterior (o una fecha inicial)",
+            "in": "query",
+            "name": "desde",
+            "required": true,
+            "schema": {
+              "description": "Watermark devuelto como `hasta` por el delta anterior (o una fecha inicial)",
+              "format": "date-time",
+              "title": "Desde",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeltaSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Descargar los cambios del catálogo desde un watermark",
+        "tags": [
+          "ventas"
+        ]
+      }
+    },
+    "/api/v1/sync/lotes": {
+      "post": {
+        "description": "Una transacción por lote, un resultado por operación\n(`aceptada`/`duplicada`/`rechazada`), en el orden del lote.\n\nHTTP 200 aunque haya operaciones rechazadas: el lote SE PROCESÓ; el\ndesenlace de cada operación viaja en su resultado. Los 4xx de este\nendpoint significan «el request entero es inválido», no «una operación\nfalló».\n\nIdempotencia y divergencia (decisión 4 del plan): reenviar una operación\ncon el mismo `id` y un payload IDÉNTICO responde `duplicada` (no-op, sin\nevento); el mismo `id` con cualquier campo del hecho distinto (ítems,\ntotal, medio de pago, cliente, consecutivo, dispositivo,\n`creada_en_cliente` o estado) responde `rechazada` con motivo\n`venta_id_divergente` y los campos que difieren en `detalles.campos` —\njamás un no-op silencioso.\n\nDoble verdad temporal (ADR-017/018): `creada_en_cliente` es el dato del\nticket y se guarda tal cual; al comparar un reintento contra la venta ya\naceptada se ignoran los microsegundos (la columna `timestamptz` no los\nconserva en el viaje de ida y vuelta), así que una diferencia sub-segundo\nNO convierte un reintento legítimo en `venta_id_divergente`. El orden de\naplicación es el de recepción y el watermark del delta lo pone el reloj\ndel servidor, nunca el del cliente.",
+        "operationId": "sincronizar_lote_api_v1_sync_lotes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoteSync"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RespuestaLote"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Aplicar un lote de operaciones de la cola del dispositivo",
+        "tags": [
+          "ventas"
         ]
       }
     },
