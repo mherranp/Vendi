@@ -49,9 +49,9 @@
 ### Task 0.5.2: Remoto git + primera ejecución real del pipeline
 
 **Bloqueado por B-1.** Cuando exista remoto:
-- [ ] `git remote add origin <url>` + push (con confirmación humana explícita).
-- [ ] Observar los 5 workflows; corregir lo que falle en runner limpio (cachés, tiempos de arranque del stack de 12 contenedores dentro de `timeout-minutes: 30`).
-- [ ] Criterio de cierre verificable: badge verde de `ci.yml` y `e2e.yml` en el SHA de master, registrado en `docs/estado.md` (cierra el criterio 4 de Fase 0).
+- [x] `git remote add origin <url>` + push (con confirmación humana explícita). — *Remoto conectado por el usuario (github.com/mherranp/Vendi); push inicial del usuario 2026-07-27.*
+- [x] Observar los 5 workflows; corregir lo que falle en runner limpio (cachés, tiempos de arranque del stack de 12 contenedores dentro de `timeout-minutes: 30`). — *4 fallos en cascada corregidos: `.env` invisible para compose (`0f14efd`), secreto de provisioning no pasado a Keycloak en base vacía (`2b077ac` — bug real de despliegue fresco), check 25 de verify-setup sin guarda para stack sin SPAs (`466f377`), base NSS ausente para mkcert/Chromium (`3593cd1`).*
+- [x] Criterio de cierre verificable: badge verde de `ci.yml` y `e2e.yml` en el SHA de master, registrado en `docs/estado.md` (cierra el criterio 4 de Fase 0). — *ci, e2e y release-images en verde en SHA `3593cd1` (2026-07-27); `docs/estado.md` actualizado con los run IDs.*
 
 ### Task 0.5.3: Cerrar o acotar D-02 (credencial `manage-realm` en el proceso de la API)
 

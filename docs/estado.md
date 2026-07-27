@@ -45,11 +45,17 @@ El check 17 se omite porque solo aplica con `APP_ENV=production`, y lo dice.
 
 ### Criterio 4 — lo que falta y por qué
 
-El workflow existe y está escrito. Lo que **no** hay es la evidencia de una
-ejecución: **este repositorio no tiene remoto configurado** (`git remote -v`
-devuelve vacío), así que no hay ningún GitHub Actions donde disparar nada. En
-cuanto exista el repositorio remoto, el criterio se cierra con un
-`workflow_dispatch` y la descarga del artefacto.
+**CERRADO el 2026-07-27** (nota añadida a posteriori; el texto original del
+cierre de Fase 0 decía que el workflow estaba escrito pero jamás ejecutado por
+no existir remoto). El remoto `origin` (github.com/mherranp/Vendi) se conectó y
+la primera ejecución real exigió cuatro correcciones (`0f14efd`, `2b077ac`,
+`466f377`, `3593cd1`), incluido un bug real de despliegue fresco: el compose no
+pasaba `VENDI_PROVISIONING_CLIENT_SECRET` al contenedor de Keycloak y la
+siembra recibía 401 en cualquier base vacía — en local no se notaba porque el
+realm ya existía en el volumen. Evidencia: `gh run list` muestra `ci`, `e2e` y
+`release-images` en verde en el SHA `3593cd1` (runs 30246206628, 30246206697,
+30246206643), con `verify-setup.sh` 26 en verde / 2 omitidos / 0 fallos y 106
+tests de integración passed, 0 skipped, dentro del propio CI.
 
 ---
 
