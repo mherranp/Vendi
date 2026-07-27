@@ -1,4 +1,4 @@
-# Deuda técnica de Fase 0
+# Deuda técnica del proyecto
 
 Registro de las decisiones que se toman **a sabiendas de que están mal**, con
 quién las tomó, por qué, y **cuándo dejan de ser aceptables**. Una deuda sin

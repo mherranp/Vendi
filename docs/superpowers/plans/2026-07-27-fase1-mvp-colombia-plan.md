@@ -95,6 +95,7 @@
 - [x] Tests de integración con aislamiento cross-tenant nuevo por tabla (0 SKIPPED).
 - [x] OpenAPI congelado actualizado (`docs/api/`) + codegen + `contrato.ts` sigue compilando.
 - [x] Eventos de outbox emitidos según su ADR; `pytest -m integration` verde; `ruff` verde.
+- [x] Permisos del módulo (ADR-023) sembrados en el realm y exigidos por el check 23 de `verify-setup.sh`: cada módulo nuevo extiende ese check con los suyos, así la letra de ADR-023 se completa módulo a módulo.
 
 *(Marcado por el módulo catálogo, 2026-07-27 — run de CI 30258309167; la lista se reusa y se vuelve a verificar por cada módulo siguiente.)*
 

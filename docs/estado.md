@@ -65,14 +65,14 @@ tests de integración passed, 0 skipped, dentro del propio CI.
 Fecha de corte: **2026-07-27**. Primer módulo de negocio del MVP, cerrado con
 el gate de la Etapa 1.2 del plan maestro. Plan:
 [`docs/superpowers/plans/2026-07-28-modulo-catalogo-plan.md`](superpowers/plans/2026-07-28-modulo-catalogo-plan.md)
-(9 tareas TDD, commits `29cb6ac`…`461d133`, cada una con revisión
+(9 tareas TDD, commits `29cb6ac`…`fa5c3c1`, cada una con revisión
 independiente registrada en `.superpowers/sdd/`).
 
 Los comandos del gate que exigen el stack (migrar, tests de integración,
 `verify-setup.sh`) se citan desde el CI, que los ejecuta contra PostgreSQL,
 RabbitMQ y Keycloak reales en cada push: el run de corte es el `ci`
-**30258309167** sobre el SHA `461d133`, con los 11 jobs en verde
-(`gh run view 30258309167`). Un run verde es evidencia más fuerte que una
+**30260179984** sobre el SHA `fa5c3c1`, con los 11 jobs en verde
+(`gh run view 30260179984`). Un run verde es evidencia más fuerte que una
 ejecución local del mismo día.
 
 ### Qué se entregó, y el comando que lo demuestra
@@ -81,7 +81,7 @@ ejecución local del mismo día.
 Migración `0004`, aplicada hasta head en el stack del CI:
 
 ```
-$ bash scripts/migrate.sh          # run ci 30258309167, job «pytest -m integration»
+$ bash scripts/migrate.sh          # run ci 30260179984, job «pytest -m integration»
 INFO  [alembic.runtime.migration] Running upgrade 0003 -> 0004, Catálogo: tabla `productos` (ADR-019)…
 [OK]    Migraciones aplicadas.
 0004 (head)
@@ -95,8 +95,8 @@ liberado en el borrado lógico). El job de CI convierte cualquier `SKIPPED` en
 fallo, así que «passed» aquí significa que corrieron todos:
 
 ```
-$ uv run pytest -q -m integration  # run ci 30258309167
-138 passed, 353 deselected
+$ uv run pytest -q -m integration  # run ci 30260179984
+139 passed, 353 deselected
 ```
 
 Ahí dentro van también los candados transversales (`test_rls_coverage.py`,
@@ -114,19 +114,20 @@ $ python3 -c "import json; print('\n'.join(sorted(p for p in json.load(open('doc
 /api/v1/productos/{producto_id}
 ```
 
-15 tests de router (`backend/tests/api/test_catalogo_productos.py`) y 11 de
+15 tests de router (`backend/tests/api/test_catalogo_productos.py`) y 12 de
 servicio (`backend/tests/test_catalogo_servicio.py`), todos integration y
 verdes en el run de corte: creación idempotente con `id` de cliente, 409 al
 reusar el id de un producto dado de baja, EAN duplicado 409 / entre tenants
-201, cajero lee pero no edita (`permiso_ausente`), almacenista crea y edita
-pero no borra, producto de otro negocio = 404, validación 422, límite de tier
-403, negocio suspendido 403.
+201, cajero lee pero no edita (`permiso_ausente`), almacenista crea, edita y
+también borra (el borrado lógico es una edición, ADR-023), producto de otro
+negocio = 404, validación 422, límite de tier 403, negocio suspendido 403.
 
 **Límite de productos por tier verificado en aplicación (ADR-010).**
 `LIMITES_PRODUCTOS_POR_TIER = {gratis: 100, light: 500, pro: None}` contra las
 filas VIVAS del tenant, con 403 `limite_de_productos_alcanzado`
 (`test_el_limite_del_tier_se_verifica_contra_las_filas_vivas`,
-`test_el_limite_del_tier_da_403`). La fuente del tier hoy es fija (`pro` para
+`test_el_limite_del_tier_da_403`,
+`test_el_limite_del_tier_light_se_detiene_en_500`). La fuente del tier hoy es fija (`pro` para
 todos, decisión 2 del plan): registrada como deuda **D-09** en
 [`docs/deuda-tecnica.md`](deuda-tecnica.md).
 
@@ -151,8 +152,8 @@ de `verify-setup.sh`, ejecutado en el CI):
 **Suite completa verde, lint verde, contrato sin deriva.**
 
 ```
-$ uv run pytest -q -m 'not integration'   # run ci 30258309167
-353 passed, 138 deselected
+$ uv run pytest -q -m 'not integration'   # run ci 30260179984
+353 passed, 139 deselected
 $ uv run ruff check .                     # job «ruff + mypy» del CI; reproducido en local
 All checks passed!
 $ CODEGEN_SCHEMA_FILE=docs/api/openapi-fase0.json bash scripts/codegen-api-client.sh && git status --short
@@ -161,8 +162,8 @@ $ CODEGEN_SCHEMA_FILE=docs/api/openapi-fase0.json bash scripts/codegen-api-clien
 
 `contrato.ts` sigue compilando: el job `frontend / contratos`, los cuatro
 `ng build` y `ng test` del mismo run, en verde. Los demás workflows sobre el
-SHA de corte (`gh run list`): `e2e` 30258309118, `android` 30258309213 y
-`release-images` 30258309653, todos success.
+SHA de corte (`gh run list`): `e2e` 30260180052 y `release-images`
+30260179985, todos success.
 
 ---
 
