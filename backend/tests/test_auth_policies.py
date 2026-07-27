@@ -20,6 +20,8 @@ from __future__ import annotations
 from vendi_core.auth.context import UserContext
 from vendi_core.auth.policies import (
     PERM_AUDIT_READ,
+    PERM_COMPRA_CREAR,
+    PERM_INVENTARIO_AJUSTAR,
     PERM_PLATFORM_ADMIN,
     PERM_PRODUCTO_EDITAR,
     PERM_PRODUCTO_LEER,
@@ -60,6 +62,8 @@ def test_el_catalogo_declara_los_permisos():
         PERM_PRODUCTO_EDITAR,
         PERM_VENTA_CREAR,
         PERM_VENTA_ANULAR,
+        PERM_INVENTARIO_AJUSTAR,
+        PERM_COMPRA_CREAR,
     }
 
 
@@ -94,15 +98,25 @@ def test_ningun_rol_de_negocio_alcanza_la_consola_de_plataforma():
 
 
 def test_el_reparto_de_permisos_es_el_de_adr_023():
-    """El cajero VENDE pero no anula: anular es uno de los dos gestos con los
-    que se desfalca una tienda y queda en manos del dueño en el MVP
-    (ADR-023). El almacenista no vende: su trabajo es el estante."""
+    """El cajero VENDE pero no anula, no ajusta inventario ni compra: anular,
+    arquear y ajustar son los gestos con los que se desfalca una tienda y
+    quedan fuera de sus manos en el MVP (ADR-023). El almacenista no vende:
+    su trabajo es que el estante y el sistema digan lo mismo."""
     assert PERMISOS_POR_ROL[ROL_CAJERO] == frozenset({PERM_PRODUCTO_LEER, PERM_VENTA_CREAR})
     assert PERM_VENTA_ANULAR not in PERMISOS_POR_ROL[ROL_CAJERO]
-    assert PERMISOS_POR_ROL[ROL_ALMACENISTA] == frozenset({PERM_PRODUCTO_LEER, PERM_PRODUCTO_EDITAR})
-    assert {PERM_PRODUCTO_LEER, PERM_PRODUCTO_EDITAR, PERM_VENTA_CREAR, PERM_VENTA_ANULAR} <= PERMISOS_POR_ROL[
-        ROL_DUENO
-    ]
+    assert PERM_INVENTARIO_AJUSTAR not in PERMISOS_POR_ROL[ROL_CAJERO]
+    assert PERM_COMPRA_CREAR not in PERMISOS_POR_ROL[ROL_CAJERO]
+    assert PERMISOS_POR_ROL[ROL_ALMACENISTA] == frozenset(
+        {PERM_PRODUCTO_LEER, PERM_PRODUCTO_EDITAR, PERM_INVENTARIO_AJUSTAR, PERM_COMPRA_CREAR}
+    )
+    assert {
+        PERM_PRODUCTO_LEER,
+        PERM_PRODUCTO_EDITAR,
+        PERM_VENTA_CREAR,
+        PERM_VENTA_ANULAR,
+        PERM_INVENTARIO_AJUSTAR,
+        PERM_COMPRA_CREAR,
+    } <= PERMISOS_POR_ROL[ROL_DUENO]
 
 
 def test_todo_permiso_asignado_a_un_rol_esta_en_el_catalogo():

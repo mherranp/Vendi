@@ -79,6 +79,12 @@ PERM_PRODUCTO_EDITAR = "producto:editar"
 PERM_VENTA_CREAR = "venta:crear"
 PERM_VENTA_ANULAR = "venta:anular"
 
+# Inventario y compras (ADR-020/ADR-023). El almacenista ajusta y compra; el
+# cajero NO toca inventario ni compras — ajustar stock es el tercer gesto
+# con el que se desfalca una tienda, junto a anular y arquear.
+PERM_INVENTARIO_AJUSTAR = "inventario:ajustar"
+PERM_COMPRA_CREAR = "compra:crear"
+
 # Comodín para superadministradores de plataforma.
 PERM_WILDCARD = "*"
 
@@ -94,6 +100,8 @@ PERMISSION_CATALOG: tuple[tuple[str, str], ...] = (
     (PERM_PRODUCTO_EDITAR, "producto"),
     (PERM_VENTA_CREAR, "venta"),
     (PERM_VENTA_ANULAR, "venta"),
+    (PERM_INVENTARIO_AJUSTAR, "inventario"),
+    (PERM_COMPRA_CREAR, "compra"),
 )
 
 
@@ -117,15 +125,21 @@ _PERMISOS_DUENO = frozenset(
         PERM_PRODUCTO_EDITAR,
         PERM_VENTA_CREAR,
         PERM_VENTA_ANULAR,
+        PERM_INVENTARIO_AJUSTAR,
+        PERM_COMPRA_CREAR,
     }
 )
 
-# ADR-023: el cajero consulta el catálogo y vende, pero NO edita el catálogo
-# ni anula ventas (anular y arquear son los gestos con los que se desfalca
-# una tienda; son del dueño en el MVP). El almacenista mantiene el catálogo y
-# no vende. El resto de permisos de cada rol llega con su módulo.
+# ADR-023: el cajero consulta el catálogo y vende, pero NO edita el catálogo,
+# NO anula ventas, NO ajusta inventario y NO registra compras (anular, arquear
+# y ajustar son los gestos con los que se desfalca una tienda; son del dueño
+# en el MVP). El almacenista mantiene el catálogo, ajusta el inventario y
+# registra las compras; no vende ni toca caja ni fiado. El resto de permisos
+# de cada rol llega con su módulo.
 _PERMISOS_CAJERO: frozenset[str] = frozenset({PERM_PRODUCTO_LEER, PERM_VENTA_CREAR})
-_PERMISOS_ALMACENISTA: frozenset[str] = frozenset({PERM_PRODUCTO_LEER, PERM_PRODUCTO_EDITAR})
+_PERMISOS_ALMACENISTA: frozenset[str] = frozenset(
+    {PERM_PRODUCTO_LEER, PERM_PRODUCTO_EDITAR, PERM_INVENTARIO_AJUSTAR, PERM_COMPRA_CREAR}
+)
 
 PERMISOS_POR_ROL: dict[str, frozenset[str]] = {
     ROL_DUENO: _PERMISOS_DUENO,
