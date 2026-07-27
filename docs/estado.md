@@ -308,14 +308,15 @@ fuera del CI).
 
 ```
 cd backend && uv run pytest -q
-418 passed
+576 passed
 ```
 
-De ellos, **106 son `integration`**: hablan con el PostgreSQL, el RabbitMQ y el
-Keycloak del compose, y con la API por su dominio. **No se omiten** si el
-servicio falta: fallan con un mensaje que dice qué falta. Un test que desaparece
-del recuento no prueba nada, y el job de CI convierte cualquier `SKIPPED` en
-fallo.
+De ellos, **200 son `integration`** (cifra de Fase 0: 106; el crecimiento viene de
+los módulos catálogo y ventas, ver sus secciones): hablan con el PostgreSQL, el
+RabbitMQ y el Keycloak del compose, y con la API por su dominio. **No se omiten**
+si el servicio falta: fallan con un mensaje que dice qué falta. Un test que
+desaparece del recuento no prueba nada, y el job de CI convierte cualquier
+`SKIPPED` en fallo. *(Actualizado al HEAD 0e02c29, run ci 30283626280.)*
 
 Frontend: 250 specs (`npx ng test --watch=false`), más 2 specs E2E de
 Playwright (`npm run e2e`: login con passkey y CRUD de negocio) contra el
