@@ -8,7 +8,9 @@ migración 0005):
   crea aquí por la decisión 3 del plan; el arqueo es del módulo de caja).
 - `Venta`: el hecho append-only con PK del cliente (ADR-018). Sin
   `SoftDeleteMixin`: no hay borrado, hay anulación (`completada → anulada`,
-  la única mutación permitida).
+  la única mutación permitida; estampa `anulada_en`, la marca que permite
+  que la devolución de una anulación tardía caiga en la sesión abierta,
+  decisión 7 del plan de caja).
 - `VentaItem`: las líneas con el precio congelado en el momento de la venta.
 - `MovimientoInventario`: el libro de stock por deltas (ADR-020; la tabla se
   crea aquí por la decisión 1 del plan; alertas y compras son del módulo 3).
@@ -141,6 +143,12 @@ class Venta(Base, TenantModel):
     creada_en_cliente: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     #: La marca del servidor: la única verdad temporal del sistema.
     recibida_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    #: Cuándo se anuló (NULL mientras esté completada). Lo estampa
+    #: `_anular_venta` desde el módulo 4 (decisión 7 del plan de caja): es lo
+    #: que permite que la devolución de efectivo de una venta anulada tras el
+    #: cierre caiga en la sesión abierta —como firma ADR-021— sin duplicar
+    #: la venta como movimiento de caja.
+    anulada_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     #: La posición de esta venta en la cola FIFO local del dispositivo.
     secuencia_dispositivo: Mapped[int] = mapped_column(BigInteger, nullable=False)
 

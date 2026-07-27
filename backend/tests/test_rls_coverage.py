@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 # Importar los modelos los registra en `Base.metadata`. Sin estos imports el
 # test pasaría porque no habría nada que revisar: el peor de los falsos verdes.
+from app.modules.caja.models import CajaMovimiento  # noqa: F401
 from app.modules.catalogo.models import Producto  # noqa: F401
 from app.modules.inventario.models import AjusteInventario, Compra, CompraItem  # noqa: F401
 from app.modules.ventas.models import CajaSesion, Dispositivo, MovimientoInventario, Venta, VentaItem  # noqa: F401
