@@ -32,6 +32,7 @@ from decimal import Decimal
 import pytest
 import pytest_asyncio
 from datos_de_prueba import T1, T2
+from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -327,14 +328,16 @@ async def test_un_tipo_con_inyeccion_sql_es_tipo_desconocido_y_no_pasa_nada(serv
     assert filas.n == 1, "la tabla ventas sigue existiendo y la buena se aplicó"
 
 
-async def test_una_operacion_sin_datos_es_rechazada_pero_no_el_lote(servicio, semilla):
-    """D-14 confirmado: `datos` ausente cae en el default `{}`, la validación
-    por operación lo rechaza como `datos_invalidos` y la cola sigue drenando."""
+def test_una_operacion_sin_datos_ni_siquiera_entra_al_lote():
+    """D-14 CERRADA: `datos` es requerido en el contrato. La operación sin
+    `datos` ya no cae en el default `{}` para salir `rechazada` con
+    `datos_invalidos`: pydantic la corta en la frontera del lote — en la API
+    es un 422 del request entero y nada se aplicó. (El contenido inválido CON
+    campo sigue siendo `rechazada` por operación: eso no cambia, lo fija
+    `test_datos_mal_formados_rechazan_la_operacion_no_el_lote`.)"""
     sin_datos = {"id": str(uuid.uuid4()), "tipo": "venta.crear", "secuencia": 1}
-    buena = _op_venta(semilla, uuid.uuid4(), secuencia=2, consecutivo_local=2)
-    resultados = await servicio.procesar_lote(_lote(semilla, sin_datos, buena))
-    assert [r.resultado for r in resultados] == ["rechazada", "aceptada"]
-    assert resultados[0].motivo == "datos_invalidos"
+    with pytest.raises(ValidationError):
+        LoteSync.model_validate({"dispositivo_id": str(uuid.uuid4()), "operaciones": [sin_datos]})
 
 
 async def test_una_venta_de_cero_items_no_llega_al_servicio_como_venta(servicio, semilla):

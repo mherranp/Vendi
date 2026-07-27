@@ -135,6 +135,16 @@ def test_el_lote_tiene_tope_de_200_operaciones():
     assert isinstance(lote.operaciones[0].datos, dict), "datos se valida por operación en el servicio (decisión 6)"
 
 
+def test_una_operacion_sin_datos_es_422_de_schema():
+    """D-14 cerrada: `datos` es requerido en el contrato. La operación sin
+    `datos` ya no llega al servicio disfrazada de `{}` para salir `rechazada`:
+    pydantic la corta en la frontera, que es la señal más temprana posible.
+    (El contenido inválido CON campo sigue siendo `rechazada` por operación:
+    eso no cambia — la unidad de fallo del lote es la operación.)"""
+    with pytest.raises(ValidationError):
+        OperacionSync.model_validate({"id": str(uuid.uuid4()), "tipo": "venta.crear", "secuencia": 1})
+
+
 def test_el_tipo_es_texto_libre_acotado():
     """Un tipo desconocido es `rechazada` por operación, no 422 del lote
     (decisión 6): el schema solo acota el largo."""

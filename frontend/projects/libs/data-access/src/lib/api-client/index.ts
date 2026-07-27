@@ -406,12 +406,13 @@ export interface components {
          *
          *     `tipo` es texto libre acotado, no Literal: un tipo desconocido (cliente y
          *     servidor de versiones distintas) es `rechazada` por operación, no un 422
-         *     del lote entero (decisión 6). `datos` viaja como dict y lo valida el
-         *     servicio contra `VentaCrearSync`/`VentaAnularSync` por la misma razón.
+         *     del lote entero (decisión 6). `datos` es REQUERIDO (cierre de D-14) y
+         *     viaja como dict: lo valida el servicio contra
+         *     `VentaCrearSync`/`VentaAnularSync` por la misma razón.
          */
         OperacionSync: {
             /** Datos */
-            datos?: {
+            datos: {
                 [key: string]: unknown;
             };
             /**

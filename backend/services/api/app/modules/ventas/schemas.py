@@ -137,8 +137,9 @@ class OperacionSync(BaseModel):
 
     `tipo` es texto libre acotado, no Literal: un tipo desconocido (cliente y
     servidor de versiones distintas) es `rechazada` por operación, no un 422
-    del lote entero (decisión 6). `datos` viaja como dict y lo valida el
-    servicio contra `VentaCrearSync`/`VentaAnularSync` por la misma razón.
+    del lote entero (decisión 6). `datos` es REQUERIDO (cierre de D-14) y
+    viaja como dict: lo valida el servicio contra
+    `VentaCrearSync`/`VentaAnularSync` por la misma razón.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -149,7 +150,11 @@ class OperacionSync(BaseModel):
     tipo: str = Field(min_length=1, max_length=40)
     #: Posición FIFO en la cola local del dispositivo (ADR-017).
     secuencia: int = Field(ge=1, le=TOPE_SECUENCIA)
-    datos: dict[str, Any] = Field(default_factory=dict)
+    #: Requerido (cierre de D-14): la operación sin `datos` es un 422 de
+    #: request, no una `rechazada` del lote. El CONTENIDO se valida por
+    #: operación en el servicio (decisión 6 del plan de ventas): `datos`
+    #: presentes pero inválidos siguen siendo `rechazada` sin arrastrar el lote.
+    datos: dict[str, Any]
 
 
 class LoteSync(BaseModel):

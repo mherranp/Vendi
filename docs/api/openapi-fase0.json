@@ -182,7 +182,7 @@
       },
       "OperacionSync": {
         "additionalProperties": false,
-        "description": "Una operación de la cola del dispositivo.\n\n`tipo` es texto libre acotado, no Literal: un tipo desconocido (cliente y\nservidor de versiones distintas) es `rechazada` por operación, no un 422\ndel lote entero (decisión 6). `datos` viaja como dict y lo valida el\nservicio contra `VentaCrearSync`/`VentaAnularSync` por la misma razón.",
+        "description": "Una operación de la cola del dispositivo.\n\n`tipo` es texto libre acotado, no Literal: un tipo desconocido (cliente y\nservidor de versiones distintas) es `rechazada` por operación, no un 422\ndel lote entero (decisión 6). `datos` es REQUERIDO (cierre de D-14) y\nviaja como dict: lo valida el servicio contra\n`VentaCrearSync`/`VentaAnularSync` por la misma razón.",
         "properties": {
           "datos": {
             "additionalProperties": true,
@@ -210,7 +210,8 @@
         "required": [
           "id",
           "tipo",
-          "secuencia"
+          "secuencia",
+          "datos"
         ],
         "title": "OperacionSync",
         "type": "object"

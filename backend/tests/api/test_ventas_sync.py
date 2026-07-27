@@ -181,6 +181,19 @@ def test_el_422_por_campo_desconocido_no_aplica_nada_del_lote(app_con_base):
     assert [r["resultado"] for r in reenvio.json()["resultados"]] == ["aceptada"]
 
 
+def test_una_operacion_sin_datos_es_422_del_lote(app_con_base):
+    """El 422 es del request entero (estructura malformada), no un rechazo por
+    operación: el cliente que omite `datos` tiene un bug y nada se aplicó."""
+    cliente, validador, _ = app_con_base
+    cabeceras, _, dispositivo = _montar(cliente, validador, "Sync datos")
+    lote = {
+        "dispositivo_id": dispositivo,
+        "operaciones": [{"id": str(uuid.uuid4()), "tipo": "venta.crear", "secuencia": 1}],
+    }
+    respuesta = cliente.post("/api/v1/sync/lotes", json=lote, headers=cabeceras)
+    assert respuesta.status_code == 422
+
+
 def test_el_lote_se_corta_en_200_operaciones(app_con_base):
     cliente, validador, _ = app_con_base
     cabeceras, producto, dispositivo = _montar(cliente, validador, "Sync 7")

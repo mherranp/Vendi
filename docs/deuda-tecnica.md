@@ -15,7 +15,6 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 | D-11 | `caja_sesiones` existe y se puebla (apertura implícita del sync) sin endpoints propios | Fase 1 (módulo 4, caja) | backend |
 | D-12 | El stock no tiene alertas de umbral: el negativo es visible en `stock_actual` pero nadie notifica | Fase 1 (módulo 3, inventario) | backend |
 | D-13 | Carrera TOCTOU del cupo de tier del catálogo: dos altas concurrentes dejan 101/100 (QA adversarial) | Fase 1 (antes del piloto) | backend |
-| D-14 | `OperacionSync.datos` es opcional en el contrato: una operación sin `datos` es `rechazada`, no 422 | Fase 1 (módulo 3) | backend |
 | D-15 | `exigir_venta_anular` está definido y exportado sin endpoint que lo use | Fase 1 (módulo 4; si nada lo usa, se borra) | backend |
 | D-16 | El check 23 de `verify-setup.sh` no tiene prueba negativa ejecutada (nadie lo ha visto fallar) | Fase 1 (Etapa 1.5) | backend |
 | D-17 | `alembic check` (deriva metadata↔DDL) no corre en CI | Fase 1 | backend |
@@ -28,6 +27,10 @@ escribible por el rol de la API), **D-07** (`exchange` del outbox sin defensa) y
 
 Cerrada en la Task 0.5.3 de Fase 1: **D-02** (`manage-realm` en el proceso de la
 API): el aprovisionamiento se movió al servicio `provisioner` (ADR-027).
+
+Cerrada en la Tarea 8 del módulo inventario (Fase 1, Etapa 1.2): **D-14**
+(`OperacionSync.datos` opcional en el contrato): el campo es requerido y la
+operación sin `datos` es un 422 de pydantic, no una `rechazada` del lote.
 
 > Runbooks operativos relacionados: el procedimiento completo de respaldo y
 > restauración (qué se vuelca, qué NO, y cómo se promueve una copia a base
@@ -260,34 +263,6 @@ QA: `SELECT pg_advisory_xact_lock(hashtext(tenant_id::text))` al entrar en
 - D-09 sigue viva: hoy el tier es `pro` (ilimitado) para todos, así que la
   carrera no tiene efecto observable hasta que exista una fuente real del
   tier.
-
----
-
-## D-14 · `OperacionSync.datos` es opcional en el contrato
-
-**Qué es.** En `OperacionSync` el campo `datos` tiene
-`Field(default_factory=dict)`: una operación sin `datos` no es un 422 de
-request; llega al servicio con `{}` y sale `rechazada` con motivo
-`datos_invalidos`.
-
-**Por qué se aceptó.** Decisión 6 del plan: el contenido de `datos` se
-valida por operación dentro del procesamiento del lote (la unidad de fallo
-es la operación, no el request). Pero la opcionalidad del CAMPO es un paso
-más allá: el contrato OpenAPI no marca `datos` como requerido, así que un
-cliente que lo omite no recibe la señal más temprana posible.
-
-**Riesgo si se olvida.** Bajo: el comportamiento es correcto (la operación
-se rechaza con motivo y no aplica nada), solo es menos explícito de lo que
-el contrato podría ser. Con más tipos de operación (módulo 3 en adelante)
-conviene hacerlo requerido para que el 422 lo dé pydantic.
-
-**Vencimiento: Fase 1, módulo 3** (cuando el sync gane tipos de operación
-nuevos y el contrato se revise).
-
-**Candado mientras tanto:**
-
-- `backend/tests/test_ventas_servicio.py`: operación con datos inválidos es
-  `rechazada` con `datos_invalidos` y no arrastra al resto del lote.
 
 ---
 
@@ -531,6 +506,56 @@ $ uv run pytest -q -rs -m integration
   fuera del contenedor del provisioner.
 - `tests/test_keycloak_admin_orgs.py::test_el_cliente_de_la_api_no_alcanza_organizations`
   (ya existía): `vendi-backend` sigue sin alcanzar Organizations.
+
+---
+
+### D-14 · `OperacionSync.datos` era opcional en el contrato
+
+**Qué era.** En `OperacionSync` el campo `datos` tenía
+`Field(default_factory=dict)`: una operación sin `datos` no era un 422 de
+request; llegaba al servicio con `{}` y salía `rechazada` con motivo
+`datos_invalidos`. El contrato OpenAPI tampoco marcaba `datos` como
+requerido, así que un cliente que lo omitía no recibía la señal más temprana
+posible.
+
+**Cómo se cerró** (Tarea 8 del módulo inventario — el gatillo firmado de la
+propia deuda: «Fase 1, módulo 3»). `datos` pasa a requerido en el schema
+(`backend/services/api/app/modules/ventas/schemas.py`): la operación sin
+`datos` es un 422 de pydantic en la frontera del lote, no una `rechazada`.
+El comportamiento para `datos` presentes pero con contenido inválido NO
+cambió: sigue siendo `rechazada` por operación (la unidad de fallo del lote
+es la operación, decisión 6 del plan de ventas). El OpenAPI congelado
+(`docs/api/openapi-fase0.json`) y el cliente TypeScript se actualizaron en
+el mismo commit, así que el contrato publicado también marca `datos` como
+requerido.
+
+**Evidencia** (2026-07-28, rama `main`):
+
+```
+$ cd backend && uv run pytest tests/test_ventas_schemas.py -q -k sin_datos
+1 passed, 14 deselected
+
+$ python3 -c 'import json; d=json.load(open("docs/api/openapi-fase0.json"));
+  print("datos" in d["components"]["schemas"]["OperacionSync"]["required"])'
+True
+
+$ CODEGEN_SCHEMA_FILE=docs/api/openapi-fase0.json bash scripts/codegen-api-client.sh
+→ el cliente TS queda con `datos:` requerido; una segunda corrida no cambia
+  nada (sin deriva)
+```
+
+**Candados:**
+
+- `backend/tests/test_ventas_schemas.py::test_una_operacion_sin_datos_es_422_de_schema`:
+  pydantic corta la operación sin `datos` en la frontera.
+- `backend/tests/api/test_ventas_sync.py::test_una_operacion_sin_datos_es_422_del_lote`
+  (integration, corre en CI): el 422 es del request entero y nada se aplicó.
+- `backend/tests/test_ventas_adversarial.py::test_una_operacion_sin_datos_ni_siquiera_entra_al_lote`:
+  el ataque del QA adversarial que documentaba la deuda, reescrito — la
+  operación sin `datos` ya no entra al servicio.
+- `backend/tests/test_ventas_servicio.py::test_datos_mal_formados_rechazan_la_operacion_no_el_lote`
+  (vigente): `datos` presentes pero inválidos siguen siendo `rechazada` con
+  `datos_invalidos` sin arrastrar el lote.
 
 ---
 
