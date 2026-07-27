@@ -27,6 +27,8 @@ from vendi_core.auth.policies import (
     PERM_TENANT_DELETE,
     PERM_TENANT_READ,
     PERM_TENANT_UPDATE,
+    PERM_VENTA_ANULAR,
+    PERM_VENTA_CREAR,
     PERM_WILDCARD,
     PERMISOS_POR_ROL,
     PERMISSION_CATALOG,
@@ -56,6 +58,8 @@ def test_el_catalogo_declara_los_permisos():
         PERM_AUDIT_READ,
         PERM_PRODUCTO_LEER,
         PERM_PRODUCTO_EDITAR,
+        PERM_VENTA_CREAR,
+        PERM_VENTA_ANULAR,
     }
 
 
@@ -89,13 +93,16 @@ def test_ningun_rol_de_negocio_alcanza_la_consola_de_plataforma():
         assert PERM_PLATFORM_ADMIN not in permisos, f"el rol {rol} llega a la consola de plataforma"
 
 
-def test_el_reparto_de_permisos_de_catalogo_es_el_de_adr_023():
-    """El cajero vende y consulta el catálogo, pero NO lo edita; el
-    almacenista lo mantiene. Eso es lo que ADR-023 firma para estos dos
-    permisos: el resto de sus permisos llega con sus módulos."""
-    assert PERMISOS_POR_ROL[ROL_CAJERO] == frozenset({PERM_PRODUCTO_LEER})
+def test_el_reparto_de_permisos_es_el_de_adr_023():
+    """El cajero VENDE pero no anula: anular es uno de los dos gestos con los
+    que se desfalca una tienda y queda en manos del dueño en el MVP
+    (ADR-023). El almacenista no vende: su trabajo es el estante."""
+    assert PERMISOS_POR_ROL[ROL_CAJERO] == frozenset({PERM_PRODUCTO_LEER, PERM_VENTA_CREAR})
+    assert PERM_VENTA_ANULAR not in PERMISOS_POR_ROL[ROL_CAJERO]
     assert PERMISOS_POR_ROL[ROL_ALMACENISTA] == frozenset({PERM_PRODUCTO_LEER, PERM_PRODUCTO_EDITAR})
-    assert {PERM_PRODUCTO_LEER, PERM_PRODUCTO_EDITAR} <= PERMISOS_POR_ROL[ROL_DUENO]
+    assert {PERM_PRODUCTO_LEER, PERM_PRODUCTO_EDITAR, PERM_VENTA_CREAR, PERM_VENTA_ANULAR} <= PERMISOS_POR_ROL[
+        ROL_DUENO
+    ]
 
 
 def test_todo_permiso_asignado_a_un_rol_esta_en_el_catalogo():
@@ -149,6 +156,5 @@ def test_el_grupo_de_un_rol_mapea_el_rol_y_sus_permisos():
     assert PERM_TENANT_READ in mapeo
     assert mapeo == sorted(mapeo), "el orden tiene que ser estable: la siembra hace diff contra él"
 
-    # Cajero ya tiene su primer permiso (ADR-023): el grupo mapea el rol Y
-    # producto:leer, en orden estable.
-    assert roles_de_realm_del_grupo(ROL_CAJERO) == sorted({ROL_CAJERO, PERM_PRODUCTO_LEER})
+    # El cajero ya vende (ADR-023): el grupo mapea el rol Y sus dos permisos.
+    assert roles_de_realm_del_grupo(ROL_CAJERO) == sorted({ROL_CAJERO, PERM_PRODUCTO_LEER, PERM_VENTA_CREAR})

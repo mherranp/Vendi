@@ -74,6 +74,11 @@ PERM_AUDIT_READ = "audit:read"
 PERM_PRODUCTO_LEER = "producto:leer"
 PERM_PRODUCTO_EDITAR = "producto:editar"
 
+# Ventas y sync offline (ADR-018/ADR-023). El cajero crea ventas pero NO las
+# anula: anular es un gesto con dinero y queda en manos del dueño en el MVP.
+PERM_VENTA_CREAR = "venta:crear"
+PERM_VENTA_ANULAR = "venta:anular"
+
 # Comodín para superadministradores de plataforma.
 PERM_WILDCARD = "*"
 
@@ -87,6 +92,8 @@ PERMISSION_CATALOG: tuple[tuple[str, str], ...] = (
     (PERM_AUDIT_READ, "audit"),
     (PERM_PRODUCTO_LEER, "producto"),
     (PERM_PRODUCTO_EDITAR, "producto"),
+    (PERM_VENTA_CREAR, "venta"),
+    (PERM_VENTA_ANULAR, "venta"),
 )
 
 
@@ -108,13 +115,16 @@ _PERMISOS_DUENO = frozenset(
         PERM_AUDIT_READ,
         PERM_PRODUCTO_LEER,
         PERM_PRODUCTO_EDITAR,
+        PERM_VENTA_CREAR,
+        PERM_VENTA_ANULAR,
     }
 )
 
-# El reparto de ADR-023 para el catálogo: el cajero consulta el catálogo para
-# vender pero NO lo edita; el almacenista es quien lo mantiene. El resto de
-# permisos de cada rol llega con su módulo (ventas, caja, inventario...).
-_PERMISOS_CAJERO: frozenset[str] = frozenset({PERM_PRODUCTO_LEER})
+# ADR-023: el cajero consulta el catálogo y vende, pero NO edita el catálogo
+# ni anula ventas (anular y arquear son los gestos con los que se desfalca
+# una tienda; son del dueño en el MVP). El almacenista mantiene el catálogo y
+# no vende. El resto de permisos de cada rol llega con su módulo.
+_PERMISOS_CAJERO: frozenset[str] = frozenset({PERM_PRODUCTO_LEER, PERM_VENTA_CREAR})
 _PERMISOS_ALMACENISTA: frozenset[str] = frozenset({PERM_PRODUCTO_LEER, PERM_PRODUCTO_EDITAR})
 
 PERMISOS_POR_ROL: dict[str, frozenset[str]] = {
