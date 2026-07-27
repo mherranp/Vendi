@@ -267,6 +267,26 @@ async def test_el_limite_del_tier_light_se_detiene_en_500(pg_app_url, pg_platfor
         await engine.dispose()
 
 
+async def test_actualizar_rechaza_al_producto_como_su_propio_padre(servicio):
+    """Un producto no puede colgar de sí mismo: el servicio lo corta antes de
+    que la FK lo convierta en un ciclo en el árbol de variantes."""
+    creado = await servicio.crear(ProductoCrear(nombre="Base", precio_venta=100))
+    with pytest.raises(ValidationError) as exc:
+        await servicio.actualizar(creado.id, ProductoActualizar(padre_id=creado.id))
+    assert exc.value.code == "padre_es_el_mismo"
+
+
+async def test_actualizar_a_un_ean_ya_usado_da_409_tipado(servicio):
+    """El índice único parcial también vigila el PATCH: mover el EAN de un
+    producto al de otro del mismo negocio se traduce al sobre de errores."""
+    await servicio.crear(ProductoCrear(nombre="A", precio_venta=100, codigo_barras="770111"))
+    otro = await servicio.crear(ProductoCrear(nombre="B", precio_venta=100, codigo_barras="770222"))
+    with pytest.raises(ConflictError) as exc:
+        await servicio.actualizar(otro.id, ProductoActualizar(codigo_barras="770111"))
+    assert exc.value.code == "codigo_barras_duplicado"
+    await servicio._session.rollback()
+
+
 async def test_el_padre_debe_existir_en_el_propio_tenant(pg_app_url, limpiar_productos):
     """Postgres NO aplica RLS al verificar la FK de `padre_id`: sin este
     chequeo, una variante podría colgar del producto de OTRO negocio."""
@@ -295,6 +315,41 @@ async def test_el_padre_debe_existir_en_el_propio_tenant(pg_app_url, limpiar_pro
             assert exc.value.code == "padre_no_encontrado"
             with pytest.raises(ValidationError):
                 await servicio_t1.crear(ProductoCrear(nombre="Hija", precio_venta=100, padre_id=uuid.uuid4()))
+            await s1.rollback()
+    finally:
+        current_tenant_id.reset(marca)
+        await engine.dispose()
+
+
+async def test_actualizar_exige_el_mismo_padre_que_crear(pg_app_url, limpiar_productos):
+    """El PATCH pasa por el mismo `_exigir_padre` que el alta: ni un padre de
+    OTRO negocio ni uno inexistente pueden entrar por la puerta de atrás."""
+    engine = create_engine(pg_app_url)
+    factory = create_session_factory(engine)
+    marca = current_tenant_id.set(T2)
+    try:
+        async with factory() as s2:
+            ajeno = await CatalogoService(session=s2, tenant_id=T2, tier="pro").crear(
+                ProductoCrear(nombre="Base ajena", precio_venta=100)
+            )
+            await s2.commit()
+            id_ajeno = ajeno.id
+    finally:
+        current_tenant_id.reset(marca)
+        await engine.dispose()
+
+    engine = create_engine(pg_app_url)
+    factory = create_session_factory(engine)
+    marca = current_tenant_id.set(T1)
+    try:
+        async with factory() as s1:
+            servicio_t1 = CatalogoService(session=s1, tenant_id=T1, tier="pro")
+            propio = await servicio_t1.crear(ProductoCrear(nombre="Hija", precio_venta=100))
+            with pytest.raises(ValidationError) as exc:
+                await servicio_t1.actualizar(propio.id, ProductoActualizar(padre_id=id_ajeno))
+            assert exc.value.code == "padre_no_encontrado"
+            with pytest.raises(ValidationError):
+                await servicio_t1.actualizar(propio.id, ProductoActualizar(padre_id=uuid.uuid4()))
             await s1.rollback()
     finally:
         current_tenant_id.reset(marca)

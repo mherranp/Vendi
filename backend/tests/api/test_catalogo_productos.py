@@ -95,7 +95,7 @@ def test_el_cajero_si_puede_leer(app_con_base):
     assert cliente.get(f"/api/v1/productos/{creado['id']}", headers=cajero).status_code == 200
 
 
-def test_el_almacenista_crea_y_edita_pero_no_borra(app_con_base):
+def test_el_almacenista_crea_edita_y_tambien_borra(app_con_base):
     cliente, validador, _ = app_con_base
     negocio = _crear_negocio(cliente, validador, "Catálogo 4")
     almacenista = _cabeceras_de(validador, ROL_ALMACENISTA, negocio, "tok-a4")
