@@ -19,6 +19,7 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 | D-15 | `exigir_venta_anular` está definido y exportado sin endpoint que lo use | Fase 1 (módulo 4; si nada lo usa, se borra) | backend |
 | D-16 | El check 23 de `verify-setup.sh` no tiene prueba negativa ejecutada (nadie lo ha visto fallar) | Fase 1 (Etapa 1.5) | backend |
 | D-17 | `alembic check` (deriva metadata↔DDL) no corre en CI | Fase 1 | backend |
+| D-18 | El watermark del delta se fija con `now()` antes de leer: una edición confirmada en la ventana se pierde para ese dispositivo | Fase 1 (antes del piloto) | backend |
 
 Cerradas en la Etapa 5, con su evidencia al final de este documento: **D-01**
 (ROPC), **D-04** (Keycloak sin `--optimized`), **D-06** (`alembic_version`
@@ -372,6 +373,40 @@ profundidad, no la primera línea.
   tabla con policy RLS — una tabla sin migrar lo pone rojo.
 - Los tests de integración corren contra la base migrada hasta head en cada
   push (job «pytest -m integration», 0 SKIPPED permitidos).
+
+---
+
+## D-18 · El watermark del delta se fija antes de leer
+
+**Qué es.** `delta_productos`
+(`backend/services/api/app/modules/ventas/service.py`) toma `hasta = now()`
+del servidor y DESPUÉS lee los productos con `updated_at > desde`. Una
+edición cuya transacción llevaba abierta un rato (su `updated_at` quedó por
+debajo del `hasta` capturado) pero que confirma DESPUÉS de la lectura no
+llega en esta respuesta ni llegará nunca: el próximo `desde` del dispositivo
+ya es mayor que su `updated_at`. El catálogo de ese dispositivo queda stale
+de forma silenciosa.
+
+**Por qué se aceptó.** Revisión final del módulo ventas (conclusión «With
+fixes», fix 4): la ventana es del tamaño de una consulta de catálogo
+(microsegundos en la práctica), la edición concurrente justo en ese instante
+es rara en una tienda de barrio, y el drenado tolera el solape — el cliente
+hace upsert por id, así que un producto de más no daña nada; uno de menos,
+sí. Registrarla era la condición, no cambiar el código.
+
+**Riesgo si se olvida.** Un producto editado en la ventana conserva precio
+viejo en ese dispositivo hasta que alguien lo vuelva a tocar: el ticket sale
+con el precio que el tendero ya había corregido.
+
+**Vencimiento: Fase 1, antes del piloto.** Mitigación propuesta: `hasta =
+now() - interval '5 seconds'` — el margen re-entrega lo confirmado en la
+ventana y el solape es inocuo porque el cliente hace upsert por id.
+
+**Candados mientras tanto:**
+
+- `backend/tests/test_ventas_servicio.py::test_el_delta_devuelve_los_cambios_desde_el_watermark`
+  fija el contrato del watermark (lo pone el reloj del servidor, ADR-017): al
+  aplicar el margen, ese test es el que hay que ajustar.
 
 ---
 
