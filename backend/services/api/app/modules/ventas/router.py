@@ -85,10 +85,12 @@ async def sincronizar_lote(
     Idempotencia y divergencia (decisión 4 del plan): reenviar una operación
     con el mismo `id` y un payload IDÉNTICO responde `duplicada` (no-op, sin
     evento); el mismo `id` con cualquier campo del hecho distinto (ítems,
-    total, medio de pago, cliente, consecutivo, dispositivo,
-    `creada_en_cliente` o estado) responde `rechazada` con motivo
-    `venta_id_divergente` y los campos que difieren en `detalles.campos` —
-    jamás un no-op silencioso.
+    total, medio de pago, cliente, consecutivo, `creada_en_cliente` o
+    estado) responde `rechazada` con motivo `venta_id_divergente` y los
+    campos que difieren en `detalles.campos` — jamás un no-op silencioso.
+    El dispositivo NO se compara: viaja en el lote, no en `datos`, así que
+    un reintento del mismo id de venta desde OTRO dispositivo se reporta
+    `duplicada` si el resto del payload coincide.
 
     Doble verdad temporal (ADR-017/018): `creada_en_cliente` es el dato del
     ticket y se guarda tal cual; al comparar un reintento contra la venta ya
