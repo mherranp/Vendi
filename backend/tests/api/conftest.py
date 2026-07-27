@@ -47,6 +47,10 @@ async def limpiar_tenants_de_prueba(pg_platform_url: str):
                     text("DELETE FROM outbox_messages WHERE payload->>'tenant_id' = ANY(:ids)"),
                     {"ids": [str(i) for i in ids]},
                 )
+                await conn.execute(
+                    text("DELETE FROM productos WHERE tenant_id = ANY(:ids)"),
+                    {"ids": list(ids)},
+                )
             await conn.execute(text("DELETE FROM tenants WHERE nombre LIKE :p"), {"p": PREFIJO_PRUEBA + "%"})
 
     await _borrar()

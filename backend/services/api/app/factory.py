@@ -86,6 +86,7 @@ from starlette.middleware import Middleware
 
 from app import health, metrics
 from app.lifespan import construir_recursos, lifespan, publicar_en_estado
+from app.modules.catalogo.router import router as router_catalogo
 from app.modules.platform.router import router as router_plataforma
 from app.modules.tenants.router import router as router_tenants
 from app.settings import Settings, cargar_settings
@@ -97,7 +98,7 @@ from vendi_core.middleware.security_headers import SecurityHeadersMiddleware
 from vendi_core.tenant.middleware import TenantMiddleware
 
 DESCRIPCION = """
-API regional de Vendi. Fase 0: fundación.
+API regional de Vendi. Fase 1: fundación + catálogo de productos.
 
 El negocio (tenant) se resuelve del claim `organization` del token: el alias de
 la Organization de Keycloak **es** el identificador del negocio. Un usuario que
@@ -196,5 +197,6 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(metrics.router)
     app.include_router(router_plataforma, prefix="/api/v1")
     app.include_router(router_tenants, prefix="/api/v1")
+    app.include_router(router_catalogo, prefix="/api/v1")
 
     return app

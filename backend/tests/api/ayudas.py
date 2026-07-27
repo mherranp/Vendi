@@ -140,6 +140,24 @@ def usuario_de_negocio(*tenant_ids: uuid.UUID, user_id: str = "dueno") -> UserCo
     )
 
 
+def usuario_con_rol(rol: str, *tenant_ids: uuid.UUID) -> UserContext:
+    """Un usuario con un rol de negocio concreto (cajero, almacenista...).
+
+    `roles` lleva el rol y sus permisos, que es lo que `realm_access.roles`
+    trae de un token real desde que el grupo mapea las dos cosas
+    (`roles_de_realm_del_grupo`). Sirve para probar los 200/403 por rol sin
+    inventar claims que el realm jamás emitiría.
+    """
+    return UserContext(
+        user_id=f"{rol}-prueba",
+        username=f"{rol}@demo.vendi.co",
+        email=f"{rol}@demo.vendi.co",
+        roles=frozenset(roles_de_realm_del_grupo(rol)),
+        realm="vendi-co",
+        organizations={str(t): f"org-{t}" for t in tenant_ids},
+    )
+
+
 # --- Fábrica de la aplicación ------------------------------------------------
 
 
