@@ -8,6 +8,7 @@ como dato, sesión implícita, divergencia de payload, fiado y anulación.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -22,6 +23,7 @@ from app.modules.ventas.schemas import DispositivoRegistrar, LoteSync
 from app.modules.ventas.service import VentasService
 from vendi_core.db.engine import create_engine
 from vendi_core.db.session import create_session_factory
+from vendi_core.errors.domain import ValidationError
 from vendi_core.tenant.context import current_tenant_id
 
 pytestmark = pytest.mark.integration
@@ -118,6 +120,19 @@ async def test_registrar_dispositivo_es_idempotente_por_el_id_del_cliente(servic
     primero = await servicio.registrar_dispositivo(DispositivoRegistrar(id=el_id, nombre="Caja 1"))
     segundo = await servicio.registrar_dispositivo(DispositivoRegistrar(id=el_id, nombre="Caja 1"))
     assert primero.id == segundo.id == el_id
+
+
+async def test_lote_de_un_dispositivo_desconocido_es_422_de_lote_entero(servicio, semilla):
+    """El dispositivo se valida ANTES de la primera operación: sin él no hay
+    lote y el 422 es del lote entero, no un rechazo por operación (no hay a
+    quién anclar secuencias ni sync). Un id de OTRO negocio da el mismo
+    veredicto, porque la RLS lo hace invisible."""
+    fantasma = LoteSync.model_validate(
+        {"dispositivo_id": str(uuid.uuid4()), "operaciones": [_op_venta(semilla, uuid.uuid4())]}
+    )
+    with pytest.raises(ValidationError) as exc:
+        await servicio.procesar_lote(fantasma)
+    assert exc.value.code == "dispositivo_no_encontrado"
 
 
 # --- Aplicación de ventas -------------------------------------------------------
@@ -278,6 +293,64 @@ async def test_el_consecutivo_repetido_en_el_mismo_dispositivo_se_rechaza(servic
     assert resultados[0].motivo == "consecutivo_duplicado"
 
 
+# --- Carreras cross-request sobre la PK de la venta -------------------------------
+
+
+async def _carrera_de_la_misma_venta(pg_app_url: str, semilla, op_ganadora: dict, op_perdedora: dict) -> list:
+    """Dos requests insertan la MISMA venta a la vez. El ganador queda sin
+    confirmar reteniendo la fila; el perdedor espera en el índice único, recibe
+    el `IntegrityError` de `ventas_pkey` cuando el ganador confirma y pasa por
+    la traducción de `_traducir_integridad`."""
+    engine = create_engine(pg_app_url)
+    factory = create_session_factory(engine)
+    marca = current_tenant_id.set(T1)
+    try:
+        async with factory() as s1, factory() as s2:
+            servicio1 = VentasService(session=s1, tenant_id=T1, actor_id="cajero-prueba", puede_anular=True)
+            servicio2 = VentasService(session=s2, tenant_id=T1, actor_id="cajero-prueba", puede_anular=True)
+            assert [r.resultado for r in await servicio1.procesar_lote(_lote(semilla, op_ganadora))] == ["aceptada"]
+            perdedor = asyncio.create_task(servicio2.procesar_lote(_lote(semilla, op_perdedora)))
+            await asyncio.sleep(0.1)  # que el perdedor llegue al bloqueo antes del commit
+            await s1.commit()
+            resultados = await perdedor
+            await s2.commit()
+            return resultados
+    finally:
+        current_tenant_id.reset(marca)
+        await engine.dispose()
+
+
+async def test_la_carrera_de_la_misma_venta_identica_es_duplicada(pg_app_url, pg_platform_url, semilla):
+    """Mismo id, MISMO payload: el perdedor revienta contra `ventas_pkey`, pero
+    la venta quedó aplicada por el ganador — es `duplicada`, no
+    `venta_id_divergente`, y en la base queda exactamente una de cada cosa."""
+    venta_id = uuid.uuid4()
+    op = _op_venta(semilla, venta_id)
+    resultados = await _carrera_de_la_misma_venta(pg_app_url, semilla, op, op)
+    assert [r.resultado for r in resultados] == ["duplicada"]
+    filas = await _uno(pg_platform_url, "SELECT count(*) AS n FROM ventas WHERE tenant_id = :t", t=T1)
+    assert filas.n == 1
+    eventos = await _uno(
+        pg_platform_url, "SELECT count(*) AS n FROM outbox_messages WHERE routing_key = :k", k=f"{T1}.venta.creada"
+    )
+    assert eventos.n == 1
+
+
+async def test_la_carrera_con_payload_divergente_sigue_siendo_rechazada(pg_app_url, pg_platform_url, semilla):
+    """Mismo id, payload DISTINTO: el choque de `ventas_pkey` se traduce en
+    `rechazada venta_id_divergente` con los campos que difieren (decisión 4),
+    y la versión del ganador no se toca."""
+    venta_id = uuid.uuid4()
+    ganadora = _op_venta(semilla, venta_id, secuencia=1, consecutivo_local=1)
+    perdedora = _op_venta(semilla, venta_id, secuencia=2, consecutivo_local=2)
+    resultados = await _carrera_de_la_misma_venta(pg_app_url, semilla, ganadora, perdedora)
+    assert [r.resultado for r in resultados] == ["rechazada"]
+    assert resultados[0].motivo == "venta_id_divergente"
+    assert "consecutivo_local" in resultados[0].detalles["campos"]
+    fila = await _uno(pg_platform_url, "SELECT consecutivo_local FROM ventas WHERE id = :v", v=venta_id)
+    assert fila.consecutivo_local == 1, "la divergencia NO pisa la venta del ganador"
+
+
 # --- Anulación como operación nueva ----------------------------------------------
 
 
@@ -333,6 +406,63 @@ async def test_anular_dos_veces_es_duplicada_y_no_repone_dos_veces(servicio, sem
         pg_platform_url, "SELECT count(*) AS n FROM outbox_messages WHERE routing_key = :k", k=f"{T1}.venta.anulada"
     )
     assert fila.n == 1
+
+
+async def test_dos_anulaciones_concurrentes_reponen_el_stock_una_sola_vez(pg_app_url, pg_platform_url, semilla):
+    """La carrera cross-request de la anulación: dos requests anulan la MISMA
+    venta con ids de operación DISTINTOS. Sin bloqueo de fila ambos leen
+    `completada` (READ COMMITTED) y `ux_movimientos_origen` NO los deduplica,
+    porque cada uno repone con el referencia_id de SU operación: stock repuesto
+    dos veces y dos `venta.anulada`. Con el `SELECT ... FOR UPDATE` sobre la
+    venta, el perdedor espera al commit del ganador, re-lee `anulada` y sale
+    como `duplicada`: un solo juego de reposición y un solo evento."""
+    engine = create_engine(pg_app_url)
+    factory = create_session_factory(engine)
+    marca = current_tenant_id.set(T1)
+    venta_id = uuid.uuid4()
+    try:
+        async with factory() as s0:
+            servicio = VentasService(session=s0, tenant_id=T1, actor_id="dueno", puede_anular=True)
+            await _vender(servicio, semilla, venta_id)
+
+        async with factory() as s1, factory() as s2:
+            servicio1 = VentasService(session=s1, tenant_id=T1, actor_id="dueno", puede_anular=True)
+            servicio2 = VentasService(session=s2, tenant_id=T1, actor_id="dueno", puede_anular=True)
+            op1 = {
+                "id": str(uuid.uuid4()),
+                "tipo": "venta.anular",
+                "secuencia": 2,
+                "datos": {"venta_id": str(venta_id)},
+            }
+            op2 = {
+                "id": str(uuid.uuid4()),
+                "tipo": "venta.anular",
+                "secuencia": 3,
+                "datos": {"venta_id": str(venta_id)},
+            }
+            assert [r.resultado for r in await servicio1.procesar_lote(_lote(semilla, op1))] == ["aceptada"]
+            # s1 retiene el bloqueo de la venta hasta su commit: s2 espera y re-lee.
+            perdedor = asyncio.create_task(servicio2.procesar_lote(_lote(semilla, op2)))
+            await asyncio.sleep(0.1)
+            await s1.commit()
+            assert [r.resultado for r in await perdedor] == ["duplicada"]
+            await s2.commit()
+    finally:
+        current_tenant_id.reset(marca)
+        await engine.dispose()
+
+    stock = await _uno(pg_platform_url, "SELECT stock_actual FROM productos WHERE id = :p", p=semilla["producto"])
+    assert stock.stock_actual == Decimal("10"), "la reposición se aplicó UNA vez, no dos"
+    reposiciones = await _uno(
+        pg_platform_url,
+        "SELECT count(*) AS n FROM movimientos_inventario WHERE tenant_id = :t AND cantidad > 0",
+        t=T1,
+    )
+    assert reposiciones.n == 1, "un solo juego de movimientos de reposición"
+    eventos = await _uno(
+        pg_platform_url, "SELECT count(*) AS n FROM outbox_messages WHERE routing_key = :k", k=f"{T1}.venta.anulada"
+    )
+    assert eventos.n == 1, "un solo evento venta.anulada"
 
 
 async def test_el_cajero_no_puede_anular(servicio, semilla, pg_platform_url):

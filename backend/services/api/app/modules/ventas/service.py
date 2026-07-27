@@ -149,7 +149,7 @@ class VentasService:
         except IntegrityError as exc:
             # La red final: una constraint saltó dentro del savepoint (ya
             # revertido). Se traduce a rechazo de dominio; el lote sigue.
-            return self._traducir_integridad(operacion, exc)
+            return await self._traducir_integridad(operacion, exc)
 
     @staticmethod
     def _rechazada(
@@ -169,7 +169,7 @@ class VentasService:
         logger.info("operacion_duplicada", operacion_id=str(operacion.id), tipo=operacion.tipo)
         return ResultadoOperacion(id=operacion.id, tipo=operacion.tipo, resultado="duplicada")
 
-    def _traducir_integridad(self, operacion: OperacionSync, exc: IntegrityError) -> ResultadoOperacion:
+    async def _traducir_integridad(self, operacion: OperacionSync, exc: IntegrityError) -> ResultadoOperacion:
         detalle = str(exc)
         if "ux_ventas_consecutivo" in detalle:
             return self._rechazada(
@@ -182,7 +182,18 @@ class VentasService:
             # antes (carrera de reintentos). Es duplicada, no error (ADR-020).
             return self._duplicada(operacion)
         if "ventas_pkey" in detalle:
-            # El id choca con una fila que la RLS no deja ver (otro negocio).
+            # El id choca con una fila ya insertada. Dos casos: la fila es de
+            # OTRO negocio (la RLS la hace invisible) o es la MISMA venta que
+            # un request concurrente acaba de aplicar — era invisible al leerla
+            # (READ COMMITTED) y visible tras el commit del ganador. Tras el
+            # rollback del savepoint se re-lee: idéntica → duplicada; divergente
+            # o invisible → rechazada venta_id_divergente (decisión 4).
+            existente = await self._session.get(Venta, operacion.id)
+            if existente is not None:
+                # Los datos ya se validaron en `_registrar_venta` antes del
+                # flush que reventó: el model_validate no puede fallar aquí.
+                datos = VentaCrearSync.model_validate(operacion.datos)
+                return await self._comparar_con_la_aceptada(operacion, existente, datos)
             return self._rechazada(operacion, "venta_id_divergente", "Ese id de venta ya existe.")
         raise
 
@@ -382,7 +393,13 @@ class VentasService:
         if isinstance(datos, ResultadoOperacion):
             return datos
 
-        venta = await self._session.get(Venta, datos.venta_id)
+        venta = await self._session.get(Venta, datos.venta_id, with_for_update=True)
+        # SELECT ... FOR UPDATE: sin el bloqueo de la fila, dos requests
+        # concurrentes (READ COMMITTED) pueden leer ambos `completada` y
+        # reponer el stock DOS veces — `ux_movimientos_origen` NO los deduplica
+        # porque cada uno referencia los movimientos a SU id de operación.
+        # Con el bloqueo, el perdedor espera al commit del ganador y re-lee
+        # `anulada`: sale como `duplicada` sin reponer ni re-emitir.
         if venta is None:
             return self._rechazada(operacion, "venta_no_encontrada", "La venta a anular no existe en tu negocio.")
         if venta.estado == "anulada":
@@ -429,7 +446,13 @@ class VentasService:
         try:
             async with self._session.begin_nested():
                 await self._session.flush()
-        except IntegrityError:
+        except IntegrityError as exc:
+            if "ux_caja_sesion_abierta" not in str(exc):
+                # Solo el choque de la apertura concurrente se traduce (mismo
+                # criterio que `_traducir_integridad`): cualquier otro
+                # IntegrityError es un fallo real y debe propagarse, no
+                # esconderse tras un re-read sobre una sesión rota.
+                raise
             # Otro request abrió la sesión primero: se usa la ganadora.
             sesion = (await self._session.execute(consulta)).scalar_one()
             return sesion
