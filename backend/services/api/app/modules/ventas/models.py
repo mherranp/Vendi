@@ -51,10 +51,13 @@ ESTADOS_DE_VENTA: tuple[str, ...] = ("completada", "anulada")
 #: registrados como dato», ADR-018); el conjunto cerrado lo aplica el schema.
 MEDIOS_DE_PAGO: tuple[str, ...] = ("efectivo", "fiado")
 
-#: Los cuatro tipos del libro (ADR-020). Este módulo solo emite `venta`;
-#: `compra`, `ajuste` y `merma` son del módulo de inventario — la constraint
-#: ya los admite para que no haga falta migrar nada entonces.
-TIPOS_DE_MOVIMIENTO: tuple[str, ...] = ("venta", "compra", "ajuste", "merma")
+#: Los cinco tipos del libro (ADR-020). Este módulo emite `venta` (el
+#: descuento del alta) y `anulacion` (la reposición, BUG-3 del QA: con el
+#: tipo `venta` la reposición chocaba con el movimiento original cuando el
+#: id de la operación de anulación era el id de la venta); `compra`,
+#: `ajuste` y `merma` son del módulo de inventario — la constraint ya los
+#: admite para que no haga falta migrar nada entonces.
+TIPOS_DE_MOVIMIENTO: tuple[str, ...] = ("venta", "compra", "ajuste", "merma", "anulacion")
 
 
 class Dispositivo(Base, TenantModel):
@@ -170,9 +173,11 @@ class VentaItem(Base, TenantModel):
 class MovimientoInventario(Base, TenantModel):
     """Una fila del libro de stock (ADR-020). Nunca se edita ni se borra: un
     error se corrige con otro movimiento. La venta descuenta (cantidad
-    negativa); su anulación repone (positiva, con `referencia_id` = el id de
-    la operación de anulación, no el de la venta: la venta ya tiene sus
-    movimientos y el índice único no admitiría los segundos)."""
+    negativa, `tipo='venta'`); su anulación repone (positiva,
+    `tipo='anulacion'`, con `referencia_id` = el id de la operación de
+    anulación, no el de la venta: la venta ya tiene sus movimientos). El
+    índice único admite que ambos compartan `referencia_id` — una anulación
+    cuyo id de operación ES el id de la venta— porque difieren en `tipo`."""
 
     __tablename__ = "movimientos_inventario"
     __table_args__ = (

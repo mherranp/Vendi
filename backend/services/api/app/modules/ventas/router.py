@@ -51,7 +51,10 @@ _RESPUESTAS_COMUNES = {
     response_model=DispositivoSalida,
     status_code=status.HTTP_201_CREATED,
     summary="Registrar un dispositivo del negocio",
-    responses=_RESPUESTAS_COMUNES,
+    responses={
+        **_RESPUESTAS_COMUNES,
+        409: {"model": ErrorResponse, "description": "El id del dispositivo ya existe (en este u otro negocio)"},
+    },
 )
 async def registrar_dispositivo(
     datos: DispositivoRegistrar,

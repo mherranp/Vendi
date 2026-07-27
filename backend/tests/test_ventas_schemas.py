@@ -64,6 +64,24 @@ def test_la_cantidad_es_positiva_y_cabe_en_numeric_14_3():
     assert VentaItemSync.model_validate(_item(cantidad="0.350")).cantidad == Decimal("0.350")
 
 
+def test_la_cantidad_se_cuantiza_a_tres_decimales_como_la_columna():
+    """BUG-2 del QA: la columna es NUMERIC(14,3) y redondea en la base; el
+    schema cuantiza IGUAL (ROUND_HALF_UP) para que lo guardado y lo enviado
+    coincidan en el reintento byte-idéntico — `0.0005` ya no diverge."""
+    assert VentaItemSync.model_validate(_item(cantidad="0.0005")).cantidad == Decimal("0.001")
+    assert VentaItemSync.model_validate(_item(cantidad="1.0004")).cantidad == Decimal("1.000")
+    assert VentaItemSync.model_validate(_item(cantidad="2.0005")).cantidad == Decimal("2.001")
+    assert VentaItemSync.model_validate(_item(cantidad="0.350")).cantidad == Decimal("0.350")
+
+
+def test_la_cantidad_que_cuantiza_a_cero_se_rechaza():
+    """`0.0004` pasaba el `gt=0` pero la columna la guarda como 0.000 y el
+    CHECK `cantidad > 0` la revienta (500 del lote entero, cola envenenada):
+    el schema la convierte en error de validación por operación."""
+    with pytest.raises(ValidationError):
+        VentaItemSync.model_validate(_item(cantidad="0.0004"))
+
+
 def test_el_precio_unitario_no_desborda():
     with pytest.raises(ValidationError):
         VentaItemSync.model_validate(_item(precio_unitario_centavos=-1))

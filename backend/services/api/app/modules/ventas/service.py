@@ -59,7 +59,7 @@ from app.modules.ventas.schemas import (
     VentaAnularSync,
     VentaCrearSync,
 )
-from vendi_core.errors.domain import ValidationError
+from vendi_core.errors.domain import ConflictError, ValidationError
 from vendi_core.events.service import DomainEventService
 
 logger = structlog.get_logger()
@@ -125,8 +125,18 @@ class VentasService:
             if existente is not None:
                 return existente
             # La fila que chocó es de OTRO negocio (invisible por RLS): no hay
-            # existente que devolver y el error original es la verdad.
-            raise
+            # existente que devolver. Es un conflicto tipado (409), no el 500
+            # del IntegrityError original (BUG-4 del QA): el id lo generó otro
+            # cliente y el choque es de dominio.
+            # Sobre el oráculo («¿ese UUID existe en algún negocio?»): es
+            # aceptable porque el id es un UUIDv4 inadivinable — quien puede
+            # sondearlo ya lo conocía— y la respuesta no revela ningún dato
+            # del tenant ajeno, solo la existencia del id en algún lugar;
+            # mismo criterio que `producto_id_duplicado` del catálogo.
+            raise ConflictError(
+                "Ese id de dispositivo ya está en uso. Genera uno nuevo.",
+                code="dispositivo_id_en_conflicto",
+            ) from exc
         logger.info("dispositivo_registrado", dispositivo_id=str(dispositivo.id))
         return dispositivo
 
@@ -234,7 +244,8 @@ class VentasService:
         if error is not None:
             return error
 
-        productos: list[Producto] = []
+        productos: dict[uuid.UUID, Producto] = {}
+        cantidad_por_producto: dict[uuid.UUID, Decimal] = {}
         for item in datos.items:
             # SELECT ... FOR UPDATE sobre la fila del producto: sin el bloqueo,
             # dos lotes concurrentes del mismo tenant que venden el mismo
@@ -257,7 +268,17 @@ class VentasService:
                     "Uno de los productos de la venta no existe en tu negocio.",
                     {"producto_id": str(item.producto_id)},
                 )
-            productos.append(producto)
+            productos[item.producto_id] = producto
+            # El libro se CONSOLIDA por producto (BUG-1 del QA):
+            # `ux_movimientos_origen` es por (tipo, referencia_id,
+            # producto_id), así que dos líneas del mismo producto en un
+            # ticket chocaban entre sí y la venta se perdía tras una
+            # mistraducción a `duplicada`. Un movimiento por (venta,
+            # producto) con la cantidad sumada; las líneas del ticket
+            # (`ventas_items`) quedan tal cual.
+            cantidad_por_producto[item.producto_id] = cantidad_por_producto.get(item.producto_id, Decimal(0)) + (
+                item.cantidad
+            )
 
         sesion = await self._resolver_sesion_caja()
 
@@ -299,8 +320,8 @@ class VentasService:
         # Una venta que sube ya anulada no mueve stock (decisión 9): su efecto
         # neto es cero y el libro queda limpio.
         if datos.estado == "completada":
-            for item, producto in zip(datos.items, productos, strict=True):
-                await self._mover_stock(producto, -item.cantidad, referencia_id=venta.id)
+            for producto_id, producto in productos.items():
+                await self._mover_stock(producto, -cantidad_por_producto[producto_id], referencia_id=venta.id)
 
         await self._emitir(
             "venta.creada",
@@ -453,15 +474,28 @@ class VentasService:
             return self._duplicada(operacion)
 
         venta.estado = "anulada"
+        # La reposición se consolida por producto, igual que el descuento del
+        # alta (BUG-1): dos líneas del mismo producto son UN movimiento con la
+        # cantidad sumada, no dos que chocarían en `ux_movimientos_origen`.
+        cantidad_por_producto: dict[uuid.UUID, Decimal] = {}
         for item in await self._items_de(venta.id):
+            cantidad_por_producto[item.producto_id] = cantidad_por_producto.get(item.producto_id, Decimal(0)) + (
+                item.cantidad
+            )
+        for producto_id, cantidad in cantidad_por_producto.items():
             # FOR UPDATE como en el alta: la reposición también toca
             # `stock_actual`, y la misma carrera de lost update aplica si un
             # lote vende el producto mientras otro anula una venta suya.
-            producto = await self._session.get(Producto, item.producto_id, with_for_update=True)
+            producto = await self._session.get(Producto, producto_id, with_for_update=True)
             if producto is not None:
-                # La referencia es el id de la OPERACIÓN de anulación: los
-                # movimientos de la venta ya existen con referencia_id=venta.
-                await self._mover_stock(producto, item.cantidad, referencia_id=operacion.id)
+                # La referencia es el id de la OPERACIÓN de anulación y el
+                # tipo es `anulacion` (BUG-3 del QA): con tipo `venta`, una
+                # anulación cuyo id de operación coincide con el id de la
+                # venta chocaba contra los movimientos originales en
+                # `ux_movimientos_origen` y salía `duplicada` sin anular.
+                # El índice sigue deduplicando el reintento por (tipo,
+                # referencia_id=operacion.id, producto_id).
+                await self._mover_stock(producto, cantidad, tipo="anulacion", referencia_id=operacion.id)
         await self._emitir(
             "venta.anulada",
             venta,
@@ -512,10 +546,13 @@ class VentasService:
         logger.info("caja_sesion_implicita_abierta", sesion_id=str(nueva.id))
         return nueva
 
-    async def _mover_stock(self, producto: Producto, delta: Decimal, *, referencia_id: uuid.UUID) -> None:
+    async def _mover_stock(
+        self, producto: Producto, delta: Decimal, *, referencia_id: uuid.UUID, tipo: str = "venta"
+    ) -> None:
         """Un movimiento en el libro + la proyección, en la misma transacción
-        (ADR-020). El signo lo pone quien llama: la venta descuenta, su
-        anulación repone. El stock puede quedar negativo y es legítimo.
+        (ADR-020). El signo lo pone quien llama: la venta descuenta
+        (`tipo='venta'`), su anulación repone (`tipo='anulacion'`). El stock
+        puede quedar negativo y es legítimo.
 
         Quien llama carga el producto con `with_for_update=True` (ver
         `_registrar_venta` y `_anular_venta`): el read-modify-write de
@@ -523,7 +560,7 @@ class VentasService:
         self._session.add(
             MovimientoInventario(
                 tenant_id=self._tenant_id,
-                tipo="venta",
+                tipo=tipo,
                 cantidad=delta,
                 referencia_id=referencia_id,
                 producto_id=producto.id,

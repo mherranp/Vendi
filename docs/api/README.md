@@ -58,6 +58,7 @@ decidir qué mensaje mostrar — `tenant_suspendido`, `requiere_platform_admin`,
 `token_invalido`, `producto_no_encontrado`, `codigo_barras_duplicado`,
 `producto_id_duplicado`, `padre_no_encontrado`, `padre_es_el_mismo`,
 `limite_de_productos_alcanzado`, `permiso_ausente`, `dispositivo_no_encontrado`,
+`dispositivo_id_en_conflicto`,
 `fecha_sin_zona`, `campos_desconocidos`.
 
 En `POST /api/v1/sync/lotes` los rechazos de una operación NO son errores HTTP:

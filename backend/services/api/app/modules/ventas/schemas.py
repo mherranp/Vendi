@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -47,6 +47,20 @@ def _exigir_con_zona(valor: datetime) -> datetime:
     if valor.tzinfo is None or valor.tzinfo.utcoffset(valor) is None:
         raise ValueError("La fecha debe traer zona horaria (offset): un timestamp sin zona no dice nada.")
     return valor
+
+
+def _cuantizar_cantidad(valor: Decimal) -> Decimal:
+    """La columna es NUMERIC(14,3): Postgres REDONDEA lo que no cabe, y ese
+    redondeo silencioso fue el BUG-2 del QA — `0.0004` se guardaba 0.000 y
+    reventaba el CHECK como 500 sin traducir (cola del dispositivo
+    envenenada); `0.0005` se guardaba 0.001 y el reintento byte-idéntico
+    divergía. El schema aplica el MISMO redondeo (ROUND_HALF_UP) al validar:
+    cliente y servidor comparan siempre la misma cantidad, y lo que cuantiza
+    a cero se rechaza como dato inválido en vez de reventar la constraint."""
+    cuantizada = valor.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+    if cuantizada == 0:
+        raise ValueError("La cantidad es menor que 0.001: no cabe en una línea de venta.")
+    return cuantizada
 
 
 class DispositivoRegistrar(BaseModel):
@@ -73,13 +87,18 @@ class DispositivoSalida(BaseModel):
 
 class VentaItemSync(BaseModel):
     """Una línea de ticket. El precio viene CONGELADO del dispositivo: el
-    servidor no recalcula desde el catálogo (ADR-018, decisión 14)."""
+    servidor no recalcula desde el catálogo (ADR-018, decisión 14). La
+    cantidad se cuantiza a los 3 decimales de la columna al validar (ver
+    `_cuantizar_cantidad`): lo que el cliente manda es lo que el servidor
+    guarda y compara, siempre."""
 
     model_config = ConfigDict(extra="forbid")
 
     producto_id: uuid.UUID
     cantidad: Decimal = Field(gt=0, le=TOPE_STOCK)
     precio_unitario_centavos: int = Field(ge=0, le=TOPE_PRECIO)
+
+    _cantidad_cuantizada = field_validator("cantidad")(_cuantizar_cantidad)
 
 
 class VentaCrearSync(BaseModel):

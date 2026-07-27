@@ -851,6 +851,16 @@
             },
             "description": "Falta el permiso o el negocio está suspendido"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "El id del dispositivo ya existe (en este u otro negocio)"
+          },
           "422": {
             "content": {
               "application/json": {

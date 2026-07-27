@@ -662,6 +662,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description El id del dispositivo ya existe (en este u otro negocio) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Request malformado (validación de estructura) */
             422: {
                 headers: {
