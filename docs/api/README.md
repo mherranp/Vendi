@@ -50,6 +50,12 @@ qué cambió en el contrato.
 | `POST /api/v1/dispositivos` | `venta:crear` | registro de dispositivo; acepta `id` del cliente (idempotente, ADR-017) |
 | `POST /api/v1/sync/lotes` | `venta:crear` | lote de ≤200 operaciones; 200 con resultado por operación (`aceptada`/`duplicada`/`rechazada`); eventos una sola vez por aceptada |
 | `GET /api/v1/sync/delta` | `producto:leer` | cambios del catálogo desde `desde`; `hasta` es el próximo watermark (reloj del servidor); `eliminados` son tumbas |
+| `POST /api/v1/compras` | `compra:crear` | compra a proveedor (texto libre, sin tabla de proveedores); mueve stock y `ultimo_costo` en la misma transacción; idempotente por `id` del cliente; total calculado en el servidor |
+| `GET /api/v1/compras` | `compra:crear` | listado paginado (`PagedList`) |
+| `GET /api/v1/compras/{id}` | `compra:crear` | detalle con ítems; 404 si es de otro negocio |
+| `POST /api/v1/inventario/ajustes` | `inventario:ajustar` | ajuste por conteo o merma; ONLINE (no viaja por el sync, ADR-020); `motivo` e `id` obligatorios; reintento idéntico = no-op, divergente = 409 |
+| `GET /api/v1/inventario/ajustes` | `inventario:ajustar` | listado paginado con motivo y `aplicado_por` |
+| `GET /api/v1/inventario/stock` | `producto:leer` | stock con nivel derivado (`agotado`/`critico`/`bajo`/`ok`); `solo_alertas=true` filtra |
 
 Todos los errores usan el mismo sobre: `{"success": false, "message": "...",
 "code": "..."}`. El `code` es estable y es el que debe consumir el frontend para
@@ -59,7 +65,8 @@ decidir qué mensaje mostrar — `tenant_suspendido`, `requiere_platform_admin`,
 `producto_id_duplicado`, `padre_no_encontrado`, `padre_es_el_mismo`,
 `limite_de_productos_alcanzado`, `permiso_ausente`, `dispositivo_no_encontrado`,
 `dispositivo_id_en_conflicto`,
-`fecha_sin_zona`, `campos_desconocidos`.
+`fecha_sin_zona`, `campos_desconocidos`, `compra_no_encontrada`,
+`compra_id_duplicado`, `ajuste_id_divergente`.
 
 En `POST /api/v1/sync/lotes` los rechazos de una operación NO son errores HTTP:
 viajan en `ResultadoOperacion.motivo` cuando el resultado es `rechazada`. Los
@@ -67,3 +74,8 @@ motivos estables son `tipo_desconocido`, `datos_invalidos`,
 `venta_id_divergente`, `producto_no_encontrado`, `consecutivo_duplicado`,
 `fiado_requiere_cliente`, `cliente_solo_en_fiado`, `total_incoherente`,
 `venta_no_encontrada`, `permiso_ausente`.
+
+Eventos nuevos del outbox en este contrato: `compra.registrada` e
+`inventario.alerta_stock` — este último se emite solo al cruzar un umbral de
+stock hacia abajo, con payload `{producto_id, nivel, stock_actual,
+stock_minimo}`, sin PII.

@@ -1,6 +1,490 @@
 {
   "components": {
     "schemas": {
+      "AjusteCreado": {
+        "description": "La respuesta del alta: lo mismo que la fila, más el nivel de alerta en\nque quedó el producto (lo deriva el servidor, que es la única autoridad\ndel umbral — decisión 2).",
+        "properties": {
+          "aplicado_por": {
+            "title": "Aplicado Por",
+            "type": "string"
+          },
+          "cantidad": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cantidad"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "delta": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Delta",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "motivo": {
+            "title": "Motivo",
+            "type": "string"
+          },
+          "nivel": {
+            "title": "Nivel",
+            "type": "string"
+          },
+          "producto_id": {
+            "format": "uuid",
+            "title": "Producto Id",
+            "type": "string"
+          },
+          "stock_contado": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Contado"
+          },
+          "stock_resultante": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Stock Resultante",
+            "type": "string"
+          },
+          "tipo": {
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tipo",
+          "producto_id",
+          "delta",
+          "motivo",
+          "aplicado_por",
+          "stock_resultante",
+          "nivel"
+        ],
+        "title": "AjusteCreado",
+        "type": "object"
+      },
+      "AjusteCrear": {
+        "additionalProperties": false,
+        "description": "Un ajuste por conteo o una merma. ONLINE obligatorio (ADR-020): el\ndelta se calcula contra el stock del servidor en el momento.\n\n`id` es REQUERIDO (decisión 4): es la PK de `ajustes_inventario` y la\núnica ancla que hace seguro el reintento de una merma, que es un delta\nrelativo. El `motivo` es obligatorio: un ajuste sin justificación es un\ndesfalco con buenos modales.",
+        "properties": {
+          "cantidad": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 99999999999.999,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cantidad"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "motivo": {
+            "maxLength": 300,
+            "minLength": 3,
+            "title": "Motivo",
+            "type": "string"
+          },
+          "producto_id": {
+            "format": "uuid",
+            "title": "Producto Id",
+            "type": "string"
+          },
+          "stock_contado": {
+            "anyOf": [
+              {
+                "maximum": 99999999999.999,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Contado"
+          },
+          "tipo": {
+            "enum": [
+              "ajuste",
+              "merma"
+            ],
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tipo",
+          "producto_id",
+          "motivo"
+        ],
+        "title": "AjusteCrear",
+        "type": "object"
+      },
+      "AjusteSalida": {
+        "properties": {
+          "aplicado_por": {
+            "title": "Aplicado Por",
+            "type": "string"
+          },
+          "cantidad": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cantidad"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "delta": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Delta",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "motivo": {
+            "title": "Motivo",
+            "type": "string"
+          },
+          "producto_id": {
+            "format": "uuid",
+            "title": "Producto Id",
+            "type": "string"
+          },
+          "stock_contado": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Contado"
+          },
+          "stock_resultante": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Stock Resultante",
+            "type": "string"
+          },
+          "tipo": {
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tipo",
+          "producto_id",
+          "delta",
+          "motivo",
+          "aplicado_por",
+          "stock_resultante"
+        ],
+        "title": "AjusteSalida",
+        "type": "object"
+      },
+      "CompraCrear": {
+        "additionalProperties": false,
+        "description": "Una compra a proveedor. `proveedor_nombre` es texto libre (ADR-020:\nla factura es un papel; no hay tabla de proveedores). El `id` del\ncliente se acepta como PK (ADR-017): reenviar la misma compra es un\nno-op. El total NO viaja: lo calcula el servidor (decisión 7).",
+        "properties": {
+          "fecha": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CompraItemEntrada"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "observaciones": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observaciones"
+          },
+          "proveedor_nombre": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Proveedor Nombre",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proveedor_nombre",
+          "items"
+        ],
+        "title": "CompraCrear",
+        "type": "object"
+      },
+      "CompraDetalleSalida": {
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "fecha": {
+            "format": "date",
+            "title": "Fecha",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CompraItemSalida"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "observaciones": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observaciones"
+          },
+          "proveedor_nombre": {
+            "title": "Proveedor Nombre",
+            "type": "string"
+          },
+          "total_centavos": {
+            "title": "Total Centavos",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "proveedor_nombre",
+          "fecha",
+          "total_centavos",
+          "items"
+        ],
+        "title": "CompraDetalleSalida",
+        "type": "object"
+      },
+      "CompraItemEntrada": {
+        "additionalProperties": false,
+        "description": "Una línea de factura. El costo es el de ESTA compra: al confirmarse\nactualiza `ultimo_costo` del producto (ADR-020).",
+        "properties": {
+          "cantidad": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 99999999999.999,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Cantidad"
+          },
+          "costo_unitario_centavos": {
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Costo Unitario Centavos",
+            "type": "integer"
+          },
+          "producto_id": {
+            "format": "uuid",
+            "title": "Producto Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "producto_id",
+          "cantidad",
+          "costo_unitario_centavos"
+        ],
+        "title": "CompraItemEntrada",
+        "type": "object"
+      },
+      "CompraItemSalida": {
+        "properties": {
+          "cantidad": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Cantidad",
+            "type": "string"
+          },
+          "costo_unitario_centavos": {
+            "title": "Costo Unitario Centavos",
+            "type": "integer"
+          },
+          "producto_id": {
+            "format": "uuid",
+            "title": "Producto Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "producto_id",
+          "cantidad",
+          "costo_unitario_centavos"
+        ],
+        "title": "CompraItemSalida",
+        "type": "object"
+      },
+      "CompraSalida": {
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "fecha": {
+            "format": "date",
+            "title": "Fecha",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "observaciones": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observaciones"
+          },
+          "proveedor_nombre": {
+            "title": "Proveedor Nombre",
+            "type": "string"
+          },
+          "total_centavos": {
+            "title": "Total Centavos",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "proveedor_nombre",
+          "fecha",
+          "total_centavos"
+        ],
+        "title": "CompraSalida",
+        "type": "object"
+      },
       "DeltaSalida": {
         "description": "El drenado de datos de referencia hacia el dispositivo (ADR-017).\n\n`hasta` es la marca del SERVIDOR que el dispositivo guarda y devuelve\ncomo próximo `desde`: el watermark nunca lo pone el reloj del cliente.\n`eliminados` son tumbas: el dispositivo los quita de su IndexedDB.",
         "properties": {
@@ -216,6 +700,68 @@
         "title": "OperacionSync",
         "type": "object"
       },
+      "PagedList_AjusteSalida_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AjusteSalida"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "PagedList[AjusteSalida]",
+        "type": "object"
+      },
+      "PagedList_CompraSalida_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CompraSalida"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "PagedList[CompraSalida]",
+        "type": "object"
+      },
       "PagedList_ProductoSalida_": {
         "properties": {
           "items": {
@@ -245,6 +791,37 @@
           "limit"
         ],
         "title": "PagedList[ProductoSalida]",
+        "type": "object"
+      },
+      "PagedList_StockSalida_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StockSalida"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "PagedList[StockSalida]",
         "type": "object"
       },
       "PagedList_TenantSalida_": {
@@ -661,6 +1238,43 @@
         "title": "ResultadoOperacion",
         "type": "object"
       },
+      "StockSalida": {
+        "description": "El stock de un producto con su nivel derivado (agotado/crítico/bajo/ok).\n\nEl nivel lo calcula el servidor con la misma función que dispara las\nalertas: una sola definición del umbral, ninguna reimplementación en el\nfrontend. El stock negativo es un dato legítimo (ADR-020) y viaja tal\ncual con nivel `agotado`.",
+        "properties": {
+          "nivel": {
+            "title": "Nivel",
+            "type": "string"
+          },
+          "nombre": {
+            "title": "Nombre",
+            "type": "string"
+          },
+          "producto_id": {
+            "format": "uuid",
+            "title": "Producto Id",
+            "type": "string"
+          },
+          "stock_actual": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Stock Actual",
+            "type": "string"
+          },
+          "stock_minimo": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Stock Minimo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "producto_id",
+          "nombre",
+          "stock_actual",
+          "stock_minimo",
+          "nivel"
+        ],
+        "title": "StockSalida",
+        "type": "object"
+      },
       "TenantActualizar": {
         "description": "Todo opcional: es un PATCH. `None` significa \"no lo toques\".",
         "properties": {
@@ -807,6 +1421,240 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/compras": {
+      "get": {
+        "operationId": "listar_compras_api_v1_compras_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedList_CompraSalida_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Listar compras",
+        "tags": [
+          "inventario"
+        ]
+      },
+      "post": {
+        "description": "En la MISMA transacción: la compra, sus ítems, un movimiento `compra`\npor línea, `stock_actual` y `ultimo_costo` de cada producto, y el evento\n`compra.registrada` (ADR-020). Acepta el `id` que traiga el cliente\n(ADR-017): reenviar la misma compra devuelve la existente, sin duplicar\nfila, stock ni evento. El total lo calcula el servidor por línea; el\n`proveedor_nombre` es texto libre (la factura es un papel: no hay tabla\nde proveedores).",
+        "operationId": "registrar_compra_api_v1_compras_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompraCrear"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompraDetalleSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "El id de la compra ya existe (en este u otro negocio)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Registrar una compra a proveedor",
+        "tags": [
+          "inventario"
+        ]
+      }
+    },
+    "/api/v1/compras/{compra_id}": {
+      "get": {
+        "operationId": "ver_compra_api_v1_compras__compra_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "compra_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Compra Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompraDetalleSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "La compra no existe"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Ver una compra con sus ítems",
+        "tags": [
+          "inventario"
+        ]
+      }
+    },
     "/api/v1/dispositivos": {
       "post": {
         "description": "Acepta el `id` que traiga el cliente (ADR-017): re-registrar con el\nmismo id devuelve el existente, sin duplicar fila.",
@@ -881,6 +1729,257 @@
         "summary": "Registrar un dispositivo del negocio",
         "tags": [
           "ventas"
+        ]
+      }
+    },
+    "/api/v1/inventario/ajustes": {
+      "get": {
+        "description": "La auditoría del «¿quién movió el arroz?»: cada fila lleva su motivo\ny quién la aplicó.",
+        "operationId": "listar_ajustes_api_v1_inventario_ajustes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedList_AjusteSalida_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Listar ajustes y mermas",
+        "tags": [
+          "inventario"
+        ]
+      },
+      "post": {
+        "description": "La única operación de inventario que EXIGE conexión (ADR-020): el\ndelta se calcula contra el stock del servidor en el momento del conteo —\nun ajuste offline corrompería el contador de forma no conmutativa. El\n`motivo` es obligatorio. El `id` del cliente es requerido y ancla la\nidempotencia: el reintento idéntico devuelve lo ya respondido sin mover\nstock; el divergente es 409 `ajuste_id_divergente`. Un conteo que cuadra\n(delta 0) graba la fila pero no escribe movimiento en el libro.",
+        "operationId": "registrar_ajuste_api_v1_inventario_ajustes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AjusteCrear"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AjusteCreado"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "El id del ajuste ya existe con datos distintos"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Registrar un ajuste por conteo o una merma (ONLINE)",
+        "tags": [
+          "inventario"
+        ]
+      }
+    },
+    "/api/v1/inventario/stock": {
+      "get": {
+        "description": "El nivel lo deriva el servidor con la misma función que dispara\n`inventario.alerta_stock`: una sola definición del umbral. El stock\nnegativo es un dato legítimo (ADR-020) y viaja como `agotado`.",
+        "operationId": "estado_de_stock_api_v1_inventario_stock_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Solo productos agotados o por debajo del mínimo",
+            "in": "query",
+            "name": "solo_alertas",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Solo productos agotados o por debajo del mínimo",
+              "title": "Solo Alertas",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedList_StockSalida_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Estado de stock con su nivel (agotado/crítico/bajo/ok)",
+        "tags": [
+          "inventario"
         ]
       }
     },
@@ -1881,7 +2980,7 @@
     },
     "/api/v1/sync/lotes": {
       "post": {
-        "description": "Una transacción por lote, un resultado por operación\n(`aceptada`/`duplicada`/`rechazada`), en el orden del lote.\n\nHTTP 200 aunque haya operaciones rechazadas: el lote SE PROCESÓ; el\ndesenlace de cada operación viaja en su resultado. Los 4xx de este\nendpoint significan «el request entero es inválido», no «una operación\nfalló».\n\nIdempotencia y divergencia (decisión 4 del plan): reenviar una operación\ncon el mismo `id` y un payload IDÉNTICO responde `duplicada` (no-op, sin\nevento); el mismo `id` con cualquier campo del hecho distinto (ítems,\ntotal, medio de pago, cliente, consecutivo, dispositivo,\n`creada_en_cliente` o estado) responde `rechazada` con motivo\n`venta_id_divergente` y los campos que difieren en `detalles.campos` —\njamás un no-op silencioso.\n\nDoble verdad temporal (ADR-017/018): `creada_en_cliente` es el dato del\nticket y se guarda tal cual; al comparar un reintento contra la venta ya\naceptada se ignoran los microsegundos (la columna `timestamptz` no los\nconserva en el viaje de ida y vuelta), así que una diferencia sub-segundo\nNO convierte un reintento legítimo en `venta_id_divergente`. El orden de\naplicación es el de recepción y el watermark del delta lo pone el reloj\ndel servidor, nunca el del cliente.",
+        "description": "Una transacción por lote, un resultado por operación\n(`aceptada`/`duplicada`/`rechazada`), en el orden del lote.\n\nHTTP 200 aunque haya operaciones rechazadas: el lote SE PROCESÓ; el\ndesenlace de cada operación viaja en su resultado. Los 4xx de este\nendpoint significan «el request entero es inválido», no «una operación\nfalló».\n\nIdempotencia y divergencia (decisión 4 del plan): reenviar una operación\ncon el mismo `id` y un payload IDÉNTICO responde `duplicada` (no-op, sin\nevento); el mismo `id` con cualquier campo del hecho distinto (ítems,\ntotal, medio de pago, cliente, consecutivo, `creada_en_cliente` o\nestado) responde `rechazada` con motivo `venta_id_divergente` y los\ncampos que difieren en `detalles.campos` — jamás un no-op silencioso.\nEl dispositivo NO se compara: viaja en el lote, no en `datos`, así que\nun reintento del mismo id de venta desde OTRO dispositivo se reporta\n`duplicada` si el resto del payload coincide.\n\nDoble verdad temporal (ADR-017/018): `creada_en_cliente` es el dato del\nticket y se guarda tal cual; al comparar un reintento contra la venta ya\naceptada se ignoran los microsegundos (la columna `timestamptz` no los\nconserva en el viaje de ida y vuelta), así que una diferencia sub-segundo\nNO convierte un reintento legítimo en `venta_id_divergente`. El orden de\naplicación es el de recepción y el watermark del delta lo pone el reloj\ndel servidor, nunca el del cliente.",
         "operationId": "sincronizar_lote_api_v1_sync_lotes_post",
         "requestBody": {
           "content": {

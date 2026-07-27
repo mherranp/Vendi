@@ -13,6 +13,50 @@
  */
 
 export interface paths {
+    "/api/v1/compras": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listar compras */
+        get: operations["listar_compras_api_v1_compras_get"];
+        put?: never;
+        /**
+         * Registrar una compra a proveedor
+         * @description En la MISMA transacción: la compra, sus ítems, un movimiento `compra`
+         *     por línea, `stock_actual` y `ultimo_costo` de cada producto, y el evento
+         *     `compra.registrada` (ADR-020). Acepta el `id` que traiga el cliente
+         *     (ADR-017): reenviar la misma compra devuelve la existente, sin duplicar
+         *     fila, stock ni evento. El total lo calcula el servidor por línea; el
+         *     `proveedor_nombre` es texto libre (la factura es un papel: no hay tabla
+         *     de proveedores).
+         */
+        post: operations["registrar_compra_api_v1_compras_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/compras/{compra_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ver una compra con sus ítems */
+        get: operations["ver_compra_api_v1_compras__compra_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/dispositivos": {
         parameters: {
             query?: never;
@@ -28,6 +72,59 @@ export interface paths {
          *     mismo id devuelve el existente, sin duplicar fila.
          */
         post: operations["registrar_dispositivo_api_v1_dispositivos_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inventario/ajustes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Listar ajustes y mermas
+         * @description La auditoría del «¿quién movió el arroz?»: cada fila lleva su motivo
+         *     y quién la aplicó.
+         */
+        get: operations["listar_ajustes_api_v1_inventario_ajustes_get"];
+        put?: never;
+        /**
+         * Registrar un ajuste por conteo o una merma (ONLINE)
+         * @description La única operación de inventario que EXIGE conexión (ADR-020): el
+         *     delta se calcula contra el stock del servidor en el momento del conteo —
+         *     un ajuste offline corrompería el contador de forma no conmutativa. El
+         *     `motivo` es obligatorio. El `id` del cliente es requerido y ancla la
+         *     idempotencia: el reintento idéntico devuelve lo ya respondido sin mover
+         *     stock; el divergente es 409 `ajuste_id_divergente`. Un conteo que cuadra
+         *     (delta 0) graba la fila pero no escribe movimiento en el libro.
+         */
+        post: operations["registrar_ajuste_api_v1_inventario_ajustes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inventario/stock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Estado de stock con su nivel (agotado/crítico/bajo/ok)
+         * @description El nivel lo deriva el servidor con la misma función que dispara
+         *     `inventario.alerta_stock`: una sola definición del umbral. El stock
+         *     negativo es un dato legítimo (ADR-020) y viaja como `agotado`.
+         */
+        get: operations["estado_de_stock_api_v1_inventario_stock_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -208,10 +305,12 @@ export interface paths {
          *     Idempotencia y divergencia (decisión 4 del plan): reenviar una operación
          *     con el mismo `id` y un payload IDÉNTICO responde `duplicada` (no-op, sin
          *     evento); el mismo `id` con cualquier campo del hecho distinto (ítems,
-         *     total, medio de pago, cliente, consecutivo, dispositivo,
-         *     `creada_en_cliente` o estado) responde `rechazada` con motivo
-         *     `venta_id_divergente` y los campos que difieren en `detalles.campos` —
-         *     jamás un no-op silencioso.
+         *     total, medio de pago, cliente, consecutivo, `creada_en_cliente` o
+         *     estado) responde `rechazada` con motivo `venta_id_divergente` y los
+         *     campos que difieren en `detalles.campos` — jamás un no-op silencioso.
+         *     El dispositivo NO se compara: viaja en el lote, no en `datos`, así que
+         *     un reintento del mismo id de venta desde OTRO dispositivo se reporta
+         *     `duplicada` si el resto del payload coincide.
          *
          *     Doble verdad temporal (ADR-017/018): `creada_en_cliente` es el dato del
          *     ticket y se guarda tal cual; al comparar un reintento contra la venta ya
@@ -321,6 +420,195 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AjusteCreado
+         * @description La respuesta del alta: lo mismo que la fila, más el nivel de alerta en
+         *     que quedó el producto (lo deriva el servidor, que es la única autoridad
+         *     del umbral — decisión 2).
+         */
+        AjusteCreado: {
+            /** Aplicado Por */
+            aplicado_por: string;
+            /** Cantidad */
+            cantidad?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Delta */
+            delta: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Motivo */
+            motivo: string;
+            /** Nivel */
+            nivel: string;
+            /**
+             * Producto Id
+             * Format: uuid
+             */
+            producto_id: string;
+            /** Stock Contado */
+            stock_contado?: string | null;
+            /** Stock Resultante */
+            stock_resultante: string;
+            /** Tipo */
+            tipo: string;
+        };
+        /**
+         * AjusteCrear
+         * @description Un ajuste por conteo o una merma. ONLINE obligatorio (ADR-020): el
+         *     delta se calcula contra el stock del servidor en el momento.
+         *
+         *     `id` es REQUERIDO (decisión 4): es la PK de `ajustes_inventario` y la
+         *     única ancla que hace seguro el reintento de una merma, que es un delta
+         *     relativo. El `motivo` es obligatorio: un ajuste sin justificación es un
+         *     desfalco con buenos modales.
+         */
+        AjusteCrear: {
+            /** Cantidad */
+            cantidad?: number | string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Motivo */
+            motivo: string;
+            /**
+             * Producto Id
+             * Format: uuid
+             */
+            producto_id: string;
+            /** Stock Contado */
+            stock_contado?: number | string | null;
+            /**
+             * Tipo
+             * @enum {string}
+             */
+            tipo: "ajuste" | "merma";
+        };
+        /** AjusteSalida */
+        AjusteSalida: {
+            /** Aplicado Por */
+            aplicado_por: string;
+            /** Cantidad */
+            cantidad?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Delta */
+            delta: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Motivo */
+            motivo: string;
+            /**
+             * Producto Id
+             * Format: uuid
+             */
+            producto_id: string;
+            /** Stock Contado */
+            stock_contado?: string | null;
+            /** Stock Resultante */
+            stock_resultante: string;
+            /** Tipo */
+            tipo: string;
+        };
+        /**
+         * CompraCrear
+         * @description Una compra a proveedor. `proveedor_nombre` es texto libre (ADR-020:
+         *     la factura es un papel; no hay tabla de proveedores). El `id` del
+         *     cliente se acepta como PK (ADR-017): reenviar la misma compra es un
+         *     no-op. El total NO viaja: lo calcula el servidor (decisión 7).
+         */
+        CompraCrear: {
+            /** Fecha */
+            fecha?: string | null;
+            /** Id */
+            id?: string | null;
+            /** Items */
+            items: components["schemas"]["CompraItemEntrada"][];
+            /** Observaciones */
+            observaciones?: string | null;
+            /** Proveedor Nombre */
+            proveedor_nombre: string;
+        };
+        /** CompraDetalleSalida */
+        CompraDetalleSalida: {
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Fecha
+             * Format: date
+             */
+            fecha: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Items */
+            items: components["schemas"]["CompraItemSalida"][];
+            /** Observaciones */
+            observaciones?: string | null;
+            /** Proveedor Nombre */
+            proveedor_nombre: string;
+            /** Total Centavos */
+            total_centavos: number;
+        };
+        /**
+         * CompraItemEntrada
+         * @description Una línea de factura. El costo es el de ESTA compra: al confirmarse
+         *     actualiza `ultimo_costo` del producto (ADR-020).
+         */
+        CompraItemEntrada: {
+            /** Cantidad */
+            cantidad: number | string;
+            /** Costo Unitario Centavos */
+            costo_unitario_centavos: number;
+            /**
+             * Producto Id
+             * Format: uuid
+             */
+            producto_id: string;
+        };
+        /** CompraItemSalida */
+        CompraItemSalida: {
+            /** Cantidad */
+            cantidad: string;
+            /** Costo Unitario Centavos */
+            costo_unitario_centavos: number;
+            /**
+             * Producto Id
+             * Format: uuid
+             */
+            producto_id: string;
+        };
+        /** CompraSalida */
+        CompraSalida: {
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Fecha
+             * Format: date
+             */
+            fecha: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Observaciones */
+            observaciones?: string | null;
+            /** Proveedor Nombre */
+            proveedor_nombre: string;
+            /** Total Centavos */
+            total_centavos: number;
+        };
+        /**
          * DeltaSalida
          * @description El drenado de datos de referencia hacia el dispositivo (ADR-017).
          *
@@ -425,10 +713,43 @@ export interface components {
             /** Tipo */
             tipo: string;
         };
+        /** PagedList[AjusteSalida] */
+        PagedList_AjusteSalida_: {
+            /** Items */
+            items: components["schemas"]["AjusteSalida"][];
+            /** Limit */
+            limit: number;
+            /** Skip */
+            skip: number;
+            /** Total */
+            total: number;
+        };
+        /** PagedList[CompraSalida] */
+        PagedList_CompraSalida_: {
+            /** Items */
+            items: components["schemas"]["CompraSalida"][];
+            /** Limit */
+            limit: number;
+            /** Skip */
+            skip: number;
+            /** Total */
+            total: number;
+        };
         /** PagedList[ProductoSalida] */
         PagedList_ProductoSalida_: {
             /** Items */
             items: components["schemas"]["ProductoSalida"][];
+            /** Limit */
+            limit: number;
+            /** Skip */
+            skip: number;
+            /** Total */
+            total: number;
+        };
+        /** PagedList[StockSalida] */
+        PagedList_StockSalida_: {
+            /** Items */
+            items: components["schemas"]["StockSalida"][];
             /** Limit */
             limit: number;
             /** Skip */
@@ -573,6 +894,30 @@ export interface components {
             tipo: string;
         };
         /**
+         * StockSalida
+         * @description El stock de un producto con su nivel derivado (agotado/crítico/bajo/ok).
+         *
+         *     El nivel lo calcula el servidor con la misma función que dispara las
+         *     alertas: una sola definición del umbral, ninguna reimplementación en el
+         *     frontend. El stock negativo es un dato legítimo (ADR-020) y viaja tal
+         *     cual con nivel `agotado`.
+         */
+        StockSalida: {
+            /** Nivel */
+            nivel: string;
+            /** Nombre */
+            nombre: string;
+            /**
+             * Producto Id
+             * Format: uuid
+             */
+            producto_id: string;
+            /** Stock Actual */
+            stock_actual: string;
+            /** Stock Minimo */
+            stock_minimo: string;
+        };
+        /**
          * TenantActualizar
          * @description Todo opcional: es un PATCH. `None` significa "no lo toques".
          */
@@ -623,6 +968,174 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listar_compras_api_v1_compras_get: {
+        parameters: {
+            query?: {
+                skip?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PagedList_CompraSalida_"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    registrar_compra_api_v1_compras_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompraCrear"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompraDetalleSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El id de la compra ya existe (en este u otro negocio) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    ver_compra_api_v1_compras__compra_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                compra_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompraDetalleSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description La compra no existe */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     registrar_dispositivo_api_v1_dispositivos_post: {
         parameters: {
             query?: never;
@@ -673,6 +1186,168 @@ export interface operations {
                 };
             };
             /** @description Request malformado (validación de estructura) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listar_ajustes_api_v1_inventario_ajustes_get: {
+        parameters: {
+            query?: {
+                skip?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PagedList_AjusteSalida_"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    registrar_ajuste_api_v1_inventario_ajustes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AjusteCrear"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AjusteCreado"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El id del ajuste ya existe con datos distintos */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    estado_de_stock_api_v1_inventario_stock_get: {
+        parameters: {
+            query?: {
+                skip?: number;
+                limit?: number;
+                /** @description Solo productos agotados o por debajo del mínimo */
+                solo_alertas?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PagedList_StockSalida_"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
             422: {
                 headers: {
                     [name: string]: unknown;
