@@ -329,6 +329,17 @@ umbral—, cerrado con el gate de la Etapa 1.2 del plan maestro. Plan:
 (11 tareas TDD, commits `9dfb26f`…`2d08df9`, cada una con revisión
 independiente registrada en `.superpowers/sdd/`).
 
+> **Post-cierre (mismo día).** Tras el gate, la revisión de rama y el QA
+> adversarial añadieron correcciones ya en `main`: la fuga de `ultimo_costo`
+> al cajero se cerró condicionándolo a `compra:crear` en productos **y** en
+> el delta del sync (`5071c29`, `9dd0215`), el overflow del total de compra
+> calculado en servidor pasó de 500 a 422 tipado (`5071c29`), y el QA añadió
+> 20 tests adversariales (`c949048`: bordes de umbral, regresión del
+> deadlock con orden inverso, atomicidad del 422, cross-tenant). Deuda
+> registrada: D-19…D-25 con vencimiento antes del piloto. HEAD de código de
+> cierre real: `8cb5125` — run ci 30310253728 en verde: **300 integration +
+> 402 unitarios, 0 SKIPPED**.
+
 Los comandos del gate que exigen el stack (migrar, tests de integración,
 `verify-setup.sh`) se citan desde el CI, que los ejecuta contra PostgreSQL,
 RabbitMQ y Keycloak reales en cada push: el run de corte es el `ci`
