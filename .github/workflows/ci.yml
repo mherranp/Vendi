@@ -146,9 +146,18 @@ jobs:
       - name: Preparar el .env del stack
         # Sin secretos reales: el compose exige que existan y los tests los
         # leen del mismo archivo (backend/tests/conftest.py::_cargar_env).
+        #
+        # El enlace infra/.env es imprescindible: al invocarse con
+        # `-f infra/docker-compose.yml`, el directorio de proyecto pasa a ser
+        # infra/ y compose busca ahí el .env para interpolar — el de la raíz
+        # lo ignoran por completo las guardias `${VAR:?}` del compose, que
+        # fallaban con «required variable RABBITMQ_PASSWORD is missing a
+        # value» aunque el .env existiera. Es el mismo mecanismo que aplica
+        # scripts/dev.sh en la máquina del desarrollador.
         run: |
           cp .env.example .env
           sed -i "s/^DOCS_PUBLICOS=.*/DOCS_PUBLICOS=true/" .env
+          ln -s ../.env infra/.env
 
       - name: Instalar mkcert y emitir el certificado de vendi.co
         # mkcert y NO openssl autofirmado, como hacía BaseSaaS: la suite de

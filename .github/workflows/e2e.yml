@@ -56,7 +56,14 @@ jobs:
         working-directory: frontend
 
       - name: Preparar el .env del stack
-        run: cp .env.example .env
+        # El enlace infra/.env es imprescindible: con `-f infra/...` el
+        # directorio de proyecto es infra/ y compose busca ahí el .env para
+        # interpolar las guardias `${VAR:?}` (mismo mecanismo que dev.sh).
+        # Sin él, hasta el `down -v` de la limpieza fallaba con «required
+        # variable POSTGRES_PASSWORD is missing a value».
+        run: |
+          cp .env.example .env
+          ln -s ../.env infra/.env
 
       - name: Instalar mkcert y emitir el certificado de vendi.co
         run: |
