@@ -214,7 +214,17 @@ class VentasService:
 
         productos: list[Producto] = []
         for item in datos.items:
-            producto = await self._session.get(Producto, item.producto_id)
+            # SELECT ... FOR UPDATE sobre la fila del producto: sin el bloqueo,
+            # dos lotes concurrentes del mismo tenant que venden el mismo
+            # producto leen el MISMO `stock_actual` y el segundo commit pisa
+            # al primero con un valor stale (lost update: el libro
+            # `movimientos_inventario` queda exacto pero la proyección deriva).
+            # Se eligió el bloqueo de fila sobre un UPDATE atómico
+            # (`stock_actual = stock_actual + :delta`): es lo conservador y
+            # consistente con el FOR UPDATE de la anulación, y mantiene el
+            # objeto ORM sincronizado para el resto del lote. El perdedor
+            # espera al commit del ganador y re-lee el stock ya descontado.
+            producto = await self._session.get(Producto, item.producto_id, with_for_update=True)
             if producto is None:
                 # Otro negocio o inexistente: la RLS lo hace invisible. Un
                 # producto dado de baja lógica SÍ se acepta: la venta ocurrió
@@ -422,7 +432,10 @@ class VentasService:
 
         venta.estado = "anulada"
         for item in await self._items_de(venta.id):
-            producto = await self._session.get(Producto, item.producto_id)
+            # FOR UPDATE como en el alta: la reposición también toca
+            # `stock_actual`, y la misma carrera de lost update aplica si un
+            # lote vende el producto mientras otro anula una venta suya.
+            producto = await self._session.get(Producto, item.producto_id, with_for_update=True)
             if producto is not None:
                 # La referencia es el id de la OPERACIÓN de anulación: los
                 # movimientos de la venta ya existen con referencia_id=venta.
@@ -480,7 +493,11 @@ class VentasService:
     async def _mover_stock(self, producto: Producto, delta: Decimal, *, referencia_id: uuid.UUID) -> None:
         """Un movimiento en el libro + la proyección, en la misma transacción
         (ADR-020). El signo lo pone quien llama: la venta descuenta, su
-        anulación repone. El stock puede quedar negativo y es legítimo."""
+        anulación repone. El stock puede quedar negativo y es legítimo.
+
+        Quien llama carga el producto con `with_for_update=True` (ver
+        `_registrar_venta` y `_anular_venta`): el read-modify-write de
+        `stock_actual` solo es seguro con la fila bloqueada hasta el commit."""
         self._session.add(
             MovimientoInventario(
                 tenant_id=self._tenant_id,

@@ -354,6 +354,64 @@ async def test_la_carrera_con_payload_divergente_sigue_siendo_rechazada(pg_app_u
     assert fila.consecutivo_local == 1, "la divergencia NO pisa la venta del ganador"
 
 
+async def test_dos_ventas_concurrentes_del_mismo_producto_no_pierden_la_actualizacion(
+    pg_app_url, pg_platform_url, semilla
+):
+    """La carrera del lost update sobre `stock_actual`: dos requests venden el
+    MISMO producto en lotes distintos. Sin bloqueo de fila, ambos leen el mismo
+    stock, descuentan lo suyo y el segundo commit pisa al primero con un valor
+    stale — el libro `movimientos_inventario` queda exacto pero la proyección
+    deriva. Con el `SELECT ... FOR UPDATE` del camino de `_mover_stock`, el
+    perdedor espera al commit del ganador y descuenta sobre el stock ya
+    actualizado: stock final = inicial − suma de ambas ventas, y el libro con
+    los dos movimientos exactos."""
+    engine = create_engine(pg_app_url)
+    factory = create_session_factory(engine)
+    marca = current_tenant_id.set(T1)
+    try:
+        async with factory() as s1, factory() as s2:
+            servicio1 = VentasService(session=s1, tenant_id=T1, actor_id="cajero-prueba", puede_anular=True)
+            servicio2 = VentasService(session=s2, tenant_id=T1, actor_id="cajero-prueba", puede_anular=True)
+            op1 = _op_venta(
+                semilla,
+                uuid.uuid4(),
+                secuencia=1,
+                items=[{"producto_id": str(semilla["producto"]), "cantidad": "2", "precio_unitario_centavos": 2500}],
+                total_centavos=5000,
+            )
+            op2 = _op_venta(
+                semilla,
+                uuid.uuid4(),
+                secuencia=2,
+                consecutivo_local=2,
+                items=[{"producto_id": str(semilla["producto"]), "cantidad": "3", "precio_unitario_centavos": 2500}],
+                total_centavos=7500,
+            )
+            assert [r.resultado for r in await servicio1.procesar_lote(_lote(semilla, op1))] == ["aceptada"]
+            # s1 retiene el bloqueo de la fila del producto hasta su commit:
+            # s2 espera en su SELECT ... FOR UPDATE y re-lee el stock nuevo.
+            perdedor = asyncio.create_task(servicio2.procesar_lote(_lote(semilla, op2)))
+            await asyncio.sleep(0.1)  # que el perdedor llegue al bloqueo antes del commit
+            await s1.commit()
+            assert [r.resultado for r in await perdedor] == ["aceptada"]
+            await s2.commit()
+    finally:
+        current_tenant_id.reset(marca)
+        await engine.dispose()
+
+    stock = await _uno(pg_platform_url, "SELECT stock_actual FROM productos WHERE id = :p", p=semilla["producto"])
+    assert stock.stock_actual == Decimal("5"), "10 − 2 − 3: ninguna venta pisa la proyección de la otra"
+    libro = await _uno(
+        pg_platform_url,
+        "SELECT count(*) AS n, sum(cantidad) AS total FROM movimientos_inventario"
+        " WHERE tenant_id = :t AND producto_id = :p",
+        t=T1,
+        p=semilla["producto"],
+    )
+    assert libro.n == 2, "un movimiento por venta"
+    assert libro.total == Decimal("-5"), "el libro descuenta las dos ventas, exactas (ADR-020)"
+
+
 # --- Anulación como operación nueva ----------------------------------------------
 
 
