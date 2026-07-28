@@ -100,7 +100,7 @@ async def test_insert_con_tenant_ajeno_lo_bloquea_with_check(sesion_t1, semilla)
 @pytest.mark.parametrize(
     "tipo,categoria,monto",
     [
-        ("transferencia", "otro", 100),  # tipo fuera de la lista cerrada
+        ("traspaso", "otro", 100),  # tipo fuera de la lista cerrada (≤8: el CHECK, no el varchar, rechaza)
         ("ingreso", "ropa", 100),  # categoría fuera de la lista cerrada
         ("egreso", "otro", 0),  # monto cero: un movimiento de cero no es movimiento
         ("egreso", "otro", -5000),  # monto negativo: el signo lo da el tipo

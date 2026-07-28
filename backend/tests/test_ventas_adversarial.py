@@ -440,7 +440,13 @@ async def test_la_venta_que_llega_tras_el_cierre_cae_en_una_sesion_implicita_nue
     engine = create_async_engine(pg_platform_url)
     async with engine.begin() as conn:
         await conn.execute(
-            text("UPDATE caja_sesiones SET estado = 'cerrada', cerrada_en = now() WHERE tenant_id = :t"), {"t": T1}
+            # Cierre completo: `ck_caja_sesiones_cierre_completo` (0008) exige
+            # las cinco columnas del arqueo junto al estado.
+            text(
+                "UPDATE caja_sesiones SET estado = 'cerrada', cerrada_por = 'dueno', cerrada_en = now(), "
+                "efectivo_esperado = 0, efectivo_contado = 0, diferencia = 0 WHERE tenant_id = :t"
+            ),
+            {"t": T1},
         )
     await engine.dispose()
 

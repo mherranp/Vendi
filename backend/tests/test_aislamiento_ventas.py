@@ -190,7 +190,14 @@ async def test_una_segunda_sesion_abierta_en_el_mismo_tenant_no_cabe(sesion_t1):
 
 @pytest.mark.asyncio
 async def test_una_sesion_cerrada_si_permite_abrir_otra(sesion_t1):
-    await sesion_t1.execute(text("UPDATE caja_sesiones SET estado = 'cerrada', cerrada_en = now()"))
+    # El cierre es completo o no es (`ck_caja_sesiones_cierre_completo`, 0008):
+    # las cinco columnas del arqueo acompañan al estado.
+    await sesion_t1.execute(
+        text(
+            "UPDATE caja_sesiones SET estado = 'cerrada', cerrada_por = 'dueno', cerrada_en = now(), "
+            "efectivo_esperado = 0, efectivo_contado = 0, diferencia = 0"
+        )
+    )
     await sesion_t1.execute(
         text("INSERT INTO caja_sesiones (tenant_id, abierta_por) VALUES (:t, 'otro')"),
         {"t": T1},

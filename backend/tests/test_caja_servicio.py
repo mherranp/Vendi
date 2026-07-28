@@ -193,7 +193,7 @@ async def test_dos_aperturas_concurrentes_dejan_una_sola_sesion(pg_app_url, semi
                     return "abierta"
                 except ConflictError as exc:
                     await s.rollback()
-                    assert exc.value.code == "caja_ya_abierta"
+                    assert exc.code == "caja_ya_abierta"
                     return "conflicto"
         finally:
             current_tenant_id.reset(marca)
@@ -398,7 +398,7 @@ async def test_dos_cierres_concurrentes_cierran_la_sesion_una_sola_vez(servicio,
                     return ("cerrada", arqueo)
                 except ConflictError as exc:
                     await s.rollback()
-                    assert exc.value.code == "caja_ya_cerrada"
+                    assert exc.code == "caja_ya_cerrada"
                     return ("conflicto", exc)
         finally:
             current_tenant_id.reset(marca)
