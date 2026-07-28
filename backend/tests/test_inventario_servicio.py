@@ -208,6 +208,39 @@ async def test_registrar_compra_es_idempotente_por_el_id_del_cliente(servicio, s
     assert (fila.movimientos, fila.eventos, fila.stock) == (1, 1, 20)  # ni doble stock ni doble evento
 
 
+async def test_el_mismo_id_de_compra_con_otro_proveedor_es_409(servicio, semilla):
+    """Cierre de D-19: la idempotencia NO es ciega a la divergencia (el
+    criterio de ajustes y ventas). Mismo id con otro proveedor no es un
+    reintento: es otra compra que alguien debe mirar, y el 409 dice qué
+    campos difieren."""
+    el_id = uuid.uuid4()
+    await servicio.registrar_compra(_compra(semilla, el_id))
+    await servicio._session.commit()
+    with pytest.raises(ConflictError) as exc:
+        await servicio.registrar_compra(_compra(semilla, el_id, proveedor_nombre="Distribuidora El 44"))
+    assert exc.value.code == "compra_id_divergente"
+    assert exc.value.details["campos"] == ["proveedor_nombre"]
+
+
+async def test_el_mismo_id_de_compra_con_otros_items_es_409(servicio, semilla, pg_platform_url):
+    """La divergencia en los ítems también muerde (comparación normalizada:
+    `10` enviado == `10.000` guardado; lo que difiere es la cantidad 7) — y
+    la compra original queda intacta, con su stock aplicado UNA vez."""
+    el_id = uuid.uuid4()
+    await servicio.registrar_compra(_compra(semilla, el_id))
+    await servicio._session.commit()
+    with pytest.raises(ConflictError) as exc:
+        await servicio.registrar_compra(_compra(semilla, el_id, cantidad="7"))
+    assert exc.value.code == "compra_id_divergente"
+    assert "items" in exc.value.details["campos"]
+
+    hallada, items = await servicio.obtener_compra(el_id)
+    assert hallada.proveedor_nombre == "Distribuidora La 33"
+    assert [(i.producto_id, i.cantidad) for i in items] == [(semilla["producto"], Decimal("10.000"))]
+    fila = await _uno(pg_platform_url, "SELECT stock_actual FROM productos WHERE id = :p", p=semilla["producto"])
+    assert fila.stock_actual == 20  # solo la primera versión movió stock
+
+
 async def test_compra_con_producto_de_otro_negocio_es_422_sin_fuga(servicio, semilla):
     """La RLS hace invisible el producto de T2: mismo veredicto que uno
     inexistente (criterio `padre_no_encontrado` del catálogo)."""

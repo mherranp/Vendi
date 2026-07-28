@@ -73,13 +73,15 @@ class InventarioService:
         """Registra la compra y, en la MISMA transacción: sus ítems, un
         movimiento `compra` por línea, la proyección `stock_actual` y
         `ultimo_costo` de cada producto, y el evento `compra.registrada`
-        (ADR-020). Idempotente por el UUID del cliente: reenviar la misma
-        compra devuelve la existente sin duplicar fila, stock ni evento."""
+        (ADR-020). Idempotente por el UUID del cliente: reenviar la MISMA
+        compra devuelve la existente sin duplicar fila, stock ni evento;
+        reenviar el mismo `id` con payload distinto es 409
+        `compra_id_divergente` (cierre de D-19: la idempotencia no es ciega
+        a la divergencia, mismo criterio que ajustes y ventas)."""
         if datos.id is not None:
             existente = await self._session.get(Compra, datos.id)
             if existente is not None:
-                logger.info("compra_registrada_idempotente", compra_id=str(existente.id))
-                return existente
+                return await self._reintento_de_compra(existente, datos)
 
         # El total lo calcula el servidor por línea (decisión 7): la línea se
         # cuantiza a centavos enteros y el total es la suma de las líneas.
@@ -320,6 +322,45 @@ class InventarioService:
                 details={"producto_id": str(producto_id)},
             )
         return producto
+
+    async def _reintento_de_compra(self, existente: Compra, datos: CompraCrear) -> Compra:
+        """El id ya existe: ¿es la MISMA compra? Payload idéntico → se
+        devuelve la existente (el reintento legítimo, sin duplicar stock ni
+        evento). Cualquier campo distinto → 409 con los campos que difieren
+        (cierre de D-19, espejo de `_reintento_de_ajuste`): jamás un no-op
+        silencioso cuando hay stock y `ultimo_costo` de por medio.
+
+        `fecha` solo se compara cuando el cliente la envía: si vino en NULL
+        la puso el servidor y el reintento no puede reproducirla — compararla
+        contra NULL marcaría divergente todo reintento legítimo de una compra
+        sin fecha. El total no se compara: lo deriva el servidor de los ítems."""
+        divergentes: list[str] = []
+        if existente.proveedor_nombre != datos.proveedor_nombre:
+            divergentes.append("proveedor_nombre")
+        if datos.fecha is not None and existente.fecha != datos.fecha:
+            divergentes.append("fecha")
+        if existente.observaciones != datos.observaciones:
+            divergentes.append("observaciones")
+        # Comparación normalizada, como en ventas: la cantidad guardada viene
+        # de NUMERIC(14,3) (10.000) y la enviada del schema (10) — Decimal las
+        # iguala. El orden no importa y el schema prohíbe producto repetido.
+        guardados = (
+            (await self._session.execute(select(CompraItem).where(CompraItem.compra_id == existente.id)))
+            .scalars()
+            .all()
+        )
+        items_guardados = {(i.producto_id, i.cantidad, i.costo_unitario_centavos) for i in guardados}
+        items_enviados = {(i.producto_id, i.cantidad, i.costo_unitario_centavos) for i in datos.items}
+        if items_guardados != items_enviados:
+            divergentes.append("items")
+        if divergentes:
+            raise ConflictError(
+                "Ese id de compra ya existe con datos distintos. El servidor conserva la primera versión.",
+                code="compra_id_divergente",
+                details={"campos": divergentes},
+            )
+        logger.info("compra_registrada_idempotente", compra_id=str(existente.id))
+        return existente
 
     def _reintento_de_ajuste(self, existente: AjusteInventario, datos: AjusteCrear, producto: Producto) -> AjusteCreado:
         """El id ya existe: ¿es el MISMO ajuste? Payload idéntico → se

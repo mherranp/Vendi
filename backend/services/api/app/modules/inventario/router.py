@@ -58,7 +58,10 @@ _RESPUESTAS_COMUNES = {
     summary="Registrar una compra a proveedor",
     responses={
         **_RESPUESTAS_COMUNES,
-        409: {"model": ErrorResponse, "description": "El id de la compra ya existe (en este u otro negocio)"},
+        409: {
+            "model": ErrorResponse,
+            "description": "El id de la compra ya existe (en este u otro negocio) o existe con datos distintos",
+        },
     },
 )
 async def registrar_compra(
@@ -69,10 +72,11 @@ async def registrar_compra(
     """En la MISMA transacción: la compra, sus ítems, un movimiento `compra`
     por línea, `stock_actual` y `ultimo_costo` de cada producto, y el evento
     `compra.registrada` (ADR-020). Acepta el `id` que traiga el cliente
-    (ADR-017): reenviar la misma compra devuelve la existente, sin duplicar
-    fila, stock ni evento. El total lo calcula el servidor por línea; el
-    `proveedor_nombre` es texto libre (la factura es un papel: no hay tabla
-    de proveedores)."""
+    (ADR-017): reenviar la MISMA compra devuelve la existente, sin duplicar
+    fila, stock ni evento; el reenvío con datos distintos es 409
+    `compra_id_divergente` (D-19). El total lo calcula el servidor por línea;
+    el `proveedor_nombre` es texto libre (la factura es un papel: no hay
+    tabla de proveedores)."""
     compra, items = await servicio.obtener_compra((await servicio.registrar_compra(datos)).id)
     return _detalle(compra, items)
 

@@ -538,6 +538,50 @@ async def test_la_compra_con_id_de_otro_tenant_es_409_y_no_toca_nada(servicio, s
     assert await _stock(pg_platform_url, semilla["producto"]) == Decimal("10")
 
 
+async def test_dos_primeros_envios_concurrentes_de_la_misma_compra_dejan_una(pg_app_url, semilla, pg_platform_url):
+    """La carrera de dos PRIMEROS envíos con el mismo `id` (reintento que se
+    solapa con el original, no reintento posterior): los dos leen `get() →
+    None` y el perdedor revienta contra `compras_pkey` al insertar — el 409
+    tipado `compra_id_duplicado` lo traduce `_flush_traduciendo_integridad`,
+    nunca un 500 (mismo patrón que el abono de fiado). Si el perdedor alcanza
+    a ver la fila confirmada, cae en el reintento idempotente de D-19. En
+    ambos desenlaces: UNA fila, UN evento, el stock sumado UNA vez."""
+    el_id = uuid.uuid4()
+
+    async def compra_con_sesion_propia() -> str:
+        engine = create_engine(pg_app_url)
+        factory = create_session_factory(engine)
+        marca = current_tenant_id.set(T1)
+        try:
+            async with factory() as s:
+                servicio = InventarioService(session=s, tenant_id=T1, actor_id="qa-adversarial")
+                try:
+                    await servicio.registrar_compra(_compra(semilla, el_id))
+                except ConflictError as exc:
+                    return exc.code
+                await s.commit()
+                return "registrada"
+        finally:
+            current_tenant_id.reset(marca)
+            await engine.dispose()
+
+    resultados = await asyncio.gather(compra_con_sesion_propia(), compra_con_sesion_propia(), return_exceptions=True)
+    for resultado in resultados:
+        if isinstance(resultado, BaseException):
+            raise resultado
+    assert sorted(resultados) in (["compra_id_duplicado", "registrada"], ["registrada", "registrada"])
+
+    fila = await _uno(
+        pg_platform_url,
+        "SELECT (SELECT count(*) FROM compras WHERE id = :c) AS compras, "
+        "(SELECT count(*) FROM outbox_messages WHERE routing_key = :k) AS eventos",
+        c=el_id,
+        k=f"{T1}.compra.registrada",
+    )
+    assert (fila.compras, fila.eventos) == (1, 1)
+    assert await _stock(pg_platform_url, semilla["producto"]) == Decimal("20")  # 10 + 10, una sola vez
+
+
 async def test_la_compra_de_costo_cero_deja_ultimo_costo_en_cero(servicio, semilla, pg_platform_url):
     """DOCUMENTA el borde firmado del schema (`ge=0`): la bonificación del
     proveedor entra con costo 0, el total es 0 y `ultimo_costo` queda en 0 —
