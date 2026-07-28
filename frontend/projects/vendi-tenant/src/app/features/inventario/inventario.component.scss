@@ -1,0 +1,22 @@
+:host {
+  display: block;
+}
+
+.vd-inventario__acciones {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.vd-inventario__fallo {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+vd-data-table {
+  display: block;
+  width: 100%;
+}

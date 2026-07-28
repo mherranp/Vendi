@@ -1,0 +1,52 @@
+<h2 mat-dialog-title>{{ 'inventario.compra.titulo' | translate }}</h2>
+<mat-dialog-content>
+  <form [formGroup]="formulario" (ngSubmit)="alEnviar()">
+    <label>
+      {{ 'inventario.compra.proveedor' | translate }}
+      <input type="text" formControlName="proveedor_nombre" />
+    </label>
+
+    <div formArrayName="items">
+      @for (item of items.controls; track $index) {
+        <fieldset [formGroupName]="$index">
+          <label>
+            {{ 'inventario.compra.producto' | translate }}
+            <select formControlName="producto_id">
+              <option value="" disabled>
+                {{ 'inventario.compra.elegir_producto' | translate }}
+              </option>
+              @for (producto of datos.productos; track producto.producto_id) {
+                <option [value]="producto.producto_id">{{ producto.nombre }}</option>
+              }
+            </select>
+          </label>
+          <label>
+            {{ 'inventario.compra.cantidad' | translate }}
+            <input type="text" formControlName="cantidad" inputmode="decimal" />
+          </label>
+          <label>
+            {{ 'inventario.compra.costo' | translate }}
+            <input type="number" min="0" formControlName="costo_pesos" />
+          </label>
+          <button matIconButton type="button" (click)="quitarItem($index)">
+            <mat-icon aria-hidden="true">delete</mat-icon>
+          </button>
+        </fieldset>
+      }
+    </div>
+
+    <button matButton="outlined" type="button" (click)="agregarItem()">
+      {{ 'inventario.compra.agregar_item' | translate }}
+    </button>
+
+    @if (errorFormulario()) {
+      <p role="alert">{{ 'inventario.compra.invalido' | translate }}</p>
+    }
+  </form>
+</mat-dialog-content>
+<mat-dialog-actions>
+  <button matButton type="button" (click)="cancelar()">{{ 'comun.cancelar' | translate }}</button>
+  <button matButton="filled" type="button" (click)="alEnviar()">
+    {{ 'comun.guardar' | translate }}
+  </button>
+</mat-dialog-actions>

@@ -199,6 +199,53 @@
       "invalido": "Revisa el formulario: falta un dato o una cantidad no es válida."
     }
   },
+  "inventario": {
+    "titulo": "Inventario",
+    "subtitulo": "El stock de tu tienda y sus alertas",
+    "fallo": "No pudimos cargar el inventario.",
+    "solo_alertas": "Solo alertas",
+    "columna": {
+      "nombre": "Producto",
+      "stock": "Stock",
+      "minimo": "Mínimo",
+      "nivel": "Nivel",
+      "acciones": "Acciones"
+    },
+    "nivel": {
+      "agotado": "Agotado",
+      "critico": "Crítico",
+      "bajo": "Bajo",
+      "ok": "Bien"
+    },
+    "vacio": {
+      "titulo": "Sin productos en esta vista",
+      "descripcion": "Con «Solo alertas» activo es una buena noticia: nada está por debajo del mínimo."
+    },
+    "ajuste": {
+      "accion": "Ajustar",
+      "titulo": "Ajustar «{{nombre}}»",
+      "stock_sistema": "El sistema cree que hay {{stock}} (nivel: {{nivel}}).",
+      "tipo": "Tipo de ajuste",
+      "conteo": "Conteo físico",
+      "merma": "Merma (daño, pérdida)",
+      "cantidad": "Cantidad",
+      "cantidad_ayuda": "En conteo: lo que contaste. En merma: lo que se perdió. Con coma o punto.",
+      "motivo": "Motivo",
+      "motivo_marcador": "Ej.: conteo del lunes, se dañaron 2 paquetes",
+      "invalido": "Revisa la cantidad y el motivo: la cantidad debe ser mayor que cero."
+    },
+    "compra": {
+      "accion": "Registrar compra",
+      "titulo": "Compra a proveedor",
+      "proveedor": "Proveedor",
+      "producto": "Producto",
+      "elegir_producto": "Elige un producto…",
+      "cantidad": "Cantidad",
+      "costo": "Costo unitario (pesos)",
+      "agregar_item": "Agregar ítem",
+      "invalido": "Revisa la compra: proveedor, cantidades mayores que cero y costos válidos."
+    }
+  },
   "menu": {
     "caja": "Mi caja",
     "catalogo": "Catálogo",

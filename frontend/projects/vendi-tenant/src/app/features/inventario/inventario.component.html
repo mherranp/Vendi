@@ -1,0 +1,62 @@
+<vd-page-header titulo="inventario.titulo" subtitulo="inventario.subtitulo">
+  <div slot="acciones" class="vd-inventario__acciones">
+    <mat-slide-toggle [checked]="soloAlertas()" (change)="alternarAlertas($event.checked)">
+      {{ 'inventario.solo_alertas' | translate }}
+    </mat-slide-toggle>
+    <button
+      matButton="filled"
+      type="button"
+      *vdHasPermission="'compra:crear'"
+      [disabled]="cargando()"
+      (click)="registrarCompra()"
+    >
+      <mat-icon aria-hidden="true">add_shopping_cart</mat-icon>
+      {{ 'inventario.compra.accion' | translate }}
+    </button>
+  </div>
+</vd-page-header>
+
+@if (fallo()) {
+  <!--
+    Salida del callejón sin salida: cuando el listado falla, el aviso del
+    interceptor se desvanece y sin esto la pantalla queda vacía y muda.
+  -->
+  <div class="vd-inventario__fallo" role="alert">
+    <span>{{ 'inventario.fallo' | translate }}</span>
+    <button matButton type="button" (click)="recargar()">
+      {{ 'comun.reintentar' | translate }}
+    </button>
+  </div>
+}
+
+<vd-data-table
+  [columnas]="columnas()"
+  [filas]="filas()"
+  [total]="total()"
+  [cargando]="cargando()"
+  [indicePagina]="indicePagina()"
+  [tamanoPagina]="tamanoPagina"
+  iconoVacio="warehouse"
+  tituloVacio="inventario.vacio.titulo"
+  descripcionVacio="inventario.vacio.descripcion"
+  (paginaCambia)="alPaginar($event)"
+/>
+
+<!-- El nivel lo deriva el servidor; aquí solo se traduce y se colorea. -->
+<ng-template #celdaNivel let-fila>
+  <vd-status-badge
+    [etiqueta]="etiquetaDeNivel(fila.nivel)"
+    [variante]="varianteDeNivel(fila.nivel)"
+  />
+</ng-template>
+
+<ng-template #celdaAcciones let-fila>
+  <button
+    matButton="outlined"
+    type="button"
+    *vdHasPermission="'inventario:ajustar'"
+    (click)="ajustar(fila)"
+  >
+    {{ 'inventario.ajuste.accion' | translate }}
+  </button>
+</ng-template>
