@@ -1011,7 +1011,7 @@ $ cd backend && uv run pytest --collect-only -q tests/test_fiado_sync.py
 
 $ uv run pytest -q -m integration   # run ci 30331195290
 449 passed, 430 deselected          # incluye los 15 de test_fiado_sync.py
-                                    # y los 9 de test_aislamiento_fiado.py
+                                    # y los 15 de test_aislamiento_fiado.py
 ```
 
 **Candados:**

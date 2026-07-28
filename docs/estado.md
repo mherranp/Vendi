@@ -690,11 +690,11 @@ Las tres heredan los cuatro privilegios por defecto de `vendi_app`: el
 candado invertido (`test_privilegios_de_vendi_app.py`) pasa sin edición, y el
 de cobertura RLS (`test_rls_coverage.py`) las cubre.
 
-**Aislamiento cross-tenant contra PostgreSQL real, 0 SKIPPED.** 9 tests
-nuevos en `backend/tests/test_aislamiento_fiado.py` (SELECT de las tres
-tablas acotado por la policy, INSERT con `tenant_id` ajeno bloqueado por
-`WITH CHECK`, los CHECK de saldo/estado/método, un crédito por venta —
-`ux_fiado_creditos_venta`— y la FK del abono al crédito). El job de CI
+**Aislamiento cross-tenant contra PostgreSQL real, 0 SKIPPED.** 15 tests
+nuevos en `backend/tests/test_aislamiento_fiado.py` (9 funciones parametrizadas:
+SELECT de las tres tablas acotado por la policy, INSERT con `tenant_id` ajeno
+bloqueado por `WITH CHECK`, los CHECK de saldo/estado/método, un crédito por
+venta —`ux_fiado_creditos_venta`— y la FK del abono al crédito). El job de CI
 convierte cualquier `SKIPPED` en fallo, así que «passed» aquí significa que
 corrieron todos:
 
