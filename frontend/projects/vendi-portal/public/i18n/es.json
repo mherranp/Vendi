@@ -100,6 +100,15 @@
       "dian_titulo": "Facturación electrónica DIAN",
       "dian_badge": "Próximamente",
       "dian_descripcion": "Factura electrónica y POS electrónico como add-on. Llega con la Fase 2."
+    },
+    "confianza": {
+      "titulo": "Hecho para la tienda de barrio",
+      "punto_1_titulo": "Funciona sin internet",
+      "punto_1_texto": "La venta nunca se para: registras en el mostrador y, cuando vuelve la conexión, todo se sincroniza solo.",
+      "punto_2_titulo": "Tus datos son de tu negocio",
+      "punto_2_texto": "Cada tienda ve solo lo suyo: tus ventas, tu fiado y tu caja no los ve nadie más.",
+      "punto_3_titulo": "Habla como se habla en el mostrador",
+      "punto_3_texto": "Pesos colombianos, granel por kilos y libras, y el fiado como se fía aquí: por persona y con confianza."
     }
   }
 }

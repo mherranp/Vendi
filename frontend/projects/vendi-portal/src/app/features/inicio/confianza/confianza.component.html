@@ -1,0 +1,13 @@
+<section class="confianza" id="confianza" aria-labelledby="confianza-titulo">
+  <h2 id="confianza-titulo" class="confianza__titulo">
+    {{ 'portal.confianza.titulo' | translate }}
+  </h2>
+  <div class="confianza__puntos">
+    @for (punto of puntos; track punto) {
+      <article class="confianza__punto">
+        <h3>{{ 'portal.confianza.' + punto + '_titulo' | translate }}</h3>
+        <p>{{ 'portal.confianza.' + punto + '_texto' | translate }}</p>
+      </article>
+    }
+  </div>
+</section>
