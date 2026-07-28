@@ -60,6 +60,19 @@ class TenantActualizar(BaseModel):
         return valor
 
 
+class TenantMioSalida(BaseModel):
+    """Lo mínimo para el selector de negocio: id, nombre y estado.
+
+    Sin `kc_org_id`: es un identificador del IdP que el tendero no necesita.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    nombre: str
+    estado: EstadoTenant
+
+
 class TenantSalida(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

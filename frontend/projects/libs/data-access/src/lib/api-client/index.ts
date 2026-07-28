@@ -624,6 +624,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tenants/mios": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Los negocios del usuario autenticado */
+        get: operations["mis_negocios_api_v1_tenants_mios_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1786,6 +1803,22 @@ export interface components {
         };
         /** TenantCrear */
         TenantCrear: {
+            /** Nombre */
+            nombre: string;
+        };
+        /**
+         * TenantMioSalida
+         * @description Lo mínimo para el selector de negocio: id, nombre y estado.
+         *
+         *     Sin `kc_org_id`: es un identificador del IdP que el tendero no necesita.
+         */
+        TenantMioSalida: {
+            estado: components["schemas"]["EstadoTenant"];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
             /** Nombre */
             nombre: string;
         };
@@ -3935,6 +3968,35 @@ export interface operations {
             };
             /** @description El negocio ya no existe */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    mis_negocios_api_v1_tenants_mios_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantMioSalida"][];
+                };
+            };
+            /** @description Sin token o token inválido */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -43,6 +43,7 @@ qué cambió en el contrato.
 | `GET /api/v1/platform/tenants` | `platform:admin` | listado paginado (`PagedList`) |
 | `GET/PATCH/DELETE /api/v1/platform/tenants/{id}` | `platform:admin` | ver, renombrar/suspender, dar de baja |
 | `GET /api/v1/tenants/me` | miembro del negocio | el negocio del token, y solo ése |
+| `GET /api/v1/tenants/mios` | (token, sin tenant) | Lista los negocios vivos del claim `organization` (id, nombre, estado), ordenados por nombre. Se sirve SIN `X-Tenant-Id` (excepción del middleware): es la lista del selector de negocio. |
 | `POST /api/v1/productos` | `producto:editar` | alta; acepta `id` del cliente (idempotente, ADR-017); 409 por EAN duplicado; 403 por límite del tier |
 | `GET /api/v1/productos` | `producto:leer` | listado paginado (`PagedList`) con `q` (nombre) y `categoria` |
 | `GET /api/v1/productos/por-codigo/{codigo}` | `producto:leer` | el camino del escáner: un EAN → un producto |

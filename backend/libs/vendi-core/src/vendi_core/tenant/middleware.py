@@ -90,6 +90,12 @@ PREFIJO_PLATAFORMA = "/api/v1/platform"
 # Header con el que un usuario multi-organización elige negocio.
 HEADER_TENANT = "X-Tenant-Id"
 
+#: Rutas autenticadas que NO resuelven tenant: el usuario todavía no ha
+#: elegido negocio — es justo lo que `/tenants/mios` le permite hacer. Sin
+#: esta excepción, un usuario con varias organizaciones recibiría 400
+#: `tenant_no_especificado` en el endpoint pensado para él.
+RUTAS_SIN_TENANT: frozenset[str] = frozenset({"/api/v1/tenants/mios"})
+
 # Cabecera que un navegador manda SOLO en el preflight de CORS. Su presencia en
 # un OPTIONS es la firma exacta del preflight y lo que lo distingue de un
 # OPTIONS de aplicación.
@@ -186,6 +192,9 @@ class TenantMiddleware(BaseHTTPMiddleware):
         if es_plataforma:
             # Las rutas de plataforma no llevan tenant. El permiso
             # `platform:admin` lo exige la dependencia del router, no esto.
+            return await call_next(request)
+
+        if request.url.path in RUTAS_SIN_TENANT:
             return await call_next(request)
 
         alias = list(user.organizations)

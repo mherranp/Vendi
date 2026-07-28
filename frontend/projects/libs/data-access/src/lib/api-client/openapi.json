@@ -2712,6 +2712,30 @@
         "title": "TenantCrear",
         "type": "object"
       },
+      "TenantMioSalida": {
+        "description": "Lo mínimo para el selector de negocio: id, nombre y estado.\n\nSin `kc_org_id`: es un identificador del IdP que el tendero no necesita.",
+        "properties": {
+          "estado": {
+            "$ref": "#/components/schemas/EstadoTenant"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "nombre": {
+            "title": "Nombre",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "nombre",
+          "estado"
+        ],
+        "title": "TenantMioSalida",
+        "type": "object"
+      },
       "TenantSalida": {
         "properties": {
           "created_at": {
@@ -5844,6 +5868,46 @@
           }
         },
         "summary": "El negocio de la sesión actual",
+        "tags": [
+          "negocio"
+        ]
+      }
+    },
+    "/api/v1/tenants/mios": {
+      "get": {
+        "operationId": "mis_negocios_api_v1_tenants_mios_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TenantMioSalida"
+                  },
+                  "title": "Response Mis Negocios Api V1 Tenants Mios Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Sin token o token inválido"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Los negocios del usuario autenticado",
         "tags": [
           "negocio"
         ]

@@ -155,6 +155,20 @@ class TenantService:
         )
         return list(filas), int(total)
 
+    async def listar_por_ids(self, ids: list[uuid.UUID]) -> list[Tenant]:
+        """Los negocios vivos de una lista de ids (los alias del token).
+
+        Sesión de plataforma (el constructor ya la exige): la tabla `tenants`
+        no es visible para el rol de aplicación. Los eliminados no vuelven:
+        un negocio dado de baja no se ofrece en el selector.
+        """
+        if not ids:
+            return []
+        consulta = (
+            select(Tenant).where(Tenant.id.in_(ids), Tenant.deleted_at.is_(None)).order_by(Tenant.nombre, Tenant.id)
+        )
+        return list((await self._session.execute(consulta)).scalars().all())
+
     async def estado_de(self, tenant_id: uuid.UUID) -> str | None:
         """Estado del negocio, con cache. `None` = no existe (o está eliminado).
 
