@@ -42,6 +42,20 @@ export const routes: Routes = [
           import('./features/inventario/inventario.component').then((m) => m.InventarioComponent),
       },
       {
+        path: 'cuaderno',
+        canActivate: [tenantGuard, permisoGuard('cliente:gestionar')],
+        loadComponent: () =>
+          import('./features/cuaderno/cuaderno.component').then((m) => m.CuadernoComponent),
+      },
+      {
+        path: 'cuaderno/creditos/:id',
+        canActivate: [tenantGuard, permisoGuard('cliente:gestionar')],
+        loadComponent: () =>
+          import('./features/cuaderno/credito-detalle.component').then(
+            (m) => m.CreditoDetalleComponent,
+          ),
+      },
+      {
         path: 'elegir-negocio',
         loadComponent: () =>
           import('./features/elegir-negocio/elegir-negocio.component').then(

@@ -16,6 +16,7 @@
     "cancelar": "Cancelar",
     "guardar": "Guardar",
     "eliminar": "Eliminar",
+    "editar": "Editar",
     "buscar": "Buscar",
     "cerrar": "Cerrar",
     "reintentar": "Reintentar"
@@ -244,6 +245,88 @@
       "costo": "Costo unitario (pesos)",
       "agregar_item": "Agregar ítem",
       "invalido": "Revisa la compra: proveedor, cantidades mayores que cero y costos válidos."
+    }
+  },
+  "cuaderno": {
+    "titulo": "Mi cuaderno",
+    "subtitulo": "Clientes, fiados y abonos",
+    "fallo": "No pudimos cargar el cuaderno.",
+    "buscar_placeholder": "Buscar cliente…",
+    "nuevo_cliente": "Nuevo cliente",
+    "editar_cliente": "Editar cliente",
+    "ver": "Ver",
+    "vencidos": "{{cantidad}} créditos vencidos esperando cobro",
+    "seccion": {
+      "clientes": "Clientes",
+      "creditos": "Fiados"
+    },
+    "filtro": {
+      "por_cobrar": "Por cobrar",
+      "vencido": "Solo vencidos",
+      "todos": "Todos (incluye saldados)"
+    },
+    "columna": {
+      "nombre": "Cliente",
+      "telefono": "Teléfono",
+      "saldo": "Debe",
+      "cliente": "Cliente",
+      "monto": "Fiado",
+      "debe": "Debe",
+      "vence": "Vence",
+      "estado": "Estado",
+      "acciones": "Acciones"
+    },
+    "estado": {
+      "vigente": "Vigente",
+      "vencido": "Vencido",
+      "saldado": "Saldado",
+      "anulado": "Anulado"
+    },
+    "cupo_excedido": "Cupo excedido",
+    "vacio": {
+      "clientes_titulo": "Todavía no hay clientes",
+      "clientes_descripcion": "Crea el primero para poder fiarle y llevar la cuenta.",
+      "creditos_titulo": "Sin fiados en esta vista",
+      "creditos_descripcion": "Cuando el POS fíe una venta, aparecerá aquí."
+    },
+    "campo": {
+      "nombre": "Nombre",
+      "telefono": "Teléfono (WhatsApp)",
+      "telefono_ayuda": "Con indicativo o sin él: lo usa el botón de cobro por WhatsApp.",
+      "cupo": "Cupo de crédito (pesos)",
+      "cupo_ayuda": "Vacío = sin cupo. En edición, vaciarlo BORRA el cupo.",
+      "nota": "Nota"
+    },
+    "formulario": {
+      "invalido": "Revisa el formulario: el nombre es obligatorio y el cupo no puede ser negativo."
+    },
+    "abono": {
+      "accion": "Registrar abono",
+      "titulo": "Abono al fiado",
+      "saldo": "Debe {{monto}}",
+      "monto": "Monto (pesos)",
+      "monto_ayuda": "En efectivo entra a la caja abierta; sin caja abierta el servidor lo rechaza.",
+      "metodo": "Método de pago",
+      "invalido": "Revisa el monto: debe ser mayor que cero."
+    },
+    "metodo": {
+      "efectivo": "Efectivo",
+      "transferencia": "Transferencia",
+      "otro": "Otro"
+    },
+    "detalle": {
+      "volver": "Volver al cuaderno",
+      "fiado_de": "Fiado",
+      "debe": "Debe",
+      "vence": "Vence",
+      "sin_fecha": "Sin fecha de vencimiento — sin recordatorio",
+      "whatsapp": "Cobrar por WhatsApp",
+      "reprogramar": "Cambiar vencimiento",
+      "guardar_fecha": "Guardar fecha",
+      "quitar_fecha": "Quitar fecha",
+      "abonos": "Abonos",
+      "sin_abonos": "Todavía no hay abonos",
+      "fallo": "No pudimos cargar el fiado."
     }
   },
   "menu": {

@@ -1,0 +1,102 @@
+<a matButton="outlined" routerLink="/cuaderno" class="vd-credito__volver">
+  <mat-icon aria-hidden="true">arrow_back</mat-icon>
+  {{ 'cuaderno.detalle.volver' | translate }}
+</a>
+
+@if (cargando()) {
+  <vd-loading-spinner />
+}
+
+@if (fallo()) {
+  <div class="vd-credito__fallo" role="alert">
+    <span>{{ 'cuaderno.detalle.fallo' | translate }}</span>
+    <button matButton type="button" (click)="cargar()">
+      {{ 'comun.reintentar' | translate }}
+    </button>
+  </div>
+}
+
+@if (credito(); as c) {
+  <mat-card class="vd-credito__tarjeta">
+    <mat-card-header>
+      <mat-card-title>
+        {{ c.cliente_nombre }}
+        <vd-status-badge
+          [etiqueta]="'cuaderno.estado.' + c.estado | translate"
+          [variante]="varianteDeEstado(c.estado)"
+        />
+      </mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      <dl class="vd-credito__montos">
+        <div>
+          <dt>{{ 'cuaderno.detalle.fiado_de' | translate }}</dt>
+          <dd>{{ formatear(c.monto_total) }}</dd>
+        </div>
+        <div>
+          <dt>{{ 'cuaderno.detalle.debe' | translate }}</dt>
+          <dd>{{ formatear(c.saldo_pendiente) }}</dd>
+        </div>
+        <div>
+          <dt>{{ 'cuaderno.detalle.vence' | translate }}</dt>
+          <dd>
+            @if (c.fecha_vencimiento) {
+              {{ c.fecha_vencimiento }}
+            } @else {
+              {{ 'cuaderno.detalle.sin_fecha' | translate }}
+            }
+          </dd>
+        </div>
+      </dl>
+
+      <div class="vd-credito__acciones">
+        <!-- El enlace lo prearma el backend (en pesos y con el teléfono del
+             cliente); aquí solo se enlaza, nunca se reconstruye. -->
+        @if (c.whatsapp_url) {
+          <a matButton="outlined" [href]="c.whatsapp_url" target="_blank" rel="noopener">
+            <mat-icon aria-hidden="true">chat</mat-icon>
+            {{ 'cuaderno.detalle.whatsapp' | translate }}
+          </a>
+        }
+        <button
+          matButton="filled"
+          type="button"
+          *vdHasPermission="'fiado:abonar'"
+          [disabled]="c.estado === 'saldado' || c.estado === 'anulado'"
+          (click)="registrarAbono()"
+        >
+          <mat-icon aria-hidden="true">payments</mat-icon>
+          {{ 'cuaderno.abono.accion' | translate }}
+        </button>
+      </div>
+
+      <div class="vd-credito__reprogramar" *vdHasPermission="'fiado:crear'">
+        <label for="vd-nueva-fecha">{{ 'cuaderno.detalle.reprogramar' | translate }}</label>
+        <input id="vd-nueva-fecha" type="date" [(ngModel)]="nuevaFecha" />
+        <button matButton="outlined" type="button" (click)="guardarVencimiento()">
+          {{ 'cuaderno.detalle.guardar_fecha' | translate }}
+        </button>
+        <button matButton type="button" (click)="quitarVencimiento()">
+          {{ 'cuaderno.detalle.quitar_fecha' | translate }}
+        </button>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <h2 class="vd-credito__seccion">{{ 'cuaderno.detalle.abonos' | translate }}</h2>
+  @if (c.abonos.length === 0) {
+    <p class="vd-credito__sin-abonos">{{ 'cuaderno.detalle.sin_abonos' | translate }}</p>
+  }
+  <ul class="vd-credito__abonos">
+    @for (abono of c.abonos; track abono.id) {
+      <li>
+        <span>{{ fechaDeAbono(abono.created_at) }}</span>
+        <span>{{ 'cuaderno.metodo.' + abono.metodo_pago | translate }}</span>
+        <strong>{{ formatear(abono.monto) }}</strong>
+        @if (abono.nota) {
+          <span class="vd-credito__nota">{{ abono.nota }}</span>
+        }
+      </li>
+    }
+  </ul>
+}

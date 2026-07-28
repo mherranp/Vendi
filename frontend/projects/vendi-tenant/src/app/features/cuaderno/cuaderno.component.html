@@ -1,0 +1,128 @@
+<vd-page-header titulo="cuaderno.titulo" subtitulo="cuaderno.subtitulo">
+  <div slot="acciones" class="vd-cuaderno__acciones">
+    <mat-form-field class="vd-cuaderno__busqueda">
+      <input
+        matInput
+        type="search"
+        [placeholder]="'cuaderno.buscar_placeholder' | translate"
+        [(ngModel)]="consulta"
+        (keyup.enter)="buscar()"
+      />
+    </mat-form-field>
+    <button matButton="outlined" type="button" [disabled]="cargando()" (click)="buscar()">
+      <mat-icon aria-hidden="true">search</mat-icon>
+      {{ 'comun.buscar' | translate }}
+    </button>
+    <button
+      matButton="filled"
+      type="button"
+      *vdHasPermission="'cliente:gestionar'"
+      [disabled]="cargando()"
+      (click)="crearCliente()"
+    >
+      <mat-icon aria-hidden="true">person_add</mat-icon>
+      {{ 'cuaderno.nuevo_cliente' | translate }}
+    </button>
+  </div>
+</vd-page-header>
+
+@if (fallo()) {
+  <!--
+    Salida del callejón sin salida: cuando el listado falla, el aviso del
+    interceptor se desvanece y sin esto la pantalla queda vacía y muda.
+  -->
+  <div class="vd-cuaderno__fallo" role="alert">
+    <span>{{ 'cuaderno.fallo' | translate }}</span>
+    <button matButton type="button" (click)="recargar()">
+      {{ 'comun.reintentar' | translate }}
+    </button>
+  </div>
+}
+
+<!-- El gesto de cobro del día: cuántos fiados vencidos hay y un atajo para verlos. -->
+@if (totalVencidos() > 0) {
+  <div class="vd-cuaderno__vencidos" role="status">
+    <mat-icon aria-hidden="true">notification_important</mat-icon>
+    <span>{{ 'cuaderno.vencidos' | translate: { cantidad: totalVencidos() } }}</span>
+    <button matButton="outlined" type="button" (click)="filtrarEstado('vencido')">
+      {{ 'cuaderno.filtro.vencido' | translate }}
+    </button>
+  </div>
+}
+
+<h2 class="vd-cuaderno__seccion">{{ 'cuaderno.seccion.clientes' | translate }}</h2>
+<vd-data-table
+  [columnas]="columnasClientes()"
+  [filas]="clientes()"
+  [total]="totalClientes()"
+  [cargando]="cargando()"
+  [indicePagina]="indiceClientes()"
+  [tamanoPagina]="tamanoPagina"
+  iconoVacio="group"
+  tituloVacio="cuaderno.vacio.clientes_titulo"
+  descripcionVacio="cuaderno.vacio.clientes_descripcion"
+  (paginaCambia)="alPaginarClientes($event)"
+/>
+
+<!-- El saldo viaja en centavos: al usuario se le muestra en pesos. El cupo
+     excedido es advertencia, nunca bloqueo (ADR-022). -->
+<ng-template #celdaSaldo let-fila>
+  <span class="vd-cuaderno__saldo">
+    {{ formatear(fila.saldo_pendiente_total) }}
+    @if (fila.cupo_excedido) {
+      <vd-status-badge etiqueta="cuaderno.cupo_excedido" variante="aviso" />
+    }
+  </span>
+</ng-template>
+
+<ng-template #celdaAccionesCliente let-fila>
+  <button
+    matButton="outlined"
+    type="button"
+    *vdHasPermission="'cliente:gestionar'"
+    (click)="editarCliente(fila)"
+  >
+    {{ 'comun.editar' | translate }}
+  </button>
+</ng-template>
+
+<div class="vd-cuaderno__encabezado-creditos">
+  <h2 class="vd-cuaderno__seccion">{{ 'cuaderno.seccion.creditos' | translate }}</h2>
+  <mat-form-field class="vd-cuaderno__filtro">
+    <mat-select [value]="estadoFiltro()" (selectionChange)="filtrarEstado($event.value)">
+      <mat-option [value]="null">{{ 'cuaderno.filtro.por_cobrar' | translate }}</mat-option>
+      <mat-option value="vencido">{{ 'cuaderno.filtro.vencido' | translate }}</mat-option>
+      <mat-option value="todos">{{ 'cuaderno.filtro.todos' | translate }}</mat-option>
+    </mat-select>
+  </mat-form-field>
+</div>
+
+<vd-data-table
+  [columnas]="columnasCreditos()"
+  [filas]="creditos()"
+  [total]="totalCreditos()"
+  [cargando]="cargando()"
+  [indicePagina]="indiceCreditos()"
+  [tamanoPagina]="tamanoPagina"
+  iconoVacio="menu_book"
+  tituloVacio="cuaderno.vacio.creditos_titulo"
+  descripcionVacio="cuaderno.vacio.creditos_descripcion"
+  (paginaCambia)="alPaginarCreditos($event)"
+/>
+
+<ng-template #celdaMonto let-fila>{{ formatear(fila.monto_total) }}</ng-template>
+
+<ng-template #celdaDebe let-fila>{{ formatear(fila.saldo_pendiente) }}</ng-template>
+
+<ng-template #celdaEstado let-fila>
+  <vd-status-badge
+    [etiqueta]="etiquetaDeEstado(fila.estado)"
+    [variante]="varianteDeEstado(fila.estado)"
+  />
+</ng-template>
+
+<ng-template #celdaAccionesCredito let-fila>
+  <button matButton="outlined" type="button" (click)="verCredito(fila)">
+    {{ 'cuaderno.ver' | translate }}
+  </button>
+</ng-template>
