@@ -666,6 +666,19 @@ gate de la Etapa 1.2 del plan maestro. Plan:
 (12 tareas TDD, commits `a991a68`…`fd55d86`, cada una con revisión
 independiente registrada en `.superpowers/sdd/`).
 
+> **Post-cierre (mismo día).** La revisión de rama y el QA adversarial
+> añadieron correcciones ya en `main`: el mensaje de cobro por WhatsApp
+> mostraba el saldo en centavos como si fueran pesos (100× inflado, con el
+> test codificando el error) — `f79097c`; una inversión de orden de bloqueo
+> entre abono y anulación (deadlock reproducido por el QA con
+> `deadlock detected` real) — el abono ahora bloquea la sesión antes que el
+> crédito (`f79097c`); el upgrade del placeholder ya no pisa ediciones REST
+> intermedias y la venta fiada a un cliente inexistente sale
+> `cliente_no_encontrado` sin arrastrar el lote (`2006f59`). El QA añadió
+> 23 tests adversariales (`a8681c3`). Deuda nueva: D-27/D-28. HEAD de
+> código de cierre real: `2006f59` — run ci 30334755086 en verde:
+> **455 integration + 430 unitarios, 0 SKIPPED**.
+
 Los comandos del gate que exigen el stack (migrar, tests de integración,
 `verify-setup.sh`) se citan desde el CI, que los ejecuta contra PostgreSQL,
 RabbitMQ y Keycloak reales en cada push: el run de corte es el `ci`
