@@ -53,6 +53,7 @@ async def limpiar_tenants_de_prueba(pg_platform_url: str):
                 # dispositivo y sesión de caja. Borrar en otro orden rompe la
                 # re-entrada de la suite con una violación de FK.
                 for tabla in (
+                    "caja_movimientos",
                     "movimientos_inventario",
                     "compra_items",
                     "ajustes_inventario",

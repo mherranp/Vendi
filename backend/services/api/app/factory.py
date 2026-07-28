@@ -86,6 +86,7 @@ from starlette.middleware import Middleware
 
 from app import health, metrics
 from app.lifespan import construir_recursos, lifespan, publicar_en_estado
+from app.modules.caja.router import router as router_caja
 from app.modules.catalogo.router import router as router_catalogo
 from app.modules.inventario.router import router as router_inventario
 from app.modules.platform.router import router as router_plataforma
@@ -202,5 +203,6 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(router_catalogo, prefix="/api/v1")
     app.include_router(router_ventas, prefix="/api/v1")
     app.include_router(router_inventario, prefix="/api/v1")
+    app.include_router(router_caja, prefix="/api/v1")
 
     return app
