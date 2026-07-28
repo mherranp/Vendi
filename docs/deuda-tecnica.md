@@ -19,6 +19,7 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 | D-26 | Una sesión puede cerrarse con `efectivo_esperado` NEGATIVO sin error (un egreso mayor que todo el efectivo de la sesión; decisión de producto pendiente: ¿advertencia al cerrar?) | Fase 1 (antes del piloto) | backend |
 | D-28 | No hay delta de clientes hacia dispositivos: un cliente creado en una caja llega a la otra solo online (GET /clientes) | Fase 1 (antes del piloto) | backend |
 | D-29 | La auth nativa de vendi-app (login por navegador del sistema: @capacitor/browser + esquema co.vendi.app:// + asset links para passkeys) no existe: la app autentica con el flujo WEB y el canal del piloto es la PWA instalada; el AAB nativo sigue siendo artefacto de CI | Fase 1 (antes del piloto nativo) | frontend |
+| D-30 | Flake: la ordenación del outbox por `created_at` (= inicio de la transacción) puede invertir niveles de alerta entre eventos de la misma transacción; el test adversarial de inventario falla intermitente | Fase 1 (antes del piloto) | backend |
 
 Cerradas en la Etapa 5, con su evidencia al final de este documento: **D-01**
 (ROPC), **D-04** (Keycloak sin `--optimized`), **D-06** (`alembic_version`
@@ -482,6 +483,38 @@ dispositivo, o re-firmar la PWA como canal definitivo con su justificación.
   [`docs/estado.md`](estado.md) declara la PWA como canal del piloto y el AAB
   como artefacto de CI, con el run `android` en verde como evidencia de que
   el workflow sigue produciéndolo sin cambios.
+
+---
+
+## D-30 · Flake: la ordenación del outbox por `created_at` puede invertir niveles de alerta
+
+**Qué es.** `test_inventario_adversarial.py::test_dos_ventas_concurrentes_...`
+falla de forma intermitente (reproducido ~5/10 en local, una vez en CI): el
+`created_at` de `outbox_messages` es `now()` —inicio de la transacción— y la
+ordenación por `(created_at, id)` puede invertir el orden real de los eventos
+`bajo`/`agotado` cuando dos alertas confirman en la misma transacción o en
+transacciones que comparten el mismo `now()`.
+
+**Por qué queda abierta.** El flake está en la lectura del test (asume orden
+cronológico estricto entre eventos) y, de fondo, en que el outbox no tiene
+una secuencia monotónica propia. Arreglarlo de verdad es decidir si el
+outbox gana una columna `secuencia` (migración + consumo) o si los tests de
+alertas ordenan por `id`/no asumen orden. No es defecto del módulo de
+inventario: la emisión exactamente-una-por-cruce está probada; es el orden
+entre eventos lo que no está garantizado.
+
+**Riesgo si se olvida.** Un CI rojo intermitente erosiona la señal del gate
+(la regla del repo es que un rojo para la línea: con un flake conocido la
+tentación es re-lanzar sin mirar, y entonces el rojo real pasa desapercibido).
+
+**Vencimiento: antes del piloto.** Elegir e implementar una de las dos
+correcciones (secuencia monotónica del outbox o tests que no asuman orden
+estricto entre eventos de la misma transacción).
+
+**Candados mientras tanto:** el test del cruce único
+(`test_cruzar_hacia_abajo_emite_un_evento_por_cruce_y_no_por_movimiento`) y el
+anti-spam (`test_dos_ventas_bajo_el_minimo_emiten_una_sola_alerta`) fijan la
+emisión correcta sin depender del orden entre eventos.
 
 ---
 
