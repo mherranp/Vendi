@@ -43,6 +43,7 @@ export { FeatureFlagsService } from './lib/services/feature-flags.service';
 export { VendiDb } from './lib/offline/vendi.db';
 export { VentasOfflineService } from './lib/offline/ventas-offline.service';
 export type { EntradaCobro } from './lib/offline/ventas-offline.service';
+export { DispositivoService } from './lib/offline/dispositivo.service';
 export type {
   ClaveMeta,
   ClienteLocal,
