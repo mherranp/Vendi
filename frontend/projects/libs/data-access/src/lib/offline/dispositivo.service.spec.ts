@@ -74,7 +74,10 @@ describe('DispositivoService (registro, ADR-017)', () => {
     await db.meta.put({ clave: 'ultima_secuencia', valor: 5 });
     const promesa = servicio.asegurarRegistro();
     (await esperarPeticion(http, '/api/v1/dispositivos')).flush({
-      id: 'x', nombre: 'Caja 1', ultima_secuencia: 3, ultima_sync: null,
+      id: 'x',
+      nombre: 'Caja 1',
+      ultima_secuencia: 3,
+      ultima_sync: null,
     });
     await promesa;
     expect((await db.meta.get('ultima_secuencia'))?.valor).toBe(5);
@@ -83,7 +86,10 @@ describe('DispositivoService (registro, ADR-017)', () => {
   it('adopta la secuencia del servidor si va por delante', async () => {
     const promesa = servicio.asegurarRegistro();
     (await esperarPeticion(http, '/api/v1/dispositivos')).flush({
-      id: 'x', nombre: 'Caja 1', ultima_secuencia: 7, ultima_sync: null,
+      id: 'x',
+      nombre: 'Caja 1',
+      ultima_secuencia: 7,
+      ultima_sync: null,
     });
     await promesa;
     expect((await db.meta.get('ultima_secuencia'))?.valor).toBe(7);
