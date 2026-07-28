@@ -3741,7 +3741,7 @@
         ]
       },
       "post": {
-        "description": "En la MISMA transacción: la compra, sus ítems, un movimiento `compra`\npor línea, `stock_actual` y `ultimo_costo` de cada producto, y el evento\n`compra.registrada` (ADR-020). Acepta el `id` que traiga el cliente\n(ADR-017): reenviar la misma compra devuelve la existente, sin duplicar\nfila, stock ni evento. El total lo calcula el servidor por línea; el\n`proveedor_nombre` es texto libre (la factura es un papel: no hay tabla\nde proveedores).",
+        "description": "En la MISMA transacción: la compra, sus ítems, un movimiento `compra`\npor línea, `stock_actual` y `ultimo_costo` de cada producto, y el evento\n`compra.registrada` (ADR-020). Acepta el `id` que traiga el cliente\n(ADR-017): reenviar la MISMA compra devuelve la existente, sin duplicar\nfila, stock ni evento; el reenvío con datos distintos es 409\n`compra_id_divergente` (D-19). El total lo calcula el servidor por línea;\nel `proveedor_nombre` es texto libre (la factura es un papel: no hay\ntabla de proveedores).",
         "operationId": "registrar_compra_api_v1_compras_post",
         "requestBody": {
           "content": {
@@ -3792,7 +3792,7 @@
                 }
               }
             },
-            "description": "El id de la compra ya existe (en este u otro negocio)"
+            "description": "El id de la compra ya existe (en este u otro negocio) o existe con datos distintos"
           },
           "422": {
             "content": {

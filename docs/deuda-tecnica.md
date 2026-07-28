@@ -18,6 +18,7 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 | D-25 | Una compra con `costo_unitario = 0` deja `ultimo_costo = 0` y el P&L mostrará margen del 100% hasta la próxima compra con costo real (decisión de producto pendiente) | Fase 1 (antes del piloto) | backend |
 | D-26 | Una sesión puede cerrarse con `efectivo_esperado` NEGATIVO sin error (un egreso mayor que todo el efectivo de la sesión; decisión de producto pendiente: ¿advertencia al cerrar?) | Fase 1 (antes del piloto) | backend |
 | D-28 | No hay delta de clientes hacia dispositivos: un cliente creado en una caja llega a la otra solo online (GET /clientes) | Fase 1 (antes del piloto) | backend |
+| D-29 | La auth nativa de vendi-app (login por navegador del sistema: @capacitor/browser + esquema co.vendi.app:// + asset links para passkeys) no existe: la app autentica con el flujo WEB y el canal del piloto es la PWA instalada; el AAB nativo sigue siendo artefacto de CI | Fase 1 (antes del piloto nativo) | frontend |
 
 Cerradas en la Etapa 5, con su evidencia al final de este documento: **D-01**
 (ROPC), **D-04** (Keycloak sin `--optimized`), **D-06** (`alembic_version`
@@ -439,6 +440,48 @@ contraria con su justificación si el piloto es monocaja.
 - `GET /api/v1/clientes` con búsqueda por nombre
   (`test_fiado_servicio.py::test_buscar_por_nombre`) es el camino online
   completo mientras tanto.
+
+---
+
+## D-29 · La auth nativa de `vendi-app` no existe: el canal del piloto es la PWA
+
+**Qué es.** El plan maestro de la Etapa 1.3 pedía login por navegador del
+sistema (`@capacitor/browser` + esquema `co.vendi.app://` + asset links para
+passkeys). La pista móvil entregó el POS offline completo con el flujo **WEB**
+(`AuthService`/`authGuard`/`tenantGuard` tal cual están, passkey en el
+navegador) y dejó lo nativo para su propio subproyecto: la app del piloto es
+la **PWA instalada** — que en Chrome Android tiene passkeys, service worker
+de assets e IndexedDB, todo lo que el POS offline necesita. El AAB nativo
+sigue siendo artefacto de CI (`android.yml` intacto) pero NO es el canal del
+piloto.
+
+**Por qué se aceptó.** Decisión 1 del plan de la pista móvil (tensión
+declarada con el plan maestro, no escondida). El flujo nativo exige la
+fachada en `native`, el manejo del deep-link de retorno (`appUrlOpen`), el
+flujo OIDC manual fuera de keycloak-js (que navega con `window.location` y no
+sirve para volver a la app), la asociación de asset links para passkeys y
+—sobre todo— pruebas en dispositivo real que no son TDD-ables en CI. Es un
+subproyecto propio, no una tarea más del cierre.
+
+**Riesgo si se olvida.** El AAB instalado no puede iniciar sesión: el login
+redirige dentro del WebView y el passkey falla. **Nadie debe repartir el AAB
+del CI como «la app»**: el artefacto que se instala en el piloto es la PWA.
+
+**Vencimiento: Fase 1, antes del piloto nativo / publicación** (depende de
+B-3). Entregar la auth por navegador del sistema con sus pruebas en
+dispositivo, o re-firmar la PWA como canal definitivo con su justificación.
+
+**Candados mientras tanto:**
+
+- El spec de `app.routes`
+  (`frontend/projects/vendi-app/src/app/app.spec.ts`, el candado invertido de
+  la decisión 10 del plan) fija que la ruta del POS lleva `authGuard` +
+  `tenantGuard` y que `/elegir-negocio` no lleva `tenantGuard`: nadie
+  improvisa un login dentro del WebView sin romper el test.
+- La sección «POS offline-first en `vendi-app`» de
+  [`docs/estado.md`](estado.md) declara la PWA como canal del piloto y el AAB
+  como artefacto de CI, con el run `android` en verde como evidencia de que
+  el workflow sigue produciéndolo sin cambios.
 
 ---
 

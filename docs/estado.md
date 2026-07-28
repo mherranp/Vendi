@@ -880,6 +880,172 @@ dos muerde de verdad, se registra con su vencimiento.
 
 ---
 
+## POS offline-first en `vendi-app` (Fase 1, Etapa 1.3, pista móvil)
+
+Fecha de corte: **2026-07-28**. La pista móvil de la Etapa 1.3 —el POS
+offline-first del MVP: la venta NUNCA depende del internet—, cerrada con su
+gate. Plan: el brief de la pista en `.superpowers/sdd/pos-task-10-brief.md`
+(10 tareas TDD, commits `84060a4`…`a70c08c`, cada una con revisión
+independiente registrada en `.superpowers/sdd/`). Es el cierre del
+subproyecto 2 del plan maestro en su alcance honesto: **el POS offline está
+entregado; las features web de `vendi-tenant`, el `vendi-portal` comercial y
+la auth nativa por navegador del sistema siguen abiertos** (esta última
+registrada como **D-29**).
+
+A diferencia de los módulos de backend, **los tests del frontend corren en
+local** (Vitest sobre jsdom + `fake-indexeddb`, sin stack): la evidencia de
+esta sección es local, reproducida comando a comando al cierre, más el run
+del CI sobre el HEAD de corte `a70c08c` — `ci` **30352008836** en verde:
+
+```
+$ gh run list --workflow ci.yml --limit 3
+completed  success  Spec-candado retirado con el subproyecto 2…  ci  main  push  30352008836
+completed  success  POS offline en vendi-app…                    ci  main  push  30349891489
+completed  success  Cierra D-27…                                 ci  main  push  30348620074
+```
+
+### Qué se entregó, y el comando que lo demuestra
+
+**Dexie encapsulado en `data-access`, esquema local v1 (ADR-011/ADR-017).**
+`VendiDb` (`frontend/projects/libs/data-access/src/lib/offline/vendi.db.ts`)
+con las cinco tablas firmadas — `productos`, `clientes`, `ventas_locales`,
+`cola_sync`, `meta` — y sus specs sobre `fake-indexeddb`:
+
+```
+$ cd frontend && npx ng test --watch=false
+ ✓ |data-access| projects/libs/data-access/src/lib/offline/vendi.db.spec.ts (3 tests)
+ ✓ |data-access| …/offline/ventas-offline.service.spec.ts (8 tests)
+ ✓ |data-access| …/offline/catalogo-local.service.spec.ts (5 tests)
+ ✓ |data-access| …/offline/dispositivo.service.spec.ts (5 tests)
+ ✓ |data-access| …/offline/sincronizador.service.spec.ts (8 tests)
+```
+
+**El outbox local atómico y el motor de drenado.** La escritura de negocio,
+el encolado y los contadores (`consecutivo_local`, `ultima_secuencia`) en UNA
+transacción Dexie (`ventas-offline.service.ts`, 8 specs); el drenado FIFO por
+`secuencia` con veredictos por operación, backoff por lote ante fallo de
+transporte, dead-letters visibles (`rechazada` = `estado: 'error'` + motivo,
+sin bloquear el FIFO) y las `enviando` huérfanas de vuelta a `pendiente` al
+arrancar (`sincronizador.service.ts`, 8 specs). Los candados firmados de
+ADR-017 corren aquí: la cola sobrevive a la «recarga» (cerrar la instancia y
+abrir otra con el mismo nombre) y drena en orden.
+
+**Registro del dispositivo y delta al IndexedDB.** `dispositivo.service.ts`
+(UUIDv4 local persistido, `POST /api/v1/dispositivos`, reconciliación
+`ultima_secuencia = max(local, servidor)`; el 409 de registro es bloqueo
+visible, no curación inventada) y `catalogo-local.service.ts` (delta con
+watermark `hasta` y tumbas, búsqueda offline por nombre y `codigo_barras`,
+asimilación ONLINE de clientes por `GET /api/v1/clientes` — rodeo declarado
+de D-28).
+
+**Aritmética exacta del ticket en `domain` (TS puro, ADR-018).** Dinero en
+centavos enteros, granel en mili-unidades, redondeo half-up por línea y total
+del ticket como suma de líneas ya redondeadas; el `cantidad` del payload
+viaja como string de 3 decimales:
+
+```
+ ✓ |domain| projects/libs/domain/src/lib/reglas/dinero.spec.ts (8 tests)
+```
+
+**El POS en `vendi-app`.** Catálogo local con búsqueda, ticket con cantidades
+granel de 3 decimales, cobro en efectivo y fiado — fiado SOLO con cliente
+conocido, con `cliente.crear` encolado FIFO antes que la venta —,
+`consecutivo_local` monotónico por dispositivo, estado de la cola visible y
+reintento manual:
+
+```
+ ✓ |vendi-app| projects/vendi-app/src/app/features/pos/pos.component.spec.ts (8 tests)
+ ✓ |vendi-app| projects/vendi-app/src/app/app.spec.ts (4 tests)
+```
+
+El `app.spec.ts` es el **candado invertido**: el spec-candado de Fase 0 («NO
+hay ninguna ruta protegida») se retiró y su inverso afirma que la ruta del
+POS lleva `authGuard` + `tenantGuard` y que `/elegir-negocio` no lleva
+`tenantGuard` (decisión 10 del plan). La frontera ESLint de `dexie` quedó
+cerrada también en `vendi-app` (candado 3 de ADR-017, con sonda): `dexie`
+solo se importa en `data-access`.
+
+**Gate completo verde: 9 proyectos en test y lint, formato, build de
+producción, sin URLs de desarrollo.**
+
+```
+$ cd frontend && npx ng test --watch=false   # exit 0
+ Test Files  6 passed (6)   ·  Tests  52 passed (52)   — auth
+ Test Files  12 passed (12) ·  Tests  85 passed (85)   — data-access
+ Test Files  3 passed (3)   ·  Tests  18 passed (18)   — domain
+ Test Files  2 passed (2)   ·  Tests  3 passed (3)     — native
+ Test Files  5 passed (5)   ·  Tests  54 passed (54)   — ui-kit
+ Test Files  5 passed (5)   ·  Tests  47 passed (47)   — vendi-admin
+ Test Files  2 passed (2)   ·  Tests  12 passed (12)   — vendi-app
+ Test Files  1 passed (1)   ·  Tests  2 passed (2)     — vendi-portal
+ Test Files  4 passed (4)   ·  Tests  22 passed (22)   — vendi-tenant
+$ npx ng lint                               # exit 0
+All files pass linting.   (×9 proyectos, fronteras incluidas)
+$ npm run format:check                      # exit 0
+All matched files use Prettier code style!
+$ npx ng build vendi-app --configuration production   # exit 0
+Initial total  438.56 kB  |  123.10 kB transfer   (pos-component: lazy chunk de 11.79 kB)
+$ grep -rE "localhost:[0-9]{4}|environment\.development" dist/vendi-app/browser || echo "sin URLs de desarrollo"
+sin URLs de desarrollo
+```
+
+**Codegen sin deriva — con una deriva PREEXISTENTE corregida en el cierre.**
+El gate `CODEGEN_SCHEMA_FILE=docs/api/openapi-fase0.json bash
+scripts/codegen-api-client.sh && git diff --exit-code` sale 0, pero el
+volcado en proceso de la API viva difería del congelado en **dos
+descripciones del módulo compras** (el texto quedó sin regenerar cuando D-19
+añadió el 409 `compra_id_divergente` a la descripción de `POST
+/api/v1/compras` y a la del 409). Ningún cambio de forma: solo descripciones.
+Se actualizaron el congelado y el cliente TS en el commit de este cierre
+(diff completo: 3 archivos, 10 inserciones, 9 borrados) y la regeneración
+quedó idempotente — segundo `codegen` consecutivo sin ningún diff nuevo y
+`tsc --noEmit` de `data-access` en verde.
+
+**`android.yml` intacto y budgets sin relajar.** Ningún commit de la pista
+tocó el workflow (sigue produciendo el AAB: run `android` **30352008876**
+success sobre el HEAD de corte) ni las líneas de budgets de `angular.json`
+(los dos commits que lo tocaron — `3018b5d`, el `setupFiles` de
+`fake-indexeddb`, y `b6958b5`, los assets del POS — no tocan ninguna línea
+`budget`/`maximum`):
+
+```
+$ git log --oneline 84060a4~1..a70c08c -- .github/workflows/android.yml
+(vacío: android.yml sin cambios en la pista)
+$ git show b6958b5 3018b5d -- frontend/angular.json | grep -E "budget|maximum"
+(vacío: budgets intactos)
+```
+
+### Alcance honesto y decisiones clave de la entrega
+
+- **Auth web, no nativa (D-29).** El POS autentica con `AuthService`,
+  `authGuard` y `tenantGuard` tal cual están (flujo web: passkey en el
+  navegador); **el canal del piloto es la PWA instalada** — passkeys, service
+  worker de assets e IndexedDB, todo lo que el POS offline necesita. La auth
+  nativa por navegador del sistema (`@capacitor/browser`, esquema
+  `co.vendi.app://`, asset links) exige deep-links y pruebas en dispositivo
+  no TDD-ables en CI: es un subproyecto propio, registrado como **D-29** con
+  vencimiento antes del piloto nativo. El AAB sigue siendo artefacto de CI,
+  NO el canal del piloto.
+- **Fiado offline solo con cliente conocido por el dispositivo** (creado en
+  el dispositivo — sube como `cliente.crear` FIFO antes que la venta — o
+  asimilado online; D-28 sigue abierta). Fiar sin cliente está bloqueado en
+  servicio y en UI. La `fecha_vencimiento` viaja `null` (se reprograma desde
+  la consola web; sin reloj confiable no se prometen fechas). El aviso
+  `cupo_excedido` no se muestra en el POS: vive en el cuaderno web.
+- **Candado invertido** en vez del spec-candado de Fase 0 (arriba).
+- **Sin anulación de ventas y sin escáner** en esta entrega: la búsqueda ya
+  resuelve `codigo_barras` exacto, así que un lector que «teclea» funciona
+  sin trabajo extra. Ambos quedan para la entrega siguiente de la pista.
+- **El E2E Playwright del flujo de dinero** queda para el gate posterior con
+  el stack levantado (Etapa 1.4): NO era de esta entrega. Y se declara:
+  `fake-indexeddb` EMULA IndexedDB, no ES IndexedDB — la verificación en
+  navegador real es parte de ese QA adversarial.
+- **Deuda nueva:** **D-29** (detalle en
+  [`docs/deuda-tecnica.md`](deuda-tecnica.md)). D-27 quedó cerrada en la
+  pista (`a88d874`); D-28 sigue abierta, rodeada por la asimilación online.
+
+---
+
 ## La suite de tests
 
 ```

@@ -185,10 +185,11 @@ export interface paths {
          * @description En la MISMA transacción: la compra, sus ítems, un movimiento `compra`
          *     por línea, `stock_actual` y `ultimo_costo` de cada producto, y el evento
          *     `compra.registrada` (ADR-020). Acepta el `id` que traiga el cliente
-         *     (ADR-017): reenviar la misma compra devuelve la existente, sin duplicar
-         *     fila, stock ni evento. El total lo calcula el servidor por línea; el
-         *     `proveedor_nombre` es texto libre (la factura es un papel: no hay tabla
-         *     de proveedores).
+         *     (ADR-017): reenviar la MISMA compra devuelve la existente, sin duplicar
+         *     fila, stock ni evento; el reenvío con datos distintos es 409
+         *     `compra_id_divergente` (D-19). El total lo calcula el servidor por línea;
+         *     el `proveedor_nombre` es texto libre (la factura es un papel: no hay
+         *     tabla de proveedores).
          */
         post: operations["registrar_compra_api_v1_compras_post"];
         delete?: never;
@@ -2503,7 +2504,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description El id de la compra ya existe (en este u otro negocio) */
+            /** @description El id de la compra ya existe (en este u otro negocio) o existe con datos distintos */
             409: {
                 headers: {
                     [name: string]: unknown;
