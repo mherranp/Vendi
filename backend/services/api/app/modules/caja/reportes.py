@@ -30,6 +30,7 @@ from app.modules.caja.models import CajaMovimiento
 from app.modules.caja.schemas import ForecastSalida, PyLSalida
 from app.modules.caja.service import calcular_desglose
 from app.modules.catalogo.models import Producto
+from app.modules.fiado.models import FiadoCredito
 from app.modules.inventario.models import Compra
 from app.modules.ventas.models import CajaSesion, Venta, VentaItem
 
@@ -169,7 +170,8 @@ class ReportesService:
     async def forecast(self) -> ForecastSalida:
         """La proyección a 30 días con el alcance honesto de los datos de hoy
         (decisión 9): saldo vivo + promedio de ventas en efectivo + cobros de
-        fiado (0, sin fuente hasta el módulo 5) − promedio de egresos de caja.
+        fiado (saldo de los créditos que vencen en la ventana, decisión 11 del
+        plan de fiado) − promedio de egresos de caja.
 
         «Promedio diario × 30» con los días sin datos contando 0 equivale al
         total de los últimos 30 días — y es conservador con la tienda nueva,
@@ -208,7 +210,21 @@ class ReportesService:
             # El saldo actual ES el esperado vivo de la sesión abierta: la
             # misma función del arqueo (decisión 3), jamás una copia.
             saldo = (await calcular_desglose(self._session, sesion)).esperado
-        cobros = 0  # ADR-022 (módulo 5): la tabla de abonos no existe.
+        hoy = datetime.now(ZONA_LOCAL).date()
+        # Los cobros que deberían entrar si cada fiado se paga a tiempo
+        # (módulo 5, decisión 11 del plan de fiado): saldo vivo de créditos
+        # vigente/vencido con vencimiento a 30 días o menos. Los ya vencidos
+        # cuentan — el cuaderno espera cobrarlos —; los sin fecha, no: sin
+        # fecha no hay promesa de pago (ADR-022).
+        cobros = int(
+            await self._session.scalar(
+                select(func.coalesce(func.sum(FiadoCredito.saldo_pendiente), 0)).where(
+                    FiadoCredito.estado.in_(("vigente", "vencido")),
+                    FiadoCredito.fecha_vencimiento.is_not(None),
+                    FiadoCredito.fecha_vencimiento <= hoy + timedelta(days=DIAS_DE_FORECAST),
+                )
+            )
+        )
         proyectado = saldo + ventas_30d + cobros - egresos_30d
         logger.info("forecast_calculado", saldo=saldo, proyectado=proyectado)
         return ForecastSalida(
@@ -221,14 +237,19 @@ class ReportesService:
             dias_con_datos=dias_con_datos,
             fuentes={
                 "saldo_actual": (
-                    "Esperado vivo de la sesión de caja abierta (base + ventas en efectivo + movimientos − "
-                    "devoluciones). Con 0 y «sin sesión abierta» cuando no hay caja abierta."
+                    "Esperado vivo de la sesión de caja abierta (base + ventas en efectivo + abonos de fiado "
+                    "en efectivo + movimientos − devoluciones). Con 0 y «sin sesión abierta» cuando no hay "
+                    "caja abierta."
                 ),
                 "ventas_proyectadas": (
                     "Promedio diario de ventas en efectivo completadas de los últimos 30 días × 30 "
                     "(los días sin datos cuentan 0 — conservador con la tienda nueva)."
                 ),
-                "cobros_fiado": "0: los abonos y vencimientos de fiado llegan con el módulo 5 (ADR-022).",
+                "cobros_fiado": (
+                    "Suma del saldo pendiente de los fiados vigentes o vencidos que vencen en los próximos 30 "
+                    "días (los ya vencidos cuentan). Los fiados sin fecha de vencimiento no entran: sin fecha "
+                    "no hay promesa de pago (ADR-022)."
+                ),
                 "egresos_proyectados": (
                     "Total de egresos de caja de los últimos 30 días. No hay gastos recurrentes "
                     "registrables en el MVP: es el proxy honesto, declarado."

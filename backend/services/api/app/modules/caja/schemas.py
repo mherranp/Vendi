@@ -93,8 +93,8 @@ class DesgloseSalida(BaseModel):
     """La cuenta del arqueo (ADR-021: «una cuenta, no una pantalla mágica»).
 
     `esperado = base + ventas_efectivo + abonos_efectivo + ingresos
-    − egresos − devoluciones`. `abonos_efectivo` es 0 hasta el módulo 5
-    (fiado, ADR-022) — declarado en `docs/api/README.md`."""
+    − egresos − devoluciones`. `abonos_efectivo` son los abonos de fiado en
+    efectivo de la sesión (ADR-021/022), sumados desde `fiado_abonos`."""
 
     base_inicial: int
     ventas_efectivo: int
@@ -172,8 +172,9 @@ class PyLSalida(BaseModel):
 
 class ForecastSalida(BaseModel):
     """El forecast a 30 días: una proyección explicada, no una promesa
-    (ADR-006). Cada número declara su fuente; lo que no tiene fuente todavía
-    (cobros de fiado) viaja en 0 y lo dice."""
+    (ADR-006). Cada número declara su fuente; los cobros de fiado proyectan
+    el saldo de los créditos que vencen en la ventana (los sin fecha no
+    entran, declarado)."""
 
     dias: int
     saldo_actual_centavos: int

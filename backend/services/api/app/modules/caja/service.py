@@ -51,6 +51,7 @@ from app.modules.caja.schemas import (
     SesionCerrar,
 )
 from app.modules.catalogo.schemas import TOPE_PRECIO
+from app.modules.fiado.models import FiadoAbono
 from app.modules.ventas.models import CajaSesion, Venta
 from vendi_core.errors.domain import ConflictError, NotFoundError, ValidationError
 from vendi_core.events.service import DomainEventService
@@ -99,13 +100,23 @@ class DesgloseArqueo:
 
 
 async def _abonos_en_efectivo_de_la_sesion(session: AsyncSession, sesion: CajaSesion) -> int:
-    """0 hasta el módulo 5 (fiado, ADR-022): la tabla de abonos no existe.
+    """Los abonos de fiado en efectivo cobrados en esta sesión (ADR-021:
+    entran al arqueo como la venta en efectivo, sumados desde su tabla de
+    origen — nunca duplicados como movimiento de caja).
 
-    PUNTO DE CAMBIO ÚNICO (decisión 3): cuando el módulo 5 la cree, el
-    `SUM(abonos en efectivo de la sesión)` va AQUÍ DENTRO y ni el arqueo, ni
-    el esperado vivo, ni el forecast se tocan. El argumento `session` queda
-    para esa firma futura."""
-    return 0
+    El abono guarda su `sesion_caja_id` al registrarse (módulo 5, decisión 9
+    del plan de fiado: el efectivo cae en la sesión abierta en ese momento,
+    como las ventas y los movimientos); los demás métodos llevan NULL y no
+    tocan la gaveta. Este es el punto de cambio único que la decisión 3 del
+    plan de caja dejó declarado: ni el arqueo, ni el esperado vivo, ni el
+    forecast cambian de forma — cambia la cuenta que aquí dentro era 0."""
+    abonos = await session.scalar(
+        select(func.coalesce(func.sum(FiadoAbono.monto), 0)).where(
+            FiadoAbono.sesion_caja_id == sesion.id,
+            FiadoAbono.metodo_pago == "efectivo",
+        )
+    )
+    return int(abonos)
 
 
 async def calcular_desglose(session: AsyncSession, sesion: CajaSesion) -> DesgloseArqueo:
@@ -121,7 +132,9 @@ async def calcular_desglose(session: AsyncSession, sesion: CajaSesion) -> Desglo
       veces. Las anuladas pre-módulo (`anulada_en NULL`) no existen en
       operación real (pre-piloto) y quedan excluidas por el `IS NOT NULL`.
     - Movimientos manuales de la sesión, por tipo.
-    - Abonos de fiado en efectivo: 0 (punto de cambio único, arriba).
+    - Abonos de fiado en efectivo de la sesión, sumados desde `fiado_abonos`
+      por su `sesion_caja_id` (ADR-021/022); los de otros métodos llevan
+      NULL y no tocan la gaveta.
 
     La ventana es `[abierta_en, cerrada_en)`; para la sesión abierta corre
     hasta ahora (el esperado VIVO)."""

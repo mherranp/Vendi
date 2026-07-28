@@ -128,7 +128,7 @@ async def cerrar_caja(
     _actor: UserContext = Depends(exigir_caja_cerrar),
 ) -> ArqueoConDesglose:
     """El arqueo (ADR-021): el servidor calcula `esperado = base + ventas en
-    efectivo + abonos (0 hasta el módulo 5) + ingresos − egresos −
+    efectivo + abonos de fiado en efectivo + ingresos − egresos −
     devoluciones` sumando desde las tablas de origen, y lo CONGELA con el
     `contado` y la `diferencia` en la sesión. Desde entonces nada lo reabre:
     ni una venta que sincroniza tarde, ni una anulación posterior. El
@@ -216,7 +216,7 @@ async def forecast(
     _actor: UserContext = Depends(exigir_reporte_leer),
 ) -> ForecastSalida:
     """Proyección explicada, no promesa (ADR-006): saldo vivo + promedio de
-    ventas en efectivo 30d + cobros de fiado (0 hasta el módulo 5,
-    declarado) − promedio de egresos de caja 30d. Cada número declara su
-    fuente."""
+    ventas en efectivo 30d + cobros de fiado (saldo de los créditos que
+    vencen en la ventana) − promedio de egresos de caja 30d. Cada número
+    declara su fuente."""
     return await servicio.forecast()

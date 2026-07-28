@@ -59,11 +59,11 @@ qué cambió en el contrato.
 | `POST /api/v1/caja/sesiones` | `caja:abrir` | abre la caja del día con `base_inicial`; UNA abierta por tienda (índice único parcial, ADR-021); acepta `id` del cliente (idempotente); 409 `caja_ya_abierta` si ya hay |
 | `GET /api/v1/caja/sesiones/actual` | `caja:leer` | la sesión abierta; `efectivo_esperado` viaja en `null` sin `caja:cerrar` (mismo patrón que `ultimo_costo`); 404 `caja_sin_sesion_abierta` |
 | `GET /api/v1/caja/sesiones` | `caja:cerrar` | historial paginado con el arqueo congelado (faltantes/sobrantes son del dueño) |
-| `POST /api/v1/caja/sesiones/{id}/cerrar` | `caja:cerrar` | el arqueo: calcula `esperado = base + ventas efectivo completadas + abonos (0 hasta el módulo 5) + ingresos − egresos − devoluciones` desde las tablas de origen y lo CONGELA; reintento con el mismo `contado` devuelve lo firmado, con otro es 409 `caja_ya_cerrada` |
+| `POST /api/v1/caja/sesiones/{id}/cerrar` | `caja:cerrar` | el arqueo: calcula `esperado = base + ventas efectivo completadas + abonos de fiado en efectivo + ingresos − egresos − devoluciones` desde las tablas de origen y lo CONGELA; reintento con el mismo `contado` devuelve lo firmado, con otro es 409 `caja_ya_cerrada` |
 | `POST /api/v1/caja/movimientos` | `caja:movimiento` | ingreso/egreso manual con `categoria` cerrada y `motivo` obligatorio; `id` del cliente requerido; reintento idéntico = no-op, divergente = 409; 409 `caja_sin_sesion_abierta` |
 | `GET /api/v1/caja/movimientos` | `caja:leer` | listado paginado de una sesión (la abierta por defecto) |
 | `GET /api/v1/reportes/pyl` | `reporte:leer` | P&L simple del período (`dia`/`semana`/`mes` en America/Bogota, `fecha` opcional); cada número declara su fuente en `fuentes`; el costo es `ultimo_costo` ACTUAL (declarado) |
-| `GET /api/v1/reportes/forecast` | `reporte:leer` | forecast a 30 días: saldo vivo + promedio ventas efectivo 30d + cobros fiado (0, declarado) − promedio egresos 30d |
+| `GET /api/v1/reportes/forecast` | `reporte:leer` | forecast a 30 días: saldo vivo + promedio ventas efectivo 30d + cobros fiado (saldo de créditos vigente/vencido que vencen en la ventana; los sin fecha no entran) − promedio egresos 30d |
 
 Todos los errores usan el mismo sobre: `{"success": false, "message": "...",
 "code": "..."}`. El `code` es estable y es el que debe consumir el frontend para
@@ -104,8 +104,9 @@ cajero no cierra ni ve reportes. El campo sigue presente en el esquema
 El arqueo cerrado no se recalcula jamás: las columnas congeladas de la
 sesión son la única fuente. Las ventas en efectivo y los abonos de fiado NO
 se duplican como movimientos (ADR-021): el arqueo los suma desde su tabla de
-origen — los abonos son 0 hasta el módulo 5 (ADR-022), declarado en el
-desglose y en el forecast. La devolución de una venta anulada tras el cierre
+origen — los abonos en efectivo desde `fiado_abonos` por la `sesion_caja_id`
+que guardan al registrarse (ADR-022); los de otros métodos no tocan la
+gaveta. La devolución de una venta anulada tras el cierre
 cae en la sesión abierta en ese momento (vía `ventas.anulada_en`).
 
 Eventos nuevos del outbox en este contrato: `caja.sesion_abierta`,

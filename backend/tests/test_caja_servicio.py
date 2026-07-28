@@ -32,6 +32,11 @@ from vendi_core.tenant.context import current_tenant_id
 pytestmark = pytest.mark.integration
 
 BORRADO = (
+    # Las tablas de fiado primero: sus FK (RESTRICT) apuntan a ventas,
+    # clientes y caja_sesiones.
+    "DELETE FROM fiado_abonos WHERE tenant_id = ANY(:ids)",
+    "DELETE FROM fiado_creditos WHERE tenant_id = ANY(:ids)",
+    "DELETE FROM clientes WHERE tenant_id = ANY(:ids)",
     "DELETE FROM caja_movimientos WHERE tenant_id = ANY(:ids)",
     "DELETE FROM movimientos_inventario WHERE tenant_id = ANY(:ids)",
     "DELETE FROM ventas_items WHERE tenant_id = ANY(:ids)",
@@ -301,7 +306,7 @@ async def test_el_movimiento_que_llega_tras_el_cierre_es_409_sin_fila_fantasma(s
 
 async def test_el_arqueo_suma_desde_las_tablas_de_origen_y_cuadra_al_peso(servicio, semilla, pg_platform_url):
     """El candado de ADR-021: `esperado = base + ventas efectivo completadas
-    + abonos (0, módulo 5) + ingresos − egresos − devoluciones`; la venta
+    + abonos en efectivo + ingresos − egresos − devoluciones`; la venta
     fiada NO suma y la anulada de la propia sesión tampoco."""
     sesion = await servicio.abrir_sesion(SesionAbrir.model_validate({"base_inicial": 50000}))
     await servicio._session.commit()
@@ -324,7 +329,7 @@ async def test_el_arqueo_suma_desde_las_tablas_de_origen_y_cuadra_al_peso(servic
     assert arqueo.estado == "cerrada" and arqueo.cerrada_por == "dueno-prueba"
     assert arqueo.desglose is not None
     assert (arqueo.desglose.ventas_efectivo, arqueo.desglose.ingresos, arqueo.desglose.egresos) == (10000, 20000, 8000)
-    assert arqueo.desglose.abonos_efectivo == 0  # declarado: los abonos son del módulo 5
+    assert arqueo.desglose.abonos_efectivo == 0  # sin abonos sembrados en esta sesión
     evento = await _uno(
         pg_platform_url,
         "SELECT payload->'data'->>'efectivo_esperado' AS esperado, payload->'data'->>'diferencia' AS diferencia "
@@ -613,3 +618,69 @@ async def test_anular_por_el_sync_estampa_anulada_en_y_la_devolucion_cae_en_la_s
         s=sesion_a.id,
     )
     assert (congelado.efectivo_esperado, congelado.diferencia) == (10000, 0)
+
+
+# --- Los abonos de fiado en el arqueo (módulo 5, decisión 9 del plan de fiado) ---------
+
+
+async def _fiado_con_abono(
+    pg_platform_url, semilla, sesion_id, monto_abono: int, metodo: str = "efectivo", consecutivo: int = 900
+) -> None:
+    """Un cliente, una venta fiada, su crédito y un abono atado a la sesión
+    (como lo deja `registrar_abono` del módulo 5)."""
+    engine = create_async_engine(pg_platform_url)
+    try:
+        async with engine.begin() as conn:
+            cliente, venta, credito, abono = uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+            await conn.execute(
+                text("INSERT INTO clientes (id, tenant_id, nombre) VALUES (:c, :t, 'Don Carlos')"),
+                {"c": cliente, "t": T1},
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO ventas (id, tenant_id, dispositivo_id, sesion_caja_id, consecutivo_local, "
+                    "medio_pago, total_centavos, cliente_id, creada_en_cliente, secuencia_dispositivo) "
+                    "VALUES (:v, :t, :d, :s, :cons, 'fiado', 100000, :c, now(), 1)"
+                ),
+                {"v": venta, "t": T1, "d": semilla["dispositivo"], "s": sesion_id, "c": cliente, "cons": consecutivo},
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO fiado_creditos (id, tenant_id, cliente_id, venta_id, monto_total, saldo_pendiente, estado) "
+                    "VALUES (:cr, :t, :c, :v, 100000, :s, 'vigente')"
+                ),
+                {"cr": credito, "t": T1, "c": cliente, "v": venta, "s": 100000 - monto_abono},
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO fiado_abonos (id, tenant_id, credito_id, sesion_caja_id, monto, metodo_pago, registrado_por) "
+                    "VALUES (:a, :t, :cr, :sc, :m, :mp, 'dueno')"
+                ),
+                {
+                    "a": abono,
+                    "t": T1,
+                    "cr": credito,
+                    "sc": sesion_id if metodo == "efectivo" else None,
+                    "m": monto_abono,
+                    "mp": metodo,
+                },
+            )
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_el_arqueo_suma_los_abonos_en_efectivo_de_la_sesion(servicio, semilla, pg_platform_url):
+    """El punto de cambio activado: `esperado = base + ventas efectivo +
+    abonos efectivo + ingresos − egresos − devoluciones` (ADR-021). La
+    transferencia NO entra: no tocó la gaveta (decisión 9)."""
+    sesion = await servicio.abrir_sesion(SesionAbrir.model_validate({"base_inicial": 10000}))
+    await servicio._session.commit()
+    await _fiado_con_abono(pg_platform_url, semilla, sesion.id, 30000, "efectivo", consecutivo=900)
+    await _fiado_con_abono(pg_platform_url, semilla, sesion.id, 20000, "transferencia", consecutivo=901)
+
+    desglose = await calcular_desglose(servicio._session, sesion)
+    assert desglose.abonos_efectivo == 30000
+    assert desglose.esperado == 10000 + 30000
+    arqueo = await servicio.cerrar_sesion(sesion.id, SesionCerrar.model_validate({"contado": 40000}))
+    assert arqueo.efectivo_esperado == 40000 and arqueo.diferencia == 0

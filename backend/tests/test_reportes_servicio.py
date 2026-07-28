@@ -26,6 +26,10 @@ from vendi_core.tenant.context import current_tenant_id
 pytestmark = pytest.mark.integration
 
 BORRADO = (
+    # Las tablas de fiado primero: sus FK (RESTRICT) apuntan a ventas y clientes.
+    "DELETE FROM fiado_abonos WHERE tenant_id = ANY(:ids)",
+    "DELETE FROM fiado_creditos WHERE tenant_id = ANY(:ids)",
+    "DELETE FROM clientes WHERE tenant_id = ANY(:ids)",
     "DELETE FROM caja_movimientos WHERE tenant_id = ANY(:ids)",
     "DELETE FROM ventas_items WHERE tenant_id = ANY(:ids)",
     "DELETE FROM ventas WHERE tenant_id = ANY(:ids)",
@@ -262,8 +266,8 @@ async def test_el_pyl_no_ve_el_negocio_de_al_lado(servicio, pg_platform_url):
 
 async def test_el_forecast_suma_saldo_mas_promedios_menos_egresos(servicio, semilla, pg_platform_url):
     """La fórmula honesta (decisión 9): saldo vivo de la sesión abierta +
-    ventas en efectivo de los últimos 30d + cobros de fiado (0, declarado) −
-    egresos de caja de los últimos 30d."""
+    ventas en efectivo de los últimos 30d + cobros de fiado (0 aquí: no hay
+    créditos sembrados) − egresos de caja de los últimos 30d."""
     # `now()` en ambas: la ventana del forecast son los últimos 30d desde la
     # corrida, y una fecha fija quedaría fuera de ella con el tiempo.
     await _venta(pg_platform_url, semilla, 10000, recibida_en="now()")  # efectivo: sesión abierta y ventana 30d
@@ -277,11 +281,11 @@ async def test_el_forecast_suma_saldo_mas_promedios_menos_egresos(servicio, semi
     # que también entra en la cuenta: 50000 + 10000 − 8000.
     assert forecast.saldo_actual_centavos == 50000 + 10000 - 8000
     assert forecast.ventas_proyectadas_centavos == 10000  # promedio diario × 30 con días en 0
-    assert forecast.cobros_fiado_proyectados_centavos == 0  # sin fuente hasta el módulo 5: declarado
+    assert forecast.cobros_fiado_proyectados_centavos == 0  # sin créditos sembrados: la fuente real da 0
     assert forecast.egresos_proyectados_centavos == 8000
     assert forecast.saldo_proyectado_centavos == 52000 + 10000 + 0 - 8000
     assert forecast.dias_con_datos == 1
-    assert "módulo 5" in forecast.fuentes["cobros_fiado"]
+    assert "saldo pendiente" in forecast.fuentes["cobros_fiado"]
     assert "egresos de caja de los últimos 30" in forecast.fuentes["egresos_proyectados"]
 
 
@@ -305,3 +309,66 @@ async def test_el_forecast_sin_sesion_abierta_parte_de_cero_y_lo_declara(pg_app_
     finally:
         current_tenant_id.reset(marca)
         await engine.dispose()
+
+
+# --- Cobros de fiado en el forecast (módulo 5, decisión 11 del plan de fiado) ---------
+
+
+@pytest.mark.asyncio
+async def test_el_forecast_proyecta_los_cobros_de_fiado(servicio, pg_platform_url, semilla):
+    """`cobros = SUM(saldo_pendiente)` de vigente/vencido con vencimiento a
+    30 días o menos (decisión 11): el ya vencido cuenta (el cuaderno espera
+    cobrarlo); el que vence en 60 días y el sin fecha, no."""
+    engine = create_async_engine(pg_platform_url)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("INSERT INTO clientes (id, tenant_id, nombre) VALUES (:c, :t, 'Don Carlos')"),
+                {"c": uuid.uuid4(), "t": T1},
+            )
+            cliente = (await conn.execute(text("SELECT id FROM clientes WHERE tenant_id = :t"), {"t": T1})).scalar_one()
+            # Sesión CERRADA de relleno para la FK de las ventas sembradas:
+            # no compite con la abierta del fixture (el índice único parcial
+            # solo vela por las abiertas) y el forecast la ignora.
+            sesion = uuid.uuid4()
+            await conn.execute(
+                text(
+                    "INSERT INTO caja_sesiones (id, tenant_id, abierta_por, base_inicial, estado, cerrada_por, "
+                    "cerrada_en, efectivo_esperado, efectivo_contado, diferencia) "
+                    "VALUES (:s, :t, 'dueno', 0, 'cerrada', 'dueno', now(), 0, 0, 0)"
+                ),
+                {"s": sesion, "t": T1},
+            )
+            dispositivo = semilla["dispositivo"]
+            for consecutivo, (vencimiento, saldo) in enumerate(
+                (
+                    ("CURRENT_DATE - 2", 20000),
+                    ("CURRENT_DATE + 15", 30000),
+                    ("CURRENT_DATE + 60", 99000),
+                    ("NULL", 88000),
+                ),
+                start=901,
+            ):
+                venta, credito = uuid.uuid4(), uuid.uuid4()
+                await conn.execute(
+                    text(
+                        "INSERT INTO ventas (id, tenant_id, dispositivo_id, sesion_caja_id, consecutivo_local, "
+                        "medio_pago, total_centavos, cliente_id, creada_en_cliente, secuencia_dispositivo) "
+                        "VALUES (:v, :t, :d, :s, :cons, 'fiado', :m, :c, now(), 1)"
+                    ),
+                    {"v": venta, "t": T1, "d": dispositivo, "s": sesion, "m": saldo, "c": cliente, "cons": consecutivo},
+                )
+                await conn.execute(
+                    text(
+                        f"INSERT INTO fiado_creditos (id, tenant_id, cliente_id, venta_id, monto_total, "
+                        f"saldo_pendiente, fecha_vencimiento, estado) "
+                        f"VALUES (:cr, :t, :c, :v, :m, :s, {vencimiento}, 'vigente')"
+                    ),
+                    {"cr": credito, "t": T1, "c": cliente, "v": venta, "m": saldo, "s": saldo},
+                )
+    finally:
+        await engine.dispose()
+
+    forecast = await servicio.forecast()
+    assert forecast.cobros_fiado_proyectados_centavos == 50000  # 20.000 + 30.000
+    assert "vigente" in forecast.fuentes["cobros_fiado"]
