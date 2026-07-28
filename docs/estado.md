@@ -477,19 +477,185 @@ Cerradas en este módulo: **D-12** y **D-14**.
 
 ---
 
+## Módulo caja y finanzas (Fase 1, Etapa 1.2)
+
+Fecha de corte: **2026-07-28**. Cuarto módulo de negocio del MVP —la caja de
+ADR-021 y las finanzas simples de ADR-006: sesiones, movimientos, arqueo que
+suma desde el origen y se congela, P&L simple y forecast a 30 días—, cerrado
+con el gate de la Etapa 1.2 del plan maestro. Plan:
+[`docs/superpowers/plans/2026-07-28-modulo-caja-plan.md`](superpowers/plans/2026-07-28-modulo-caja-plan.md)
+(11 tareas TDD, commits `d7e4eb7`…`9510891`, cada una con revisión
+independiente registrada en `.superpowers/sdd/`).
+
+Los comandos del gate que exigen el stack (migrar, tests de integración,
+`verify-setup.sh`) se citan desde el CI, que los ejecuta contra PostgreSQL,
+RabbitMQ y Keycloak reales en cada push: el run de corte es el `ci`
+**30318420990** sobre el SHA `9510891`, con los 11 jobs en verde
+(`gh run view 30318420990`).
+
+### Qué se entregó, y el comando que lo demuestra
+
+**`caja_movimientos`, los CHECK del cierre completo y `ventas.anulada_en`
+(migración `0008`, ADR-021).** `caja_sesiones` NO se recreó: existe completa
+desde la `0005` con todas las columnas del arqueo (decisión 1 del plan); aquí
+ganó dos CHECK —el cierre es completo o no es, y el conteo físico no es
+negativo— y `ventas` ganó `anulada_en`, para que la devolución de una
+anulación tardía caiga en la sesión abierta sin duplicar la venta como
+movimiento (decisión 7). Aplicada hasta head en el stack del CI:
+
+```
+$ bash scripts/migrate.sh          # run ci 30318420990, job «pytest -m integration»
+INFO  [alembic.runtime.migration] Running upgrade 0007 -> 0008, Caja: `caja_movimientos`, los CHECK del cierre completo y `ventas.anulada_en`
+0008 (head)
+[OK]    Migraciones aplicadas.
+```
+
+`caja_movimientos` hereda los cuatro privilegios por defecto de `vendi_app`:
+el candado invertido (`test_privilegios_de_vendi_app.py`) pasa sin edición, y
+el de cobertura RLS (`test_rls_coverage.py`) la cubre.
+
+**Aislamiento cross-tenant contra PostgreSQL real, 0 SKIPPED.** 9 tests
+nuevos en `backend/tests/test_aislamiento_caja.py` (SELECT acotado por la
+policy, INSERT con `tenant_id` ajeno bloqueado por `WITH CHECK`, los CHECK de
+tipo/categoría/monto y del cierre completo, la FK de sesión y la columna
+`anulada_en`). El job de CI convierte cualquier `SKIPPED` en fallo, así que
+«passed» aquí significa que corrieron todos:
+
+```
+$ uv run pytest -q -m integration  # run ci 30318420990
+354 passed, 412 deselected
+```
+
+**Los candados firmados de ADR-021.** El arqueo suma desde las tablas de
+origen y cuadra al peso
+(`test_el_arqueo_suma_desde_las_tablas_de_origen_y_cuadra_al_peso`: ventas en
+efectivo completadas de la sesión + ingresos − egresos − devoluciones
+sembradas, exacto al centavo); la carrera de aperturas deja UNA sola sesión
+(`test_dos_aperturas_concurrentes_dejan_una_sola_sesion`, decidida por el
+índice único parcial); el arqueo se congela y nada lo reabre
+(`test_el_arqueo_se_congela_y_nada_lo_reabre`); y dos cierres concurrentes se
+serializan sobre la fila `FOR UPDATE` —uno cierra, el otro recibe 409
+`caja_ya_cerrada`, un solo evento, un solo arqueo congelado—
+(`test_dos_cierres_concurrentes_cierran_la_sesion_una_sola_vez`). Todos
+verdes en el run de corte.
+
+**El candado firmado de ADR-023: el cajero abre y mueve caja pero NO cierra
+ni ve reportes.**
+`tests/api/test_caja_api.py::test_el_cajero_abre_y_mueve_caja_pero_no_cierra`
+(403 `permiso_ausente` al cerrar como cajero; el mismo gesto con el dueño,
+200), y `PERMISOS_POR_ROL ⊆ PERMISSION_CATALOG` verde en
+`test_auth_policies.py`. Los cinco permisos nuevos del catálogo cerrado, con
+el reparto literal de ADR-023 (el dueño los cinco; el cajero `caja:leer`,
+`caja:abrir`, `caja:movimiento` —no `caja:cerrar`, no `reporte:leer`; el
+almacenista ninguno), exigidos contra el realm vivo por el check 23
+extendido a los once permisos:
+
+```
+[OK]    aud=vendi-backend, rol de negocio y permisos de catálogo, ventas, inventario y caja en el token del dueño
+[OK]    27 en verde · 2 omitidos · 0 fallos (de 29)
+```
+
+**El esperado vivo condicionado por permiso (lección de la fuga de
+`ultimo_costo`).** `GET /caja/sesiones/actual` devuelve `efectivo_esperado`
+en `null` sin `caja:cerrar` —el cajero ve la sesión y opera, pero no la cifra
+con la que se cuadraría un faltante antes del arqueo— y el historial de
+arqueos (`GET /caja/sesiones`) exige `caja:cerrar` directamente, porque
+faltantes y sobrantes históricos son un reporte (decisión 4).
+
+**El cambio quirúrgico en ventas.** `_resolver_sesion_caja` bloquea la sesión
+abierta `FOR UPDATE`: cierre y sync se serializan sobre la fila, y una venta
+que sincroniza tras el cierre cae en la sesión NUEVA, nunca en la cerrada —
+el congelamiento es estructural, no un convenio (decisión 5). `_anular_venta`
+estampa `anulada_en` (commit `e0c089d`).
+
+**P&L simple y forecast 30d, con cada número declarando su fuente
+(ADR-006).** El P&L por período (`dia`/`semana`/`mes` anclado a
+`America/Bogota` con `zoneinfo`) suma las ventas completadas por
+`recibida_en`, costea con el `ultimo_costo` ACTUAL declarado, suma ingresos y
+resta egresos de caja, y trae las compras del período como línea informativa
+de flujo que NO se resta del resultado (decisión 8). El forecast declara su
+alcance honesto: saldo vivo de la sesión abierta + promedio de ventas en
+efectivo de 30 días + cobros de fiado 0 (hasta el módulo 5, con su punto de
+cambio único documentado) − promedio de egresos de 30 días, con
+`dias_con_datos` en la respuesta (decisión 9). 7 tests en
+`backend/tests/test_reportes_servicio.py`, verdes en el run de corte.
+
+**Ocho endpoints (seis rutas) nuevos en el contrato congelado:**
+
+```
+$ python3 -c "import json; d=json.load(open('docs/api/openapi-fase0.json')); [print(p, sorted(m for m in d['paths'][p] if m in ('get','post'))) for p in sorted(d['paths']) if 'caja' in p or 'reporte' in p]"
+/api/v1/caja/movimientos ['get', 'post']
+/api/v1/caja/sesiones ['get', 'post']
+/api/v1/caja/sesiones/actual ['get']
+/api/v1/caja/sesiones/{sesion_id}/cerrar ['post']
+/api/v1/reportes/forecast ['get']
+/api/v1/reportes/pyl ['get']
+```
+
+13 tests de API en `backend/tests/api/test_caja_api.py` (apertura idempotente
+y 409 `caja_ya_abierta` con la sesión vigente en `details`, movimiento con
+`id` de cliente obligatorio y 409 `movimiento_id_divergente`, cierre
+idempotente por reintento con el mismo conteo y 409 `caja_ya_cerrada` con
+otro, sesión de otro negocio = 404), todos integration y verdes en el run de
+corte.
+
+**Eventos de outbox según ADR-021** (`caja.sesion_abierta`,
+`caja.movimiento_registrado`, `caja.sesion_cerrada` con el resumen del
+arqueo, clave `<tenant_id>.<evento>`), emitidos en la misma transacción que
+la escritura:
+
+```
+tests/test_caja_servicio.py::test_abrir_caja_crea_la_sesion_y_emite_el_evento
+tests/test_caja_servicio.py::test_registrar_movimiento_lo_ata_a_la_sesion_abierta_y_emite_evento
+tests/test_caja_servicio.py::test_dos_cierres_concurrentes_cierran_la_sesion_una_sola_vez
+```
+
+**Suite completa verde, lint verde, contrato sin deriva.**
+
+```
+$ uv run pytest -q -m 'not integration'   # run ci 30318420990; reproducido en local
+412 passed, 354 deselected
+$ uv run pytest -q -m integration         # run ci 30318420990
+354 passed, 412 deselected
+$ uv run ruff check .                     # job «ruff + mypy» del CI; reproducido en local
+All checks passed!
+$ CODEGEN_SCHEMA_FILE=docs/api/openapi-fase0.json bash scripts/codegen-api-client.sh && git status --short
+(exit 0 y `git status` vacío: el cliente TS regenerado es idéntico al commiteado)
+```
+
+`contrato.ts` sigue compilando: el job `frontend / contratos`, los cuatro
+`ng build` y `ng test` del mismo run, en verde. Los demás workflows sobre el
+SHA de corte (`gh run list`): `e2e` 30318420932 y `android` 30318420936,
+todos success.
+
+**Deuda cerrada en este módulo** (detalle y evidencia en
+[`docs/deuda-tecnica.md`](deuda-tecnica.md)): **D-11** (`caja_sesiones` sin
+endpoints propios: este módulo los entregó) y **D-15**
+(`exigir_venta_anular` sin consumidor: borrado en la Tarea 9, como mandaba su
+propio vencimiento). **Sin deuda nueva registrada**: los hallazgos de las
+revisiones del módulo no cumplen el criterio del registro (riesgo real y
+vencimiento) — el tag OpenAPI `caja` de las rutas de reportes es cosmético;
+`_sesion_abierta` con `scalar_one_or_none` solo daría 500 si el invariante de
+una sesión abierta por tienda se rompiera, y lo impide estructuralmente el
+índice único parcial; la aserción trivial «sin sesión abierta» del test del
+forecast y la fase roja de la Tarea 8 no verificable como 404 son ruido
+procesal sin riesgo en runtime.
+
+---
+
 ## La suite de tests
 
 ```
 cd backend && uv run pytest -q
-677 passed
+766 passed
 ```
 
-De ellos, **275 son `integration`** (cifra de Fase 0: 106; el crecimiento viene de
-los módulos catálogo, ventas e inventario, ver sus secciones): hablan con el PostgreSQL, el
+De ellos, **354 son `integration`** (cifra de Fase 0: 106; el crecimiento viene de
+los módulos catálogo, ventas, inventario y caja, ver sus secciones): hablan con el PostgreSQL, el
 RabbitMQ y el Keycloak del compose, y con la API por su dominio. **No se omiten**
 si el servicio falta: fallan con un mensaje que dice qué falta. Un test que
 desaparece del recuento no prueba nada, y el job de CI convierte cualquier
-`SKIPPED` en fallo. *(Actualizado al HEAD 2d08df9, run ci 30305515191.)*
+`SKIPPED` en fallo. *(Actualizado al HEAD 9510891, run ci 30318420990.)*
 
 Frontend: 250 specs (`npx ng test --watch=false`), más 2 specs E2E de
 Playwright (`npm run e2e`: login con passkey y CRUD de negocio) contra el

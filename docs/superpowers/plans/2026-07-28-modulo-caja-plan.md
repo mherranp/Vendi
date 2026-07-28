@@ -3499,7 +3499,7 @@ git commit -m "Contrato OpenAPI con las rutas de caja y reportes, y cliente Type
 - Modify: `docs/estado.md` (sección nueva del módulo caja y finanzas, con fecha de corte y evidencia comando+salida)
 - Modify: `docs/deuda-tecnica.md` (D-11 y D-15 pasan a «Cerradas en Fase 1» con su evidencia)
 
-- [ ] **Paso 1: ejecutar el gate completo del módulo** (idéntico al de cualquier módulo de la Etapa 1.2):
+- [x] **Paso 1: ejecutar el gate completo del módulo** (idéntico al de cualquier módulo de la Etapa 1.2):
 
 ```bash
 bash scripts/migrate.sh
@@ -3516,23 +3516,23 @@ bash scripts/verify-setup.sh 2>&1 | grep -E "^\[(OK|FALLO)\]" | tail -3
 ```
 
 Gate por módulo (del plan maestro de Fase 1), a verificar ítem a ítem:
-- [ ] Migración con RLS + índice + grants, revisada por el agente de seguridad.
-- [ ] Tests de integración con aislamiento cross-tenant nuevo por tabla (`test_aislamiento_caja.py`: `caja_movimientos` con su policy y el `WITH CHECK`), 0 SKIPPED.
-- [ ] Los candados firmados de ADR-021: el arqueo cuadra al peso con ventas, movimientos y devoluciones sembradas (`test_el_arqueo_suma_desde_las_tablas_de_origen_y_cuadra_al_peso`); el segundo INSERT de sesión abierta revienta contra el índice único y la carrera de aperturas deja una sola sesión (`test_dos_aperturas_concurrentes_dejan_una_sola_sesion`); el arqueo se congela y nada lo reabre (`test_el_arqueo_se_congela_y_nada_lo_reabre`).
-- [ ] El candado firmado de ADR-023: cajero que cierra caja → 403, mismo gesto con dueño → 200 (`test_el_cajero_abre_y_mueve_caja_pero_no_cierra`), y `PERMISOS_POR_ROL ⊆ PERMISSION_CATALOG` verde.
-- [ ] OpenAPI congelado actualizado + codegen + `contrato.ts` sigue compilando.
-- [ ] Eventos de outbox emitidos según ADR-021 (`caja.sesion_abierta`, `caja.movimiento_registrado`, `caja.sesion_cerrada` con el resumen del arqueo, clave `<tenant_id>.<evento>`); `pytest -m integration` verde; `ruff` verde.
+- [x] Migración con RLS + índice + grants, revisada por el agente de seguridad.
+- [x] Tests de integración con aislamiento cross-tenant nuevo por tabla (`test_aislamiento_caja.py`: `caja_movimientos` con su policy y el `WITH CHECK`), 0 SKIPPED.
+- [x] Los candados firmados de ADR-021: el arqueo cuadra al peso con ventas, movimientos y devoluciones sembradas (`test_el_arqueo_suma_desde_las_tablas_de_origen_y_cuadra_al_peso`); el segundo INSERT de sesión abierta revienta contra el índice único y la carrera de aperturas deja una sola sesión (`test_dos_aperturas_concurrentes_dejan_una_sola_sesion`); el arqueo se congela y nada lo reabre (`test_el_arqueo_se_congela_y_nada_lo_reabre`).
+- [x] El candado firmado de ADR-023: cajero que cierra caja → 403, mismo gesto con dueño → 200 (`test_el_cajero_abre_y_mueve_caja_pero_no_cierra`), y `PERMISOS_POR_ROL ⊆ PERMISSION_CATALOG` verde.
+- [x] OpenAPI congelado actualizado + codegen + `contrato.ts` sigue compilando.
+- [x] Eventos de outbox emitidos según ADR-021 (`caja.sesion_abierta`, `caja.movimiento_registrado`, `caja.sesion_cerrada` con el resumen del arqueo, clave `<tenant_id>.<evento>`); `pytest -m integration` verde; `ruff` verde.
 
-- [ ] **Paso 2: actualizar `docs/estado.md`.** Añadir una sección «Módulo caja y finanzas (Fase 1, Etapa 1.2)» con: fecha de corte, qué se entregó (`caja_movimientos` y los CHECK del cierre, `ventas.anulada_en`, la apertura/movimientos/cierre online, el arqueo que suma desde el origen y se congela, el esperado vivo condicionado por permiso, el cambio de `FOR UPDATE` en el sync, el P&L por período en Bogotá con fuentes declaradas, el forecast 30d con su alcance honesto, los cinco permisos y su reparto, las 8 rutas, D-11 y D-15 cerradas), y **al lado de cada afirmación el comando que la demuestra** con su salida pegada (regla del documento: no promete nada que un comando no demuestre).
+- [x] **Paso 2: actualizar `docs/estado.md`.** Añadir una sección «Módulo caja y finanzas (Fase 1, Etapa 1.2)» con: fecha de corte, qué se entregó (`caja_movimientos` y los CHECK del cierre, `ventas.anulada_en`, la apertura/movimientos/cierre online, el arqueo que suma desde el origen y se congela, el esperado vivo condicionado por permiso, el cambio de `FOR UPDATE` en el sync, el P&L por período en Bogotá con fuentes declaradas, el forecast 30d con su alcance honesto, los cinco permisos y su reparto, las 8 rutas, D-11 y D-15 cerradas), y **al lado de cada afirmación el comando que la demuestra** con su salida pegada (regla del documento: no promete nada que un comando no demuestre).
 
-- [ ] **Paso 3: cerrar D-11 y D-15 en `docs/deuda-tecnica.md`.** Mover ambas entradas a la sección «Cerradas en Fase 1», cada una con qué era, cómo se cerró y la evidencia comando+salida:
+- [x] **Paso 3: cerrar D-11 y D-15 en `docs/deuda-tecnica.md`.** Mover ambas entradas a la sección «Cerradas en Fase 1», cada una con qué era, cómo se cerró y la evidencia comando+salida:
 
 - **D-11** (`caja_sesiones` existe y se puebla sin endpoints propios): se cerró con los endpoints del módulo (apertura, sesión actual, historial, cierre con arqueo, movimientos). Evidencia: `uv run pytest tests/api/test_caja_api.py -q` → 13 passed, y las rutas `/api/v1/caja/*` en el OpenAPI congelado.
 - **D-15** (`exigir_venta_anular` definido sin consumidor): se cerró BORRÁNDOLO (decisión 11 del plan: este módulo no le da uso y su vencimiento lo mandaba). Evidencia: `grep -rn "exigir_venta_anular" backend/ --include="*.py"` sin resultados y `uv run pytest -q -m integration` verde (la anulación conserva su chequeo por operación).
 
 No tocar D-10 (vence en el módulo 5), D-13, D-16, D-17, D-18, D-19, D-20, D-21, D-22, D-23, D-24, D-25: viven sus propios vencimientos. Si el ejecutor registra deuda nueva (p. ej. lo que el QA encuentre en la superficie de abajo), que sea con el formato del registro (qué es, por qué se aceptó, riesgo, vencimiento, candados mientras tanto).
 
-- [ ] **Paso 4: commit de cierre**
+- [x] **Paso 4: commit de cierre**
 
 ```bash
 git add docs/estado.md docs/deuda-tecnica.md

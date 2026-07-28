@@ -12,7 +12,6 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 | D-03 | El realm es semilla, no estado deseado continuo (mitigado en la Etapa 5: se aplica el subconjunto seguro) | Fase 1 | backend |
 | D-09 | El tier del negocio se resuelve como `pro` para todos (módulo catálogo, decisión 2 del plan) | Fase 1 (módulo de suscripciones) | backend |
 | D-10 | `ventas.cliente_id` no tiene FK: la tabla `clientes` es del módulo 5 | Fase 1 (módulo 5, clientes-fiado) | backend |
-| D-11 | `caja_sesiones` existe y se puebla (apertura implícita del sync) sin endpoints propios | Fase 1 (módulo 4, caja) | backend |
 | D-13 | Carrera TOCTOU del cupo de tier del catálogo: dos altas concurrentes dejan 101/100 (QA adversarial) | Fase 1 (antes del piloto) | backend |
 | D-16 | El check 23 de `verify-setup.sh` no tiene prueba negativa ejecutada (nadie lo ha visto fallar) | Fase 1 (Etapa 1.5) | backend |
 | D-17 | `alembic check` (deriva metadata↔DDL) no corre en CI | Fase 1 | backend |
@@ -47,6 +46,11 @@ del plan daba por fijado y solo cubría el genérico).
 Cerrada en la Tarea 9 del módulo caja y finanzas (Fase 1, Etapa 1.2): **D-15**
 (`exigir_venta_anular` definido y exportado sin consumidor): el módulo 4 no le
 dio uso y su propio vencimiento («si nada lo usa, se borra») mandaba retirarlo.
+
+Cerrada en la Tarea 11 del módulo caja y finanzas (Fase 1, Etapa 1.2): **D-11**
+(`caja_sesiones` existía y se poblaba sin endpoints propios): el módulo 4
+entregó los endpoints de apertura, sesión actual, historial, cierre con arqueo
+y movimientos (ADR-021).
 
 > Runbooks operativos relacionados: el procedimiento completo de respaldo y
 > restauración (qué se vuelca, qué NO, y cómo se promueve una copia a base
@@ -182,41 +186,6 @@ de cliente que `ventas` y `productos`) o migra las referencias.
   `cliente_solo_en_fiado` — la columna solo se puebla en ventas fiadas.
 - El evento `venta.creada` conserva `cliente_id`, `medio_pago` y total para
   que el módulo 5 cree el crédito sin releer la venta.
-
----
-
-## D-11 · `caja_sesiones` existe y se puebla sin endpoints propios
-
-**Qué es.** La tabla `caja_sesiones` se creó completa en la migración `0005`
-y el sync la puebla: toda venta sincronizada pertenece a la sesión abierta
-del tenant o a una implícita nueva (`base_inicial = 0`, `abierta_por` el
-usuario que sincroniza). Pero no hay endpoints para abrir, cerrar ni arquear
-sesiones: son del módulo 4.
-
-**Por qué se aceptó.** Decisión 3 del plan: ADR-018 firma que la venta
-referencia sesión de caja resuelta en servidor, y grabar las ventas del
-piloto con `sesion_caja_id` NULL obligaría a re-procesarlas cuando llegue la
-caja (el arqueo suma por sesión). La tensión declarada con ADR-021 («vender
-sin caja abierta es posible… pero esa venta no entra al arqueo») se resolvió
-a favor de ADR-018: una venta con sesión siempre puede excluirse de un
-arqueo; una sin sesión nunca puede incluirse.
-
-**Riesgo si se olvida.** Las sesiones implícitas quedan abiertas
-indefinidamente (nadie puede cerrarlas hasta el módulo 4). Es visible y sin
-pérdida de datos, pero si el módulo 4 no llegara, la operación no tendría
-cierre de caja que cuadrar.
-
-**Vencimiento: Fase 1, módulo 4 (caja y arqueo).** El módulo 4 encontrará la
-tabla y sus filas ya vivas: añade los endpoints, `caja_movimientos` y los
-eventos de caja.
-
-**Candados mientras tanto:**
-
-- El índice único parcial `(tenant_id) WHERE estado = 'abierta'` (ADR-021)
-  garantiza UNA sesión abierta por tienda y decide la carrera de aperturas
-  implícitas concurrentes (quien pierde re-lee la ganadora).
-- `backend/tests/test_ventas_servicio.py::test_aplicar_una_venta_descuenta_stock_abre_sesion_implicita_y_emite_evento`
-  y `::test_la_segunda_venta_reusa_la_sesion_implicita`.
 
 ---
 
@@ -862,6 +831,52 @@ All checks passed! · 218 files already formatted
   todas `rechazada` con `permiso_ausente`) y
   `backend/tests/test_ventas_servicio.py` (mismo caso en el servicio) —
   los mismos candados que la deuda ya declaraba, ahora permanentes.
+
+---
+
+### D-11 · `caja_sesiones` existía y se poblaba sin endpoints propios
+
+**Qué era.** La tabla `caja_sesiones` se creó completa en la migración `0005`
+y el sync la poblaba (toda venta sincronizada pertenece a la sesión abierta
+del tenant o a una implícita nueva con `base_inicial = 0`), pero no había
+endpoints para abrir, cerrar ni arquear sesiones: eran del módulo 4.
+
+**Cómo se cerró** (Tarea 11 del módulo caja y finanzas — su propio
+vencimiento: «Fase 1, módulo 4 (caja y arqueo)»). El módulo entregó los
+endpoints REST online firmados en ADR-021: apertura explícita idempotente
+(`POST /api/v1/caja/sesiones`), sesión actual con el esperado vivo
+condicionado por permiso (`GET /api/v1/caja/sesiones/actual`), historial de
+arqueos (`GET /api/v1/caja/sesiones`, exige `caja:cerrar`), cierre con arqueo
+que suma desde las tablas de origen y se congela
+(`POST /api/v1/caja/sesiones/{sesion_id}/cerrar`) y movimientos manuales
+(`GET`/`POST /api/v1/caja/movimientos`). Las sesiones implícitas ya vivas se
+cierran y arquean por los mismos endpoints: ninguna queda abierta sin camino
+de cierre.
+
+**Evidencia** (2026-07-28, rama `main`, HEAD `9510891`):
+
+```
+$ cd backend && uv run pytest --collect-only -q tests/api/test_caja_api.py
+13 tests collected
+
+$ uv run pytest -q -m integration   # run ci 30318420990: los 13 pasan contra PostgreSQL real, 0 SKIPPED
+354 passed, 412 deselected
+
+$ python3 -c "import json; print('\n'.join(sorted(p for p in json.load(open('../docs/api/openapi-fase0.json'))['paths'] if 'caja' in p)))"
+/api/v1/caja/movimientos
+/api/v1/caja/sesiones
+/api/v1/caja/sesiones/actual
+/api/v1/caja/sesiones/{sesion_id}/cerrar
+```
+
+**Candados:**
+
+- Los que la deuda ya declaraba, vigentes: el índice único parcial
+  `(tenant_id) WHERE estado = 'abierta'` y los tests del sync que resuelve la
+  sesión implícita.
+- Los nuevos del módulo: `backend/tests/test_aislamiento_caja.py` (9 tests
+  cross-tenant) y los candados del arqueo de ADR-021 (cuadre al peso,
+  congelamiento, carrera de aperturas y de cierres), en CI en cada push.
 
 ---
 
