@@ -19,7 +19,6 @@ from vendi_core.auth.policies import PERM_PRODUCTO_LEER, PERM_VENTA_ANULAR, PERM
 from vendi_core.tenant.context import TenantContext
 
 exigir_venta_crear = exigir_permiso(PERM_VENTA_CREAR)
-exigir_venta_anular = exigir_permiso(PERM_VENTA_ANULAR)
 exigir_producto_leer = exigir_permiso(PERM_PRODUCTO_LEER)
 
 
@@ -47,7 +46,6 @@ async def servicio_de_ventas(
 
 __all__ = [
     "exigir_producto_leer",
-    "exigir_venta_anular",
     "exigir_venta_crear",
     "servicio_de_ventas",
 ]

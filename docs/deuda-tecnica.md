@@ -14,7 +14,6 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 | D-10 | `ventas.cliente_id` no tiene FK: la tabla `clientes` es del módulo 5 | Fase 1 (módulo 5, clientes-fiado) | backend |
 | D-11 | `caja_sesiones` existe y se puebla (apertura implícita del sync) sin endpoints propios | Fase 1 (módulo 4, caja) | backend |
 | D-13 | Carrera TOCTOU del cupo de tier del catálogo: dos altas concurrentes dejan 101/100 (QA adversarial) | Fase 1 (antes del piloto) | backend |
-| D-15 | `exigir_venta_anular` está definido y exportado sin endpoint que lo use | Fase 1 (módulo 4; si nada lo usa, se borra) | backend |
 | D-16 | El check 23 de `verify-setup.sh` no tiene prueba negativa ejecutada (nadie lo ha visto fallar) | Fase 1 (Etapa 1.5) | backend |
 | D-17 | `alembic check` (deriva metadata↔DDL) no corre en CI | Fase 1 | backend |
 | D-18 | El watermark del delta se fija con `now()` antes de leer: una edición confirmada en la ventana se pierde para ese dispositivo | Fase 1 (antes del piloto) | backend |
@@ -44,6 +43,10 @@ emite `inventario.alerta_stock` al cruzar un nivel hacia abajo.
 Cerrada en el QA adversarial del módulo inventario (Fase 1, Etapa 1.4): **D-22**
 (el test literal `inventario.ajustar` → `tipo_desconocido` que la decisión 3
 del plan daba por fijado y solo cubría el genérico).
+
+Cerrada en la Tarea 9 del módulo caja y finanzas (Fase 1, Etapa 1.2): **D-15**
+(`exigir_venta_anular` definido y exportado sin consumidor): el módulo 4 no le
+dio uso y su propio vencimiento («si nada lo usa, se borra») mandaba retirarlo.
 
 > Runbooks operativos relacionados: el procedimiento completo de respaldo y
 > restauración (qué se vuelca, qué NO, y cómo se promueve una copia a base
@@ -248,35 +251,6 @@ QA: `SELECT pg_advisory_xact_lock(hashtext(tenant_id::text))` al entrar en
 - D-09 sigue viva: hoy el tier es `pro` (ilimitado) para todos, así que la
   carrera no tiene efecto observable hasta que exista una fuente real del
   tier.
-
----
-
-## D-15 · `exigir_venta_anular` está definido sin consumidor
-
-**Qué es.** `backend/services/api/app/modules/ventas/dependencies.py`
-define y exporta `exigir_venta_anular = exigir_permiso(PERM_VENTA_ANULAR)`,
-pero ningún endpoint lo usa: la anulación viaja como operación del lote y su
-chequeo es por operación dentro del servicio (decisión 12), y los guards de
-entrada del router son `exigir_venta_crear` (dispositivos y lotes) y
-`exigir_producto_leer` (delta).
-
-**Por qué se aceptó.** El plan (tarea 6) lo dejó preparado para un endpoint
-de anulación directa que finalmente no se construyó: la anulación del piloto
-sube por el sync. Es código muerto exportado, y el código muerto con nombre
-de permiso invita a usarlo mal o a creer que hay una ruta que no existe.
-
-**Riesgo si se olvida.** Cosmético hoy; confuso mañana. Si el módulo 4 (o un
-endpoint de anulación online) lo usa, la deuda se cierra sola; si no, hay
-que borrarlo.
-
-**Vencimiento: Fase 1, módulo 4.** O lo estrena un endpoint, o se retira.
-
-**Candado mientras tanto:**
-
-- El 403 por rol se prueba de verdad a nivel operación:
-  `backend/tests/api/test_ventas_sync.py` (lote de anulaciones del cajero →
-  todas `rechazada` con `permiso_ausente`) y
-  `backend/tests/test_ventas_servicio.py` (mismo caso en el servicio).
 
 ---
 
@@ -847,6 +821,47 @@ ya es crítico y nunca hay cruce bajo → crítico; corregido a mínimo 12 en
 - `backend/tests/test_ventas_servicio.py::test_un_tipo_desconocido_es_rechazada_no_422`
   y `backend/tests/test_ventas_adversarial.py::test_un_tipo_con_inyeccion_sql_es_tipo_desconocido_y_no_pasa_nada`
   (los genéricos que ya cubrían el comportamiento, vigentes).
+
+---
+
+### D-15 · `exigir_venta_anular` estaba definido sin consumidor
+
+**Qué era.** `backend/services/api/app/modules/ventas/dependencies.py`
+definía y exportaba `exigir_venta_anular = exigir_permiso(PERM_VENTA_ANULAR)`
+sin endpoint que lo usara: la anulación viaja como operación del lote del
+sync y su chequeo es por operación dentro del servicio (decisión 12 del plan
+de ventas). Código muerto exportado con nombre de permiso.
+
+**Cómo se cerró** (Tarea 9 del módulo caja y finanzas — el vencimiento
+firmado de la propia deuda: «Fase 1, módulo 4; si nada lo usa, se borra»,
+decisión 11 del plan del módulo). El módulo 4 es caja y finanzas: ningún
+endpoint nuevo le dio uso, así que se retiró la definición y su entrada en
+`__all__`. El import de `PERM_VENTA_ANULAR` se conserva porque
+`servicio_de_ventas` lo usa para derivar `puede_anular` (el chequeo por
+operación no cambió). Si un futuro endpoint de anulación online lo necesita,
+vuelve con una línea: `exigir_permiso(PERM_VENTA_ANULAR)`.
+
+**Evidencia** (2026-07-28, rama `main`):
+
+```
+$ cd backend && grep -rn "exigir_venta_anular" . --include="*.py"
+                                  → (sin resultados: ni definición, ni usos,
+                                     ni imports en tests)
+
+$ uv run pytest -q -m 'not integration'
+412 passed, 354 deselected
+
+$ uv run ruff check . && uv run ruff format --check .
+All checks passed! · 218 files already formatted
+```
+
+**Candados:**
+
+- El 403 por rol sigue probándose de verdad a nivel operación:
+  `backend/tests/api/test_ventas_sync.py` (lote de anulaciones del cajero →
+  todas `rechazada` con `permiso_ausente`) y
+  `backend/tests/test_ventas_servicio.py` (mismo caso en el servicio) —
+  los mismos candados que la deuda ya declaraba, ahora permanentes.
 
 ---
 
