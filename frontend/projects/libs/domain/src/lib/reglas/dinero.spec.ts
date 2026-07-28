@@ -74,4 +74,8 @@ describe('dinero (ADR-018: enteros, nunca flotantes)', () => {
     expect(formatearPesos(125000)).toContain('1.250');
     expect(formatearPesos(0)).toContain('0');
   });
+
+  it('formatea millones con separador de miles (el total de una semana buena)', () => {
+    expect(formatearPesos(123_456_700)).toContain('1.234.567');
+  });
 });

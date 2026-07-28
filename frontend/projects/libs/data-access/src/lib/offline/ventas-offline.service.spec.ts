@@ -160,6 +160,28 @@ describe('VentasOfflineService (outbox local, ADR-017/ADR-018)', () => {
     expect(enCola?.datos).toEqual({ nombre: 'Doña Ana', telefono: '3001234567' });
   });
 
+  it('dos cobros en paralelo NO pisan el consecutivo ni la secuencia (QA adversarial)', async () => {
+    const { servicio, db } = preparar();
+    const entrada = {
+      lineas: LINEAS,
+      medio_pago: 'efectivo' as const,
+      cliente: null,
+      fecha_vencimiento: null,
+    };
+
+    // Dos toques de cobrar «a la vez»: las transacciones rw de Dexie sobre las
+    // mismas tablas se serializan, así que el segundo cobro lee los contadores
+    // ya avanzados por el primero.
+    const [a, b] = await Promise.all([servicio.cobrar(entrada), servicio.cobrar(entrada)]);
+
+    expect([a.consecutivo_local, b.consecutivo_local].sort()).toEqual([1, 2]);
+    expect(await db.ventas_locales.count()).toBe(2);
+    const secuencias = (await db.cola_sync.toArray()).map((op) => op.secuencia).sort();
+    expect(secuencias).toEqual([1, 2]);
+    expect((await db.meta.get('consecutivo_local'))?.valor).toBe(2);
+    expect((await db.meta.get('ultima_secuencia'))?.valor).toBe(2);
+  });
+
   it('rechaza nombres de cliente que el servidor rechazaría (min 2)', async () => {
     const { servicio } = preparar();
     await expect(servicio.crearClienteLocal({ nombre: 'A', telefono: null })).rejects.toThrow();
