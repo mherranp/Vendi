@@ -1219,6 +1219,169 @@ no cumplen el criterio del registro (riesgo real y vencimiento).
 
 ---
 
+## Consola del negocio en `vendi-tenant` (Fase 1, Etapa 1.3, pista web)
+
+Fecha de corte: **2026-07-28**. La pista web de la Etapa 1.3 —`vendi-tenant`
+convertido en la consola real del negocio: Mi caja, Mi catálogo, Mi
+inventario, Mi cuaderno y Mis números, multi-rol según ADR-023—, cerrada con
+su gate. Plan:
+[`docs/superpowers/plans/2026-07-29-vendi-tenant-features-plan.md`](superpowers/plans/2026-07-29-vendi-tenant-features-plan.md)
+(11 tareas TDD, commits `e1a5d0e`…`ea652ec`, cada una con revisión
+independiente registrada en `.superpowers/sdd/`). **La Etapa 1.3 NO se
+cierra**: la pista web queda entregada, pero la etapa completa incluye
+además la auth nativa por navegador del sistema (**D-29**, abierta); las
+pistas móvil y comercial ya cerraron como secciones propias de este
+documento.
+
+Como en la pista móvil, **los tests del frontend corren en local** (Vitest
+sobre jsdom, sin stack); los de integración del backend exigen PostgreSQL y
+Keycloak reales y se citan desde el CI, que los ejecuta en cada push: el run
+de corte es `ci` **30400394561** sobre el SHA `ea652ec`, con los 11 jobs en
+verde —incluido `backend / pytest -m integration (stack real)`—
+(`gh run view 30400394561`):
+
+```
+$ gh run list --workflow ci.yml --limit 3
+completed  success  El selector de negocio muestra nombres…  ci  main  push  30400394561
+completed  success  Mis números en vendi-tenant…             ci  main  push  30399529420
+completed  success  Cuaderno en vendi-tenant…                ci  main  push  30398763874
+```
+
+### Qué se entregó, y el comando que lo demuestra
+
+**Gate verde: los 9 proyectos en test y lint, formato y contraste WCAG.**
+60 archivos de spec, 430 tests, exit 0 en cada comando:
+
+```
+$ cd backend && uv run pytest -q -m 'not integration'
+432 passed, 494 deselected in 14.74s
+$ cd frontend && npx ng test --watch=false   # exit 0
+ Test Files  15 passed (15) ·  Tests  94 passed (94)   — vendi-tenant
+ Test Files  13 passed (13) ·  Tests  95 passed (95)   — data-access
+ Test Files  7 passed (7)   ·  Tests  57 passed (57)   — auth
+ Test Files  6 passed (6)   ·  Tests  59 passed (59)   — ui-kit
+ Test Files  5 passed (5)   ·  Tests  47 passed (47)   — vendi-admin
+ Test Files  7 passed (7)   ·  Tests  41 passed (41)   — vendi-portal
+ Test Files  3 passed (3)   ·  Tests  21 passed (21)   — domain
+ Test Files  2 passed (2)   ·  Tests  13 passed (13)   — vendi-app
+ Test Files  2 passed (2)   ·  Tests  3 passed (3)     — native
+$ npx ng lint                               # exit 0
+All files pass linting.   (×9 proyectos, fronteras incluidas)
+$ npm run format:check                      # exit 0
+All matched files use Prettier code style!
+$ npm run verificar:contraste               # exit 0
+12 pares verificados, todos ≥ 4.5:1.
+```
+
+**Las cinco features con sus permisos por rol, más el selector y
+`/sin-permiso`.** Cada ruta lleva `tenantGuard` + `permisoGuard(...)` de la
+lib `auth` y las acciones se ocultan con `*vdHasPermission` (la UI solo
+ahorra el 403; el backend sigue mandando): `/caja` (`caja:leer`; abrir
+`caja:abrir`, movimiento `caja:movimiento`, esperado/cierre/historial
+`caja:cerrar`), `/catalogo` (`producto:leer`; CRUD `producto:editar`),
+`/inventario` (`producto:leer`; ajuste `inventario:ajustar`, compra
+`compra:crear`), `/cuaderno` (`cliente:gestionar`; abono `fiado:abonar`,
+reprogramar `fiado:crear`) y `/numeros` (`reporte:leer`, P&L y forecast con
+sus fuentes en pantalla). Los specs corren los tres perfiles de la semilla
+(dueño, cajero, almacenista) sobre `KeycloakFake`:
+
+```
+$ cd frontend && npx ng test --watch=false   # extracto de vendi-tenant
+ ✓ |vendi-tenant| …/features/caja/mi-caja.component.spec.ts (8 tests)
+ ✓ |vendi-tenant| …/features/caja/caja.service.spec.ts (8 tests)
+ ✓ |vendi-tenant| …/features/catalogo/catalogo.component.spec.ts (6 tests)
+ ✓ |vendi-tenant| …/features/inventario/inventario.component.spec.ts (6 tests)
+ ✓ |vendi-tenant| …/features/cuaderno/cuaderno.component.spec.ts (5 tests)
+ ✓ |vendi-tenant| …/features/cuaderno/credito-detalle.component.spec.ts (6 tests)
+ ✓ |vendi-tenant| …/features/numeros/numeros.component.spec.ts (5 tests)
+ ✓ |vendi-tenant| …/features/elegir-negocio/elegir-negocio.component.spec.ts (6 tests)
+ ✓ |vendi-tenant| …/app.spec.ts (10 tests)   # rutas: guards y /sin-permiso
+```
+
+**`permisoGuard` y `proveerSesion` en la lib `auth`; `AvisosComponent` en
+`ui-kit`.** Las tres copias de `nucleo/sesion.ts` desaparecieron de las apps
+(byte a byte idénticas; ahora `sesion.provider.ts` de la lib) y el anfitrión
+de avisos vive una sola vez, invertido por `input()` para no violar la
+frontera de ADR-011:
+
+```
+$ ls frontend/projects/vendi-{admin,tenant,app}/src/app/nucleo/sesion.ts
+ls: …: No such file or directory   (×3)
+ ✓ |auth| projects/libs/auth/src/lib/permiso.guard.spec.ts (5 tests)
+ ✓ |auth| projects/libs/auth/src/lib/has-permission.directive.spec.ts (5 tests)
+```
+
+**`GET /api/v1/tenants/mios` con su excepción de middleware y el selector
+mostrando nombres.** El pendiente de Fase 0 (el selector mostraba UUIDs)
+cerrado como tarea backend acotada: ruta de lectura servida con token
+validado y sin `X-Tenant-Id` (excepción en `TenantMiddleware` — sin ella, el
+endpoint pensado para quien no ha elegido negocio sería inalcanzable para
+él), `listar_por_ids` con sesión de plataforma y esquema `TenantMioSalida`
+sin `kc_org_id`. El contrato congelado y el cliente TS se regeneraron en el
+mismo commit (`e1a5d0e`); sus 4 tests de integración
+(`backend/tests/api/test_tenants_mios.py`) corren en el job `pytest -m
+integration (stack real)` del run de corte, en verde. El candado del CI
+sigue cerrado tras la regeneración:
+
+```
+$ CODEGEN_SCHEMA_FILE=docs/api/openapi-fase0.json bash scripts/codegen-api-client.sh && git diff --exit-code
+[OK]    Esquema válido.
+[OK]    Tipos    → …/data-access/src/lib/api-client/index.ts
+(exit 0 — contrato y cliente sincronizados)
+```
+
+**Build de producción verde sin relajar budgets.** Las features viajan en
+chunks perezosos (`loadComponent`); el inicial queda en 803 kB:
+
+```
+$ cd frontend && npx ng build vendi-tenant --configuration production   # exit 0
+Initial total             803.18 kB |               186.48 kB
+Lazy chunks: inventario 37.32 kB · numeros 30.01 kB · mi-caja 16.49 kB
+  cuaderno 13.62 kB · catalogo 12.37 kB · credito-detalle 10.11 kB
+  elegir-negocio 3.44 kB · sin-permiso 697 bytes
+▲ [WARNING] bundle initial exceeded maximum budget. Budget 700.00 kB
+  was not met by 103.18 kB with a total of 803.18 kB.
+$ git log --oneline e1a5d0e^..ea652ec -- frontend/angular.json
+(sin salida — los budgets NO se tocaron en toda la pista)
+```
+
+El aviso de 700 kB es **preexistente** (ya avisaba con 795 kB al cerrar la
+Tarea 5) y se mantiene declarado, no relajado; el candado duro de 1 MB pasa
+con ~200 kB de margen.
+
+### Desviación avalada por las revisiones
+
+**Puntos de entrada secundarios de `ui-kit` (Tarea 5, commit `a26b956`).**
+El plan pedía el build verde sin tocar budgets y con el barril de `ui-kit`
+como única puerta. Con la feature implementada tal cual, el inicial saltó a
+1.180 kB y el build FALLABA: el fesm de `ui-kit` es un solo módulo y, al
+cargarlo el shell en el inicial (FullLayout, Avisos), todo símbolo suyo que
+una feature perezosa usara quedaba retenido con las dependencias de Material
+que el fesm importa estáticamente (+465 kB) — `loadComponent` no protege de
+un problema de empaquetado de la lib. La salida, avalada en la revisión de
+la tarea: puntos de entrada secundarios de ng-packagr (`ui-kit/data-table`,
+`ui-kit/form-renderer`, `ui-kit/confirm-dialog`, patrón ya usado con
+`auth/testing`), que viajan en el chunk perezoso de cada feature. Medido:
+vendi-tenant 1.180 → 795 kB (hoy 803 kB con las features completas) y
+vendi-admin 1.140 → 760 kB de regalo. Los budgets no se movieron.
+
+### Alcance honesto
+
+- **Sin historial de compras ni de ajustes, sin `ultimo_costo` en catálogo,
+  sin ancla `fecha` en el P&L** (decisión 9 del plan): el contrato los
+  soporta; son pantallas futuras que llegarán con el uso del piloto, no
+  deuda — nadie prometió que existieran.
+- **Sin E2E Playwright nuevo**: el gate del plan maestro lo exige «por flujo
+  de dinero» como gate posterior con el stack levantado, igual que en la
+  pista móvil.
+- **Los tres pendientes que esta pista cerró nunca tuvieron número D**
+  (vivían en el plan maestro): `/elegir-negocio` con UUIDs, `sesion.ts`
+  triplicado, `avisos.component.ts` duplicado. **Sin deuda nueva
+  registrada**: las desviaciones de la pista (esta sección) quedaron
+  avaladas por las revisiones y no cumplen el criterio del registro.
+
+---
+
 ## La suite de tests
 
 ```
