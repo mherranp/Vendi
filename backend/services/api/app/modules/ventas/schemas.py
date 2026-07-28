@@ -106,7 +106,11 @@ class VentaCrearSync(BaseModel):
     de la OPERACIÓN (va en `OperacionSync.id`): es la PK que puso el cliente.
 
     Fiado⇔cliente y la coherencia total/ítems las verifica el servicio por
-    operación (rechazada con motivo), no el schema — ver la cabecera.
+    operación (rechazada con motivo), no el schema — ver la cabecera. La
+    coherencia usa la MISMA regla de redondeo del cliente: cada línea se
+    redondea a centavos enteros (ROUND_HALF_UP) antes de sumar, así que el
+    granel con fracción de centavo cuadra y una incoherencia real sigue
+    rechazando (`total_incoherente`).
     """
 
     model_config = ConfigDict(extra="forbid")

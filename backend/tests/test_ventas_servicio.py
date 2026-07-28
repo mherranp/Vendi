@@ -281,6 +281,55 @@ async def test_el_total_debe_cuadrar_con_los_items(servicio, semilla):
     assert resultados[0].motivo == "total_incoherente"
 
 
+async def test_el_total_del_granel_se_compara_con_el_redondeo_half_up_del_cliente(servicio, semilla, pg_platform_url):
+    """BUG-A del QA del POS: el cliente redondea CADA línea a centavos enteros
+    (ROUND_HALF_UP) antes de sumar — 0,333 kg × 10 500 = 3 496,500 → 3 497.
+    El servidor aplica la MISMA regla por línea antes de comparar, así que un
+    granel con fracción de centavo ya no muere como `total_incoherente`
+    permanente (el reintento es byte-idéntico: era dead-letter irreversible).
+    """
+    granel = _op_venta(
+        semilla,
+        uuid.uuid4(),
+        items=[{"producto_id": str(semilla["producto"]), "cantidad": "0.333", "precio_unitario_centavos": 10500}],
+        total_centavos=3497,
+    )
+    resultados = await servicio.procesar_lote(_lote(semilla, granel))
+    assert [r.resultado for r in resultados] == ["aceptada"]
+    await servicio._session.commit()
+    # La venta persiste el total DECLARADO (`datos.total_centavos`), que por la
+    # validación coincide con la suma de líneas redondeadas: declarado y
+    # recalculado son el mismo número por construcción.
+    fila = await _uno(pg_platform_url, "SELECT total_centavos FROM ventas WHERE tenant_id = :t", t=T1)
+    assert fila.total_centavos == 3497
+
+
+async def test_la_fraccion_minima_de_centavo_redondea_half_up(servicio, semilla):
+    """0,001 kg a 1 centavo/kg = 0,001 centavos → half-up da 0: la línea más
+    pequeña posible también se compara con la regla del cliente."""
+    minima = _op_venta(
+        semilla,
+        uuid.uuid4(),
+        items=[{"producto_id": str(semilla["producto"]), "cantidad": "0.001", "precio_unitario_centavos": 1}],
+        total_centavos=0,
+    )
+    resultados = await servicio.procesar_lote(_lote(semilla, minima))
+    assert [r.resultado for r in resultados] == ["aceptada"]
+
+
+async def test_un_centavo_de_mas_sobre_la_suma_redondeada_sigue_rechazando(servicio, semilla):
+    """La coherencia real sigue candada: declarar un centavo por encima de la
+    suma de líneas redondeadas es `total_incoherente` como antes."""
+    descuadrada = _op_venta(
+        semilla,
+        uuid.uuid4(),
+        items=[{"producto_id": str(semilla["producto"]), "cantidad": "0.333", "precio_unitario_centavos": 10500}],
+        total_centavos=3498,
+    )
+    resultados = await servicio.procesar_lote(_lote(semilla, descuadrada))
+    assert [(r.resultado, r.motivo) for r in resultados] == [("rechazada", "total_incoherente")]
+
+
 async def test_datos_mal_formados_rechazan_la_operacion_no_el_lote(servicio, semilla):
     """Decisión 6: `datos` se valida por operación dentro del servicio."""
     mala = {"id": str(uuid.uuid4()), "tipo": "venta.crear", "secuencia": 1, "datos": {"consecutivo_local": "x"}}

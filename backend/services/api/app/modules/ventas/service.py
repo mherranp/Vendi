@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 import structlog
 from pydantic import ValidationError as PydanticValidationError
@@ -546,7 +546,20 @@ class VentasService:
                 "fecha_vencimiento_solo_en_fiado",
                 "Solo una venta fiada lleva fecha de vencimiento.",
             )
-        suma = sum(i.cantidad * i.precio_unitario_centavos for i in datos.items)
+        # BUG-A del QA del POS: el cliente redondea CADA línea a centavos
+        # enteros (ROUND_HALF_UP) antes de sumar — 0,333 kg × 10 500 =
+        # 3 496,500 → 3 497. Exigir la suma EXACTA sin redondear condenaba a
+        # dead-letter permanente cualquier línea con fracción de centavo (el
+        # reintento es byte-idéntico). El servidor aplica la MISMA regla por
+        # línea, así que cliente y servidor coinciden por construcción y una
+        # incoherencia real (un centavo de más sobre la suma redondeada) sigue
+        # rechazando. La venta persiste el total declarado: tras esta
+        # validación es, por construcción, el mismo número que la suma
+        # redondeada — declarado y recalculado no pueden divergir.
+        suma = sum(
+            (i.cantidad * i.precio_unitario_centavos).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            for i in datos.items
+        )
         if suma != datos.total_centavos:
             return self._rechazada(
                 operacion,
