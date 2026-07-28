@@ -102,6 +102,16 @@ describe('AjusteDialogoComponent — conversiones y rechazos del borde', () => {
     expect(m.componente.errorFormulario()).toBe(true);
   });
 
+  it('el conteo CERO sale del diálogo («no queda nada» es un conteo legítimo, ge=0 del backend)', () => {
+    m.componente.alEnviar({ tipo: 'ajuste', cantidad: '0', motivo: 'No queda ninguna' });
+    expect(m.cerrar).toHaveBeenCalledWith({
+      tipo: 'ajuste',
+      producto_id: PRODUCTO.producto_id,
+      motivo: 'No queda ninguna',
+      stock_contado: '0.000',
+    } satisfies ResultadoAjuste);
+  });
+
   it('una merma de cero no sale del diálogo (merma cero no existe)', () => {
     m.componente.alEnviar({ tipo: 'merma', cantidad: '0', motivo: 'Prueba de cero' });
     expect(m.cerrar).not.toHaveBeenCalled();

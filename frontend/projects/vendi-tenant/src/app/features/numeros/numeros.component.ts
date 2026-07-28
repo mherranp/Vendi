@@ -79,6 +79,8 @@ export class NumerosComponent {
   }
 
   cargar(): void {
+    // Invalida cualquier `cambiarPeriodo` en vuelo: su respuesta ya es vieja.
+    this.secuenciaPyl += 1;
     this.cargando.set(true);
     this.fallo.set(false);
     let pendientes = 2;
@@ -107,14 +109,30 @@ export class NumerosComponent {
     });
   }
 
+  /**
+   * Secuencia de peticiones de P&L: crece con cada `cargar`/`cambiarPeriodo`
+   * y una respuesta solo se aplica si sigue siendo la última — dos toques
+   * rápidos del toggle no pueden dejar «Mes» pintado con datos de «Semana».
+   */
+  private secuenciaPyl = 0;
+
   cambiarPeriodo(periodo: PeriodoPyl): void {
     if (periodo === this.periodo()) {
       return;
     }
     this.periodo.set(periodo);
+    const secuencia = ++this.secuenciaPyl;
     this.servicio.pyl(periodo).subscribe({
-      next: (pyl) => this.pyl.set(pyl),
-      error: () => this.fallo.set(true),
+      next: (pyl) => {
+        if (secuencia === this.secuenciaPyl) {
+          this.pyl.set(pyl);
+        }
+      },
+      error: () => {
+        if (secuencia === this.secuenciaPyl) {
+          this.fallo.set(true);
+        }
+      },
     });
   }
 

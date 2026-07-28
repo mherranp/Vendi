@@ -3,6 +3,7 @@ import {
   LineaTicket,
   formatearPesos,
   miliDeCantidad,
+  miliDeConteo,
   textoDeCantidad,
   totalLineaCentavos,
   totalTicketCentavos,
@@ -37,6 +38,21 @@ describe('dinero (ADR-018: enteros, nunca flotantes)', () => {
 
   it('acepta la fracción mínima que cuantiza a 1 mili (half-up, la regla del servidor)', () => {
     expect(miliDeCantidad(0.0005)).toBe(1);
+  });
+
+  it('el conteo cero es legítimo («no queda ninguna», espejo de `_cuantizar_conteo`)', () => {
+    expect(miliDeConteo(0)).toBe(0);
+    expect(miliDeConteo(14)).toBe(14_000);
+  });
+
+  it('el conteo sub-mili cuantiza a 0 mili y se acepta, como el servidor (ge=0)', () => {
+    expect(miliDeConteo(0.0004)).toBe(0);
+  });
+
+  it('rechaza conteos ilegibles (negativos, NaN, infinito)', () => {
+    expect(() => miliDeConteo(-1)).toThrow();
+    expect(() => miliDeConteo(Number.NaN)).toThrow();
+    expect(() => miliDeConteo(Number.POSITIVE_INFINITY)).toThrow();
   });
 
   it('serializa la cantidad como string de 3 decimales (lo que el backend cuantiza)', () => {

@@ -19,6 +19,8 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 | D-26 | Una sesión puede cerrarse con `efectivo_esperado` NEGATIVO sin error (un egreso mayor que todo el efectivo de la sesión; decisión de producto pendiente: ¿advertencia al cerrar?) | Fase 1 (antes del piloto) | backend |
 | D-28 | No hay delta de clientes hacia dispositivos: un cliente creado en una caja llega a la otra solo online (GET /clientes) | Fase 1 (antes del piloto) | backend |
 | D-29 | La auth nativa de vendi-app (login por navegador del sistema: @capacitor/browser + esquema co.vendi.app:// + asset links para passkeys) no existe: la app autentica con el flujo WEB y el canal del piloto es la PWA instalada; el AAB nativo sigue siendo artefacto de CI | Fase 1 (antes del piloto nativo) | frontend |
+| D-31 | La idempotencia por UUID del movimiento de caja muere tras un fallo de red con el diálogo ya cerrado: el `id` se pierde y rehacer el gesto puede duplicar el movimiento si el servidor sí recibió el primero | Fase 1 (antes del piloto) | frontend |
+| D-32 | Si `/tenants/mios` responde 200 pero incompleto, el negocio omitido queda inseleccionable: la degradación a UUID solo aplica cuando el endpoint FALLA, no cuando falta un id del claim | Fase 1 (antes del piloto) | frontend |
 
 Cerradas en la Etapa 5, con su evidencia al final de este documento: **D-01**
 (ROPC), **D-04** (Keycloak sin `--optimized`), **D-06** (`alembic_version`
@@ -520,6 +522,68 @@ estricto entre eventos de la misma transacción).
 (`test_cruzar_hacia_abajo_emite_un_evento_por_cruce_y_no_por_movimiento`) y el
 anti-spam (`test_dos_ventas_bajo_el_minimo_emiten_una_sola_alerta`) fijan la
 emisión correcta sin depender del orden entre eventos.
+
+---
+
+## D-31 · El UUID del movimiento de caja se pierde si la red falla con el diálogo ya cerrado
+
+**Qué es.** `mi-caja.component.ts` genera el `id` del movimiento AL ABRIR el
+diálogo (`crypto.randomUUID()`, línea ~186): reenviar el mismo formulario es
+el no-op idempotente del servidor (decisión 7 del módulo caja). Pero si la
+petición falla por red DESPUÉS de cerrarse el diálogo, el `id` muere con la
+suscripción: el error solo apaga el spinner y el tendero no tiene forma de
+reintentar con el MISMO `id`. Rehacer el gesto (abrir el diálogo otra vez)
+genera un UUID NUEVO — y si el servidor sí recibió el primero, el movimiento
+queda duplicado (un ingreso/egreso fantasma que el arqueo sí contará).
+
+**Por qué queda abierta.** El arreglo correcto es conservar el `id` por
+borrador (memoria de la página o `sessionStorage` con ventana temporal) hasta
+tener el ack del servidor, y ofrecer reintento explícito con ese `id`. Es un
+cambio de UX del flujo de error, no una línea: se registra como deuda del QA
+adversarial de `vendi-tenant` (2026-07-28) en vez de improvisarlo.
+
+**Riesgo si se olvida.** Un egreso duplicado descuadra el arqueo de cierre y
+el tendero «corrige» a mano: la caja deja de ser el libro mayor de verdad.
+
+**Vencimiento: Fase 1, antes del piloto.** Persistir el `id` del movimiento
+hasta el ack (borrador por ventana temporal) y reintentar con el mismo `id`.
+
+**Candados mientras tanto:** la idempotencia del servidor está probada
+(reenvío byte-idéntico del mismo `id` es no-op); el escopo del hueco es solo
+«fallo de red sin ack + gesto rehecho», y el historial de movimientos muestra
+el duplicado de inmediato — el tendero lo VE, no queda oculto.
+
+---
+
+## D-32 · `/tenants/mios` incompleto (200) deja un negocio del token inseleccionable
+
+**Qué es.** El selector de negocio degrada a los alias UUID del claim cuando
+el endpoint `/tenants/mios` FALLA o devuelve lista vacía (decisión firmada en
+`ea652ec`). Pero si el endpoint responde 200 con datos INCOMPLETOS —omite un
+negocio que el token sí trae—, el filtro descarta el omitido y NO hay
+degradación: el dueño no puede entrar a ese negocio aunque su token lo tenga,
+y nadie le explica por qué.
+
+**Por qué queda abierta.** «200 con datos incompletos» no es necesariamente
+«negocio eliminado» (puede ser un desfase de réplica o un filtro del propio
+endpoint). La decisión a firmar es si se degrada TAMBIÉN por id del claim
+faltante en la lista (ofrecer el alias UUID como entrada), o se mantiene el
+filtro estricto y se documenta. Hallazgo del QA adversarial de `vendi-tenant`
+(2026-07-28); el comportamiento actual está documentado como decisión («un
+alias que el endpoint no devuelve no se ofrece»), así que no es un bug
+silencioso: es un criterio pendiente de firma.
+
+**Riesgo si se olvida.** Un negocio real queda inaccesible desde la consola
+en pleno piloto y el soporte no tiene palanca que no sea tocar el endpoint.
+
+**Vencimiento: Fase 1, antes del piloto.** Firmar una de las dos: degradar
+por id faltante (con su spec), o mantener el filtro y documentar el runbook
+de soporte para ese caso.
+
+**Candados mientras tanto:** los specs de `elegir-negocio.component.spec.ts`
+fijan la degradación por endpoint caído/lista vacía y el rechazo de alias
+fuera del token por `selectTenant` real: cualquier cambio de criterio rompe
+esos tests y obliga a re-firmar.
 
 ---
 

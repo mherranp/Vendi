@@ -20,6 +20,7 @@ export {
   MILI_POR_UNIDAD,
   formatearPesos,
   miliDeCantidad,
+  miliDeConteo,
   textoDeCantidad,
   totalLineaCentavos,
   totalTicketCentavos,

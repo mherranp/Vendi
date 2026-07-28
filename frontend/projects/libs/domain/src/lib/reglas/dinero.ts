@@ -55,6 +55,23 @@ export function miliDeCantidad(cantidad: number): number {
 }
 
 /**
+ * Convierte el CONTEO físico del almacenista a mili-unidades enteras.
+ *
+ * Espejo de `_cuantizar_conteo` del backend (`inventario/schemas.py`): el
+ * cero es un conteo VÁLIDO («no queda ninguna», el schema lo admite con
+ * `ge=0`), así que solo lanzan los negativos y lo ilegible. Una fracción
+ * sub-mili cuantiza a 0 mili y se acepta, exactamente como hace el servidor
+ * (ROUND_HALF_UP sin rechazo del cero). No confundir con `miliDeCantidad`:
+ * ventas y mermas exigen `> 0`; el conteo no es una cantidad vendible.
+ */
+export function miliDeConteo(conteo: number): number {
+  if (!Number.isFinite(conteo) || conteo < 0) {
+    throw new Error(`Conteo ilegible: ${conteo}`);
+  }
+  return Math.round(conteo * MILI_POR_UNIDAD);
+}
+
+/**
  * Serializa la cantidad para el payload del sync: string de 3 decimales, el
  * formato exacto que el backend cuantiza (`Decimal`). Un número JSON
  * arrastraría binario (0.1 + 0.2) hacia el validador.

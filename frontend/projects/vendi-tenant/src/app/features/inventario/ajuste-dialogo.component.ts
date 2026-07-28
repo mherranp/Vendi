@@ -2,7 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, FormGroup } from '@angular/forms';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { TranslateModule } from '@ngx-translate/core';
-import { miliDeCantidad, textoDeCantidad } from 'domain';
+import { miliDeCantidad, miliDeConteo, textoDeCantidad } from 'domain';
 import { ConfiguracionFormulario, FormRendererComponent } from 'ui-kit/form-renderer';
 import { AjusteNuevo, StockSalida } from './contrato';
 
@@ -102,13 +102,16 @@ export class AjusteDialogoComponent {
       return;
     }
     const motivo = String(valores['motivo'] ?? '').trim();
+    const tipo = valores['tipo'] as 'ajuste' | 'merma';
     let cantidad: string;
     try {
-      cantidad = textoDeCantidad(
-        miliDeCantidad(Number(String(valores['cantidad'] ?? '').replace(',', '.'))),
-      );
+      // Conteo y merma no siguen la misma regla (espejo del backend:
+      // `_cuantizar_conteo` vs `_cuantizar_cantidad`): el conteo 0 es
+      // legítimo («no queda nada»); la merma 0 no existe.
+      const numero = Number(String(valores['cantidad'] ?? '').replace(',', '.'));
+      cantidad = textoDeCantidad(tipo === 'ajuste' ? miliDeConteo(numero) : miliDeCantidad(numero));
     } catch {
-      // Cantidad ilegible o <= 0: el diálogo no cierra con un payload inválido.
+      // Cantidad ilegible o fuera de rango: el diálogo no cierra con un payload inválido.
       this.errorFormulario.set(true);
       return;
     }
@@ -117,7 +120,6 @@ export class AjusteDialogoComponent {
       return;
     }
     this.enviando.set(true);
-    const tipo = valores['tipo'] as 'ajuste' | 'merma';
     // Conteo → el servidor calcula el delta contra su stock; merma → el
     // delta es la cantidad que se reporta. Nunca viajan los dos campos.
     this.ref.close(

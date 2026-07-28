@@ -146,6 +146,30 @@ describe('NumerosComponent', () => {
     // No hay segunda petición de forecast: lo verifica http.verify().
   });
 
+  it('dos cambios rápidos: la respuesta vieja se descarta aunque llegue ÚLTIMA', async () => {
+    m = await montar(ROLES_DUENO);
+    m.fixture.detectChanges();
+    m.http.expectOne((r) => r.url === `${BASE}/reportes/pyl`).flush(pylBase);
+    m.http.expectOne(`${BASE}/reportes/forecast`).flush(forecastBase);
+
+    m.fixture.componentInstance.cambiarPeriodo('semana');
+    m.fixture.componentInstance.cambiarPeriodo('mes');
+    const pendientes = m.http.match((r) => r.url === `${BASE}/reportes/pyl`);
+    expect(pendientes.length).toBe(2);
+
+    // Llega primero la del mes (la última pedida)...
+    pendientes
+      .find((r) => r.request.params.get('periodo') === 'mes')
+      ?.flush({ ...pylBase, periodo: 'mes', ventas_netas_centavos: 222 });
+    // ...y después la vieja de la semana: no debe pisar los datos del mes.
+    pendientes
+      .find((r) => r.request.params.get('periodo') === 'semana')
+      ?.flush({ ...pylBase, periodo: 'semana', ventas_netas_centavos: 111 });
+
+    expect(m.fixture.componentInstance.periodo()).toBe('mes');
+    expect(m.fixture.componentInstance.pyl()?.ventas_netas_centavos).toBe(222);
+  });
+
   it('las compras del período se muestran como línea informativa, no restada', async () => {
     m = await montar(ROLES_DUENO);
     m.fixture.detectChanges();
