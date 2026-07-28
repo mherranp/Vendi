@@ -10,7 +10,7 @@ import {
   provideTranslateService,
 } from '@ngx-translate/core';
 import { API_BASE_URL, CATALOGO_MINIMO_ES, errorInterceptor, fusionarCatalogos } from 'data-access';
-import { Observable, of } from 'rxjs';
+import { Observable, Subject, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('keycloak-js', async () => {
@@ -275,6 +275,46 @@ describe('MiCajaComponent — con sesión abierta', () => {
     expect(visible).toContain('Diferencia');
     expect(m.fixture.componentInstance.textoDiferencia(-5000)).toBe(`-${formatearPesos(5000)}`);
     expect(m.fixture.componentInstance.sesion()).toBeNull();
+  });
+
+  it('un 409 caja_ya_cerrada (otro dispositivo cerró primero) refresca y no deja spinner', async () => {
+    const m = await montar(ROLES_DUENO);
+    arrancarConSesion(m, 230000, true);
+    m.dialogos.resultados = [225000];
+    m.fixture.componentInstance.cerrarCaja();
+    m.http
+      .expectOne(`${BASE}/caja/sesiones/${SESION}/cerrar`)
+      .flush(
+        { message: 'La caja ya fue cerrada', code: 'caja_ya_cerrada' },
+        { status: 409, statusText: 'Conflict' },
+      );
+    // La verdad está en el servidor: se recarga la sesión (ya cerrada → 404 → null)
+    // y el historial, donde el arqueo del otro dispositivo ya es visible.
+    m.http
+      .expectOne(`${BASE}/caja/sesiones/actual`)
+      .flush({ message: 'no hay' }, { status: 404, statusText: 'Not Found' });
+    m.http
+      .expectOne((r) => r.url === `${BASE}/caja/sesiones` && r.method === 'GET')
+      .flush({ items: [], total: 0, skip: 0, limit: 10 });
+    m.fixture.detectChanges();
+    expect(m.fixture.componentInstance.sesion()).toBeNull();
+    expect(m.fixture.componentInstance.cargando()).toBe(false);
+    expect(m.fixture.componentInstance.fallo()).toBe(false);
+  });
+
+  it('un segundo clic en cerrar con el diálogo abierto no abre otro arqueo', async () => {
+    const m = await montar(ROLES_DUENO);
+    arrancarConSesion(m, 230000, true);
+    // El doble del archivo resuelve afterClosed en el mismo tick; el MatDialog
+    // real NO puede cerrar antes de que el segundo clic llegue. Se sustituye
+    // por un diálogo que queda abierto para probar el candado de verdad.
+    m.dialogos.open = ((componente: unknown, config?: { data?: unknown }) => {
+      m.dialogos.aperturas.push({ componente, datos: config?.data });
+      return { afterClosed: () => new Subject<never>() };
+    }) as typeof m.dialogos.open;
+    m.fixture.componentInstance.cerrarCaja();
+    m.fixture.componentInstance.cerrarCaja();
+    expect(m.dialogos.aperturas.length).toBe(1);
   });
 
   it('un fallo de red deja la pantalla en estado de reintento, no en spinner eterno', async () => {

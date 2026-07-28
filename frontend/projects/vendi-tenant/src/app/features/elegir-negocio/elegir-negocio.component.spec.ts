@@ -181,6 +181,28 @@ describe('ElegirNegocioComponent — defensas que no cambian', () => {
     p.http.verify();
   });
 
+  it('un nombre con HTML y comillas se pinta como TEXTO, jamás se interpreta', async () => {
+    // El nombre viene del backend pero lo escribió un humano (u otro tenant del
+    // mismo realm): si el template lo interpolara como HTML, una tienda llamada
+    // `<img onerror=…>` ejecutaría script en la consola del dueño.
+    p = await preparar([ORG_A]);
+    const fixture = TestBed.createComponent(ElegirNegocioComponent);
+    p.http
+      .expectOne(MIOS)
+      .flush([
+        {
+          id: ORG_A,
+          nombre: '<img src=x onerror="alert(1)"> "La" <b>Esquina</b>',
+          estado: 'activo',
+        },
+      ]);
+    fixture.detectChanges();
+    const elemento = fixture.nativeElement as HTMLElement;
+    expect(elemento.querySelector('img')).toBeNull();
+    expect(elemento.querySelector('b')).toBeNull();
+    expect(elemento.textContent).toContain('<img src=x onerror="alert(1)"> "La" <b>Esquina</b>');
+  });
+
   it('un alias que NO está en el token no se selecciona ni navega', async () => {
     // La defensa vive en `AuthService.selectTenant` (el real): esta pantalla no
     // puede usarse para pedir el negocio de otro, ni escribiendo el id a mano.
