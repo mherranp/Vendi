@@ -5,15 +5,18 @@ camino feliz y los errores tipados; esto empuja las esquinas — carreras,
 reintentos con payload divergente, comodines de LIKE, dobles bajas, EAN con
 espacios— y deja cada comportamiento FIJO en un test.
 
-Dos de estos tests documentan comportamientos discutibles a propósito (la
-carrera del cupo y el reintento idempotente con datos distintos): el assert
-es el comportamiento actual, y la discusión —con la deuda propuesta— vive en
-`.superpowers/sdd/qa-adversarial-report.md`. Si alguno de los dos cambia a un
-comportamiento más estricto, el test correspondiente se reescribe, no se borra.
+Uno de estos tests documenta un comportamiento discutible a propósito (el
+reintento idempotente con datos distintos): el assert es el comportamiento
+actual, y la discusión —con la deuda propuesta— vive en
+`.superpowers/sdd/qa-adversarial-report.md`. Si cambia a un comportamiento
+más estricto, el test se reescribe, no se borra. (El otro que documentaba un
+discutible, la carrera del cupo, se invirtió con el cierre de D-13: ahora
+fija que la segunda alta se rechaza.)
 """
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import uuid
 
@@ -27,7 +30,7 @@ from app.modules.catalogo.schemas import ProductoActualizar, ProductoCrear
 from app.modules.catalogo.service import CatalogoService
 from vendi_core.db.engine import create_engine
 from vendi_core.db.session import create_session_factory
-from vendi_core.errors.domain import NotFoundError, ValidationError
+from vendi_core.errors.domain import NotFoundError, PermissionDeniedError, ValidationError
 from vendi_core.tenant.context import current_tenant_id
 
 pytestmark = pytest.mark.integration
@@ -113,18 +116,16 @@ async def _contar_vivos(pg_platform_url: str, tenant_id: uuid.UUID) -> int:
 # --- Carreras y límite del tier -----------------------------------------------
 
 
-async def test_la_carrera_del_cupo_supera_el_limite_aunque_el_check_pase(
-    pg_app_url: str, pg_platform_url: str, limpiar_productos
-):
-    """DOCUMENTA la carrera TOCTOU de `_exigir_cupo` (deuda firmada, no bug nuevo).
+async def test_la_carrera_del_cupo_rechaza_la_segunda_alta(pg_app_url: str, pg_platform_url: str, limpiar_productos):
+    """FIJA el cierre de D-13: conteo e INSERT del cupo se serializan por
+    negocio con `pg_advisory_xact_lock` dentro de `_exigir_cupo`.
 
-    El conteo y el INSERT no son una sola operación (ADR-019: el límite vive en
-    la aplicación). El intercalado determinista de la carrera es: A cuenta
-    (99 < 100), inserta y NO confirma; B cuenta —en READ COMMITTED la fila de A
-    aún es invisible—, también ve 99 y pasa; confirman las dos y el negocio
-    queda con 101 productos vivos sobre un límite de 100. El assert fija ese
-    desenlace para que nadie lo "descubra" en producción creyendo que el cupo
-    era exacto.
+    El intercalado es el del test que documentaba la carrera (101/100): A
+    cuenta (99 < 100), inserta y NO confirma —pero ahora retiene el advisory
+    lock del tenant hasta el commit—; B se queda esperando el bloqueo y, cuando
+    A confirma, su conteo ya ve la fila de A: 100 >= 100, y su alta se rechaza
+    con `limite_de_productos_alcanzado`. El negocio queda en 100/100: el cupo
+    del tier (límite comercial, ADR-010) vuelve a ser exacto bajo concurrencia.
     """
     valores = ", ".join(f"('{T1}', 'Semilla {i:03d}', 100)" for i in range(99))
     engine = create_async_engine(pg_platform_url)
@@ -137,13 +138,17 @@ async def test_la_carrera_del_cupo_supera_el_limite_aunque_el_check_pase(
     async with sesion_de(pg_app_url, T1) as s1, sesion_de(pg_app_url, T1) as s2:
         gratis_a = CatalogoService(session=s1, tenant_id=T1, tier="gratis")
         gratis_b = CatalogoService(session=s2, tenant_id=T1, tier="gratis")
-        await gratis_a.crear(ProductoCrear(nombre="Alta A", precio_venta=100))  # flush, sin commit
-        # B no ve la fila de A: su conteo da 99 y `_exigir_cupo` la deja pasar.
-        await gratis_b.crear(ProductoCrear(nombre="Alta B", precio_venta=100))
+        await gratis_a.crear(ProductoCrear(nombre="Alta A", precio_venta=100))  # flush + lock, sin commit
+        # B pide el advisory lock del tenant y espera a que A confirme; sin él
+        # contaría 99 (la fila de A es invisible en READ COMMITTED) y pasaría.
+        tardia = asyncio.create_task(gratis_b.crear(ProductoCrear(nombre="Alta B", precio_venta=100)))
+        await asyncio.sleep(0.1)
         await s1.commit()
-        await s2.commit()
+        with pytest.raises(PermissionDeniedError) as exc:
+            await tardia
+        assert exc.value.code == "limite_de_productos_alcanzado"
 
-    assert await _contar_vivos(pg_platform_url, T1) == 101
+    assert await _contar_vivos(pg_platform_url, T1) == 100
 
 
 # --- Idempotencia y reintentos -------------------------------------------------

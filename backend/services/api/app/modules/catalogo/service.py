@@ -34,7 +34,7 @@ import uuid
 from datetime import UTC, datetime
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -237,10 +237,26 @@ class CatalogoService:
 
     async def _exigir_cupo(self) -> None:
         """El límite del tier contra las filas VIVAS (ADR-019: en la
-        aplicación, no en una constraint). La RLS acota el count al negocio."""
+        aplicación, no en una constraint). La RLS acota el count al negocio.
+
+        Cierre de D-13: el conteo y el INSERT son una ventana TOCTOU —dos
+        altas concurrentes contaban 99 las dos y el negocio quedaba en
+        101/100— y se serializan con `pg_advisory_xact_lock` sobre una clave
+        derivada del tenant. Se eligió el advisory lock y no un FOR UPDATE
+        sobre una fila del negocio porque no hay fila que bloquear: el
+        negocio vive en Keycloak (Organizations), no en una tabla local, y el
+        advisory lock no toca el esquema. El bloqueo es de transacción (`xact`):
+        quien pierde espera al commit del ganador y su conteo ya ve la fila
+        nueva. El costo —altas del MISMO negocio serializadas, y solo en tiers
+        con límite— es despreciable; una colisión de `hashtext` entre tenants
+        solo serializa de más, nunca de menos (hashtext es de 32 bits, pero lo
+        peor que produce es una espera espuria entre negocios distintos)."""
         limite = LIMITES_PRODUCTOS_POR_TIER[self._tier]
         if limite is None:
             return
+        await self._session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:tenant))"), {"tenant": str(self._tenant_id)}
+        )
         cuantos = (
             await self._session.execute(select(func.count()).select_from(Producto).where(Producto.deleted_at.is_(None)))
         ).scalar_one()

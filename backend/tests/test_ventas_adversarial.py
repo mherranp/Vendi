@@ -520,3 +520,91 @@ async def test_el_reintento_de_una_venta_ya_anulada_es_divergente_por_el_estado(
     fila = await _uno(pg_platform_url, "SELECT estado FROM ventas WHERE id = :v", v=venta_id)
     assert fila.estado == "anulada", "el reintento NO resucita la venta"
     assert await _stock(pg_platform_url, semilla["producto"]) == Decimal("10"), "y el stock no se movió de más"
+
+
+# --- Concurrencia: el orden de bloqueo de los productos (cierre de D-21) ----------
+
+
+async def test_lotes_con_el_mismo_surtido_en_orden_inverso_no_se_interbloquean(pg_app_url, pg_platform_url, semilla):
+    """FIJA el cierre de D-21: dos cajas suben a la vez tickets con los mismos
+    productos en orden INVERSO ([arroz, huevo] y [huevo, arroz]).
+
+    Antes del arreglo, cada lote tomaba el FOR UPDATE en el orden del ticket:
+    el intercalado A bloquea arroz → B bloquea huevo → A pide huevo → B pide
+    arroz era un `DeadlockDetected` de Postgres y un 500. Con los bloqueos
+    ordenados por `producto_id` (la receta de la compra, decisión 9) los dos
+    lotes piden primero la MISMA fila: el perdedor espera al commit del
+    ganador y aplica después, sin deadlock y con el stock exacto.
+
+    El `gather` es a propósito (no `create_task` + commit como la carrera de
+    la sesión implícita): el deadlock solo existe si los dos lotes están
+    DENTRO de su bucle de bloqueos a la vez. La caja 1 confirma tras una
+    pausa para dejar al perdedor esperando el bloqueo en medio del gather.
+    """
+    engine = create_engine(pg_app_url)
+    factory = create_session_factory(engine)
+    marca = current_tenant_id.set(T1)
+
+    def _op_invertida(venta_id: uuid.UUID, secuencia: int, consecutivo: int) -> dict:
+        return _op_venta(
+            semilla,
+            venta_id,
+            secuencia=secuencia,
+            consecutivo_local=consecutivo,
+            items=[
+                {"producto_id": str(semilla["producto2"]), "cantidad": "1", "precio_unitario_centavos": 600},
+                {"producto_id": str(semilla["producto"]), "cantidad": "1", "precio_unitario_centavos": 2500},
+            ],
+            total_centavos=3100,
+        )
+
+    try:
+        async with factory() as s1, factory() as s2:
+            servicio1 = VentasService(session=s1, tenant_id=T1, actor_id="caja-1", puede_anular=True)
+            servicio2 = VentasService(session=s2, tenant_id=T1, actor_id="caja-2", puede_anular=True)
+            lote1 = _lote(
+                semilla,
+                _op_venta(
+                    semilla,
+                    uuid.uuid4(),
+                    secuencia=1,
+                    consecutivo_local=1,
+                    items=[
+                        {"producto_id": str(semilla["producto"]), "cantidad": "1", "precio_unitario_centavos": 2500},
+                        {"producto_id": str(semilla["producto2"]), "cantidad": "1", "precio_unitario_centavos": 600},
+                    ],
+                    total_centavos=3100,
+                ),
+            )
+            lote2 = _lote(semilla, _op_invertida(uuid.uuid4(), secuencia=2, consecutivo=2))
+
+            async def caja1():
+                resultados = await servicio1.procesar_lote(lote1)
+                # Mantiene los bloqueos un instante: la caja 2 pide la MISMA
+                # primera fila (ordenadas por producto_id) y espera aquí.
+                await asyncio.sleep(0.2)
+                await s1.commit()
+                return resultados
+
+            async def caja2():
+                resultados = await servicio2.procesar_lote(lote2)
+                await s2.commit()
+                return resultados
+
+            # Sin el orden de bloqueo, este gather reventaba con
+            # DeadlockDetected: A retenía arroz y pedía huevo, B al revés.
+            r1, r2 = await asyncio.gather(caja1(), caja2())
+            assert [r.resultado for r in r1] == ["aceptada"]
+            assert [r.resultado for r in r2] == ["aceptada"]
+    finally:
+        current_tenant_id.reset(marca)
+        await engine.dispose()
+
+    assert await _stock(pg_platform_url, semilla["producto"]) == Decimal("8"), "10 − 1 − 1, sin deadlock ni reintento"
+    assert await _stock(pg_platform_url, semilla["producto2"]) == Decimal("1"), "3 − 1 − 1"
+    movimientos = await _uno(
+        pg_platform_url,
+        "SELECT count(*) AS n FROM movimientos_inventario WHERE tenant_id = :t AND tipo = 'venta'",
+        t=T1,
+    )
+    assert movimientos.n == 4, "dos ventas × dos productos consolidados, los dos lotes aplicaron una sola vez"

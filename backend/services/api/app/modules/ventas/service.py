@@ -317,20 +317,42 @@ class VentasService:
                 {"permiso": "fiado:crear"},
             )
 
-        productos: dict[uuid.UUID, Producto] = {}
+        # El libro se CONSOLIDA por producto (BUG-1 del QA):
+        # `ux_movimientos_origen` es por (tipo, referencia_id, producto_id),
+        # así que dos líneas del mismo producto en un ticket chocaban entre sí
+        # y la venta se perdía tras una mistraducción a `duplicada`. Un
+        # movimiento por (venta, producto) con la cantidad sumada; las líneas
+        # del ticket (`ventas_items`) quedan tal cual. La consolidación va en
+        # el ORDEN DEL TICKET: ese es el orden en que se insertan los
+        # movimientos más abajo (ningún índice ni la lógica imponen uno —
+        # `ux_movimientos_origen` es unico por clave, no por posición—, pero
+        # el orden del ticket es el que el cliente ve y no hay motivo para
+        # permutarlo).
         cantidad_por_producto: dict[uuid.UUID, Decimal] = {}
         for item in datos.items:
-            # SELECT ... FOR UPDATE sobre la fila del producto: sin el bloqueo,
-            # dos lotes concurrentes del mismo tenant que venden el mismo
-            # producto leen el MISMO `stock_actual` y el segundo commit pisa
-            # al primero con un valor stale (lost update: el libro
-            # `movimientos_inventario` queda exacto pero la proyección deriva).
-            # Se eligió el bloqueo de fila sobre un UPDATE atómico
-            # (`stock_actual = stock_actual + :delta`): es lo conservador y
-            # consistente con el FOR UPDATE de la anulación, y mantiene el
-            # objeto ORM sincronizado para el resto del lote. El perdedor
-            # espera al commit del ganador y re-lee el stock ya descontado.
-            producto = await self._session.get(Producto, item.producto_id, with_for_update=True)
+            cantidad_por_producto[item.producto_id] = cantidad_por_producto.get(item.producto_id, Decimal(0)) + (
+                item.cantidad
+            )
+
+        productos: dict[uuid.UUID, Producto] = {}
+        for producto_id in sorted(cantidad_por_producto):
+            # SELECT ... FOR UPDATE sobre la fila del producto, ORDENADO por
+            # producto_id (cierre de D-21, la misma receta que la compra —
+            # decisión 9—): dos lotes concurrentes con el mismo surtido en
+            # orden inverso adquieren los bloqueos en el MISMO orden y no se
+            # interbloquean; lo único que cambia respecto al orden del ticket
+            # es el orden de ADQUISICIÓN de los bloqueos, no el de los
+            # movimientos. Sin el bloqueo, dos lotes concurrentes del mismo
+            # tenant que venden el mismo producto leen el MISMO `stock_actual`
+            # y el segundo commit pisa al primero con un valor stale (lost
+            # update: el libro `movimientos_inventario` queda exacto pero la
+            # proyección deriva). Se eligió el bloqueo de fila sobre un UPDATE
+            # atómico (`stock_actual = stock_actual + :delta`): es lo
+            # conservador y consistente con el FOR UPDATE de la anulación, y
+            # mantiene el objeto ORM sincronizado para el resto del lote. El
+            # perdedor espera al commit del ganador y re-lee el stock ya
+            # descontado.
+            producto = await self._session.get(Producto, producto_id, with_for_update=True)
             if producto is None:
                 # Otro negocio o inexistente: la RLS lo hace invisible. Un
                 # producto dado de baja lógica SÍ se acepta: la venta ocurrió
@@ -339,19 +361,9 @@ class VentasService:
                     operacion,
                     "producto_no_encontrado",
                     "Uno de los productos de la venta no existe en tu negocio.",
-                    {"producto_id": str(item.producto_id)},
+                    {"producto_id": str(producto_id)},
                 )
-            productos[item.producto_id] = producto
-            # El libro se CONSOLIDA por producto (BUG-1 del QA):
-            # `ux_movimientos_origen` es por (tipo, referencia_id,
-            # producto_id), así que dos líneas del mismo producto en un
-            # ticket chocaban entre sí y la venta se perdía tras una
-            # mistraducción a `duplicada`. Un movimiento por (venta,
-            # producto) con la cantidad sumada; las líneas del ticket
-            # (`ventas_items`) quedan tal cual.
-            cantidad_por_producto[item.producto_id] = cantidad_por_producto.get(item.producto_id, Decimal(0)) + (
-                item.cantidad
-            )
+            productos[producto_id] = producto
 
         sesion = await self._resolver_sesion_caja()
 
@@ -393,8 +405,11 @@ class VentasService:
         # Una venta que sube ya anulada no mueve stock (decisión 9): su efecto
         # neto es cero y el libro queda limpio.
         if datos.estado == "completada":
-            for producto_id, producto in productos.items():
-                await self._mover_stock(producto, -cantidad_por_producto[producto_id], referencia_id=venta.id)
+            # En el ORDEN DEL TICKET (la consolidación), no en el orden
+            # ordenado en que se tomaron los bloqueos: los movimientos del
+            # libro quedan como antes del cierre de D-21.
+            for producto_id, cantidad in cantidad_por_producto.items():
+                await self._mover_stock(productos[producto_id], -cantidad, referencia_id=venta.id)
 
         cupo_excedido = False
         if datos.estado == "completada" and datos.medio_pago == "fiado" and venta.total_centavos > 0:
