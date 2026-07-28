@@ -151,6 +151,54 @@
       "diferencia": "Diferencia"
     }
   },
+  "catalogo": {
+    "titulo": "Catálogo",
+    "subtitulo": "Los productos de tu tienda",
+    "fallo": "No pudimos cargar el catálogo.",
+    "buscar_placeholder": "Buscar por nombre…",
+    "nuevo": { "titulo": "Nuevo producto", "accion": "Nuevo producto" },
+    "editar": { "titulo": "Editar producto", "accion": "Editar" },
+    "eliminar": "Eliminar",
+    "confirmar": {
+      "eliminar_titulo": "Eliminar el producto",
+      "eliminar_mensaje": "El producto dejará de aparecer en el catálogo. Las ventas y compras que ya lo usaron no se tocan.",
+      "eliminar_accion": "Eliminar"
+    },
+    "campo": {
+      "nombre": "Nombre",
+      "categoria": "Categoría",
+      "categoria_ayuda": "Texto libre: granos, aseo, fruver…",
+      "ean": "Código de barras (EAN)",
+      "ean_ayuda": "Opcional: muchos productos de barrio no tienen.",
+      "precio": "Precio de venta (pesos)",
+      "unidad": "Se vende por",
+      "iva": "IVA",
+      "stock_minimo": "Stock mínimo",
+      "stock_minimo_ayuda": "Con decimales si es a granel: 5 o 2,5. Con 0 no hay alertas."
+    },
+    "unidad": {
+      "unidad": "unidad",
+      "kg": "kg",
+      "g": "g",
+      "lt": "litro",
+      "ml": "ml"
+    },
+    "iva": { "0": "0 %", "5": "5 %", "19": "19 %" },
+    "columna": {
+      "nombre": "Nombre",
+      "categoria": "Categoría",
+      "precio": "Precio",
+      "stock": "Stock",
+      "acciones": "Acciones"
+    },
+    "vacio": {
+      "titulo": "Todavía no hay productos",
+      "descripcion": "Crea el primero para empezar a vender y a llevar el inventario."
+    },
+    "formulario": {
+      "invalido": "Revisa el formulario: falta un dato o una cantidad no es válida."
+    }
+  },
   "menu": {
     "caja": "Mi caja",
     "catalogo": "Catálogo",

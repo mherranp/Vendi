@@ -1,0 +1,26 @@
+:host {
+  display: block;
+}
+
+.vd-catalogo__acciones {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.vd-catalogo__busqueda {
+  width: 16rem;
+}
+
+.vd-catalogo__fallo {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+vd-data-table {
+  display: block;
+  width: 100%;
+}

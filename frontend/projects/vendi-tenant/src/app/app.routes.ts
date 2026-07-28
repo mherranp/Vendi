@@ -30,6 +30,12 @@ export const routes: Routes = [
           import('./features/caja/mi-caja.component').then((m) => m.MiCajaComponent),
       },
       {
+        path: 'catalogo',
+        canActivate: [tenantGuard, permisoGuard('producto:leer')],
+        loadComponent: () =>
+          import('./features/catalogo/catalogo.component').then((m) => m.CatalogoComponent),
+      },
+      {
         path: 'elegir-negocio',
         loadComponent: () =>
           import('./features/elegir-negocio/elegir-negocio.component').then(
