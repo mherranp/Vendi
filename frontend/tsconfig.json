@@ -35,7 +35,10 @@
       "data-access": ["./dist/data-access"],
       "domain": ["./dist/domain"],
       "native": ["./dist/native"],
-      "ui-kit": ["./dist/ui-kit"]
+      "ui-kit": ["./dist/ui-kit"],
+      "ui-kit/confirm-dialog": ["./dist/ui-kit/confirm-dialog"],
+      "ui-kit/data-table": ["./dist/ui-kit/data-table"],
+      "ui-kit/form-renderer": ["./dist/ui-kit/form-renderer"]
     }
   },
   "angularCompilerOptions": {

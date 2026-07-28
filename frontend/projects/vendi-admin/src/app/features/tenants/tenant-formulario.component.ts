@@ -3,7 +3,7 @@ import { FormBuilder, FormGroup } from '@angular/forms';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { TranslateModule } from '@ngx-translate/core';
 import { TenantDeApi } from 'domain';
-import { ConfiguracionFormulario, FormRendererComponent } from 'ui-kit';
+import { ConfiguracionFormulario, FormRendererComponent } from 'ui-kit/form-renderer';
 import { MAXIMO_NOMBRE } from './tenants.service';
 
 /** Datos con los que se abre el diálogo. Sin `tenant` es un alta. */

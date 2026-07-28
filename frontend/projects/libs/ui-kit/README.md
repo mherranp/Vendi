@@ -19,6 +19,18 @@ ng build ui-kit      # solo esta librería
 El resultado va a `dist/ui-kit`. Es una librería interna del monorepo: se
 consume por el mapeo de rutas de `tsconfig.json`, **no** se publica en npm.
 
+## Puntos de entrada
+
+Además del barril `ui-kit`, la librería tiene tres puntos de entrada
+secundarios: `ui-kit/data-table`, `ui-kit/form-renderer` y
+`ui-kit/confirm-dialog`. DataTable, FormRenderer y ConfirmDialog viven SOLO
+ahí, no en el barril: el fesm del barril es un solo módulo que los shells
+cargan en el chunk inicial, y sus imports estáticos de Material arrastrarían
+al arranque de cada app las dependencias pesadas de estos tres componentes
+(tabla, paginador, campos de formulario y diálogo) aunque solo se usen en
+pantallas perezosas. Quien los necesite los importa del punto de entrada
+secundario, que viaja en el chunk perezoso de la feature.
+
 ## Tests unitarios
 
 El runner es Vitest, a través del builder `@angular/build:unit-test`. En este

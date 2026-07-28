@@ -7,14 +7,9 @@ import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { PageEvent } from '@angular/material/paginator';
 import { TranslateModule } from '@ngx-translate/core';
 import { TenantDeApi } from 'domain';
-import {
-  ColumnaTabla,
-  ConfirmDialogComponent,
-  ConfirmDialogData,
-  DataTableComponent,
-  PageHeaderComponent,
-  StatusBadgeComponent,
-} from 'ui-kit';
+import { PageHeaderComponent, StatusBadgeComponent } from 'ui-kit';
+import { ConfirmDialogComponent, ConfirmDialogData } from 'ui-kit/confirm-dialog';
+import { ColumnaTabla, DataTableComponent } from 'ui-kit/data-table';
 import { etiquetaDeEstado, varianteDeEstado } from './estados';
 import {
   DatosFormularioTenant,

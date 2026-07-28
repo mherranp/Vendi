@@ -5,13 +5,12 @@ import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
 import { provideRouter } from '@angular/router';
 import { CATALOGO_MINIMO_ES, textoDeRespaldo } from 'data-access';
 
-import { ConfirmDialogComponent } from '../components/confirm-dialog/confirm-dialog.component';
-import { ColumnaTabla, DataTableComponent } from '../components/data-table/data-table.component';
+import { ConfirmDialogComponent } from 'ui-kit/confirm-dialog';
+import { ColumnaTabla, DataTableComponent } from 'ui-kit/data-table';
+import { ConfiguracionFormulario, FormRendererComponent } from 'ui-kit/form-renderer';
 import { EmptyStateComponent } from '../components/empty-state/empty-state.component';
 import { FileUploadComponent } from '../components/file-upload/file-upload.component';
 import { NotFoundComponent } from '../components/not-found/not-found.component';
-import { ConfiguracionFormulario } from '../forms/form.models';
-import { FormRendererComponent } from '../forms/form-renderer.component';
 import { ImpersonationBannerComponent } from '../impersonation/impersonation-banner.component';
 import { FullLayoutComponent } from '../layout/full-layout/full-layout.component';
 import { NotificationsBadgeComponent } from '../notifications/notifications-badge.component';

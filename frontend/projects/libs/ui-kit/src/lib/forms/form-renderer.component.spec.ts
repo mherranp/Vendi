@@ -3,9 +3,12 @@ import { FormBuilder, FormGroup } from '@angular/forms';
 import { TestBed } from '@angular/core/testing';
 
 import { proveerTraduccionDePrueba } from '../testing/i18n-de-prueba';
-import { ConfiguracionFormulario } from './form.models';
-import { FormRendererComponent } from './form-renderer.component';
-import { claveDelPrimerError, construirValidadores } from './validadores';
+import {
+  ConfiguracionFormulario,
+  FormRendererComponent,
+  claveDelPrimerError,
+  construirValidadores,
+} from 'ui-kit/form-renderer';
 
 const CONFIG: ConfiguracionFormulario = {
   disposicion: 'dos-columnas',

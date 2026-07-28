@@ -5,7 +5,7 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableModule } from '@angular/material/table';
 import { TranslateModule } from '@ngx-translate/core';
-import { EmptyStateComponent } from '../empty-state/empty-state.component';
+import { EmptyStateComponent } from 'ui-kit';
 
 export interface ColumnaTabla<T> {
   clave: keyof T & string;

@@ -6,8 +6,8 @@ import { Sort } from '@angular/material/sort';
 import { provideRouter } from '@angular/router';
 
 import { proveerTraduccionDePrueba } from '../testing/i18n-de-prueba';
-import { ConfirmDialogComponent } from './confirm-dialog/confirm-dialog.component';
-import { ColumnaTabla, DataTableComponent } from './data-table/data-table.component';
+import { ConfirmDialogComponent } from 'ui-kit/confirm-dialog';
+import { ColumnaTabla, DataTableComponent } from 'ui-kit/data-table';
 import { EmptyStateComponent } from './empty-state/empty-state.component';
 import { FileUploadComponent } from './file-upload/file-upload.component';
 import { LoadingSpinnerComponent } from './loading-spinner/loading-spinner.component';
