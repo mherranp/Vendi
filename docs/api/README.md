@@ -70,7 +70,7 @@ qué cambió en el contrato.
 | `PATCH /api/v1/clientes/{id}` | `cliente:gestionar` | edición parcial; `null` explícito borra (quitar el cupo = «sin tope»); no hay DELETE (el cuaderno referencia) |
 | `GET /api/v1/fiado/creditos` | `fiado:crear` | el cuaderno: pendientes por defecto (`vigente`+`vencido`), `estado=todos` incluye la historia |
 | `GET /api/v1/fiado/creditos/{id}` | `fiado:crear` | detalle con historial de abonos y `whatsapp_url` prearmada (null sin teléfono) |
-| `PATCH /api/v1/fiado/creditos/{id}` | `fiado:crear` | reprogramar vencimiento; un `vencido` a futuro vuelve a `vigente`; `saldado`/`anulado` = 409 `credito_no_editable` |
+| `PATCH /api/v1/fiado/creditos/{id}` | `fiado:crear` | reprogramar vencimiento; `fecha_vencimiento` es REQUERIDA (`null` explícito = «sin fecha»; body `{}` = 422); un `vencido` a futuro vuelve a `vigente`; `saldado`/`anulado` = 409 `credito_no_editable` |
 | `POST /api/v1/fiado/creditos/{id}/abonos` | `fiado:abonar` | descuenta el saldo en la misma transacción (CHECK como red); `id` requerido (ancla); exceso = 422 `abono_excede_saldo`; `efectivo` exige caja abierta (409 `caja_sin_sesion_abierta`) y entra al arqueo |
 
 Todos los errores usan el mismo sobre: `{"success": false, "message": "...",

@@ -1236,7 +1236,7 @@
       },
       "CreditoReprogramar": {
         "additionalProperties": false,
-        "description": "«Deme hasta el otro viernes»: nueva fecha de vencimiento (o null para\ndejarlo sin recordatorio). Un `vencido` reprogramado a futuro vuelve a\n`vigente` (decisión 7).",
+        "description": "«Deme hasta el otro viernes»: nueva fecha de vencimiento. El campo es\nREQUERIDO: `null` explícito deja el fiado sin recordatorio, pero ese\ngesto tiene que ser deliberado — un body `{}` es 422, nunca un borrado\ntácito por el default del schema. Un `vencido` reprogramado a futuro\nvuelve a `vigente` (decisión 7).",
         "properties": {
           "fecha_vencimiento": {
             "anyOf": [
@@ -1251,6 +1251,9 @@
             "title": "Fecha Vencimiento"
           }
         },
+        "required": [
+          "fecha_vencimiento"
+        ],
         "title": "CreditoReprogramar",
         "type": "object"
       },

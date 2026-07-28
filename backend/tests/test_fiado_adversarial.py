@@ -854,11 +854,14 @@ def test_el_telefono_se_limpia_en_el_schema_y_el_prefijo_es_solo_para_el_local()
 
 
 def test_el_saldo_del_wa_me_va_formateado_con_miles():
-    """«$1.234.567» al estilo de acá (punto de miles), dentro del mensaje
-    codificado: `$` → `%24`, los puntos quedan literales."""
+    """«$12.345,67» al estilo de acá (punto de miles, coma decimal), dentro
+    del mensaje codificado: `$` → `%24`, `,` → `%2C`, los puntos quedan
+    literales. El saldo se guarda en centavos y el mensaje va en PESOS
+    (dividido por 100): mostrar los centavos crudos como si fueran pesos
+    inflaba la deuda 100x (revisión final del módulo)."""
     cliente = Cliente(nombre="Don Carlos", telefono="3001234567")
     credito = FiadoCredito(saldo_pendiente=1234567)
     url = construir_whatsapp_url(cliente, credito)
-    assert "%241.234.567" in url
-    credito.saldo_pendiente = 999
+    assert "%2412.345%2C67" in url
+    credito.saldo_pendiente = 99900  # $999 redondos: sin decimales
     assert "%24999" in construir_whatsapp_url(cliente, credito)

@@ -591,9 +591,12 @@ class VentasService:
         #   congelado. Nunca `anulada_en < cerrada_en` sin haber entrado.
         # Va DESPUÉS de los bloqueos de productos (mismo orden que
         # `_registrar_venta`: productos → sesión; el cierre solo toma la
-        # sesión): la sesión es siempre el último bloqueo del lote y no hay
-        # ciclo de espera nuevo. Y corre dentro del savepoint de la operación,
-        # como en el alta: un rechazo posterior revierte también la implícita.
+        # sesión): el orden global es productos → sesión → crédito del fiado
+        # — el crédito se bloquea DESPUÉS, en `anular_credito_de_venta`, y el
+        # abono en efectivo del fiado respeta el mismo orden (sesión →
+        # crédito), así que no hay ciclo de espera. Y corre dentro del
+        # savepoint de la operación, como en el alta: un rechazo posterior
+        # revierte también la implícita.
         await self._resolver_sesion_caja()
         # La marca de CUÁNDO se anuló (módulo 4, decisión 7 del plan de
         # caja): con ella, la devolución de efectivo de una venta anulada
@@ -635,10 +638,13 @@ class VentasService:
         venta inserta contra una sesión ya `cerrada`, huérfana de todo
         arqueo. Con el bloqueo, cierre y sync se serializan sobre la fila:
         quien llega segundo la ve `cerrada` (la consulta filtra `abierta`) y
-        abre una implícita nueva. No hay inversión de orden de bloqueo: los
-        dos caminos que lo llaman (`_registrar_venta` y `_anular_venta`)
-        toman la sesión DESPUÉS de los productos, y el cierre solo toma la
-        sesión — la fila de sesión es siempre el último bloqueo del lote.
+        abre una implícita nueva. El orden de bloqueo es consistente entre
+        módulos: productos → sesión → crédito del fiado. Los dos caminos que
+        lo llaman (`_registrar_venta` y `_anular_venta`) toman la sesión
+        DESPUÉS de los productos, la anulación toma DESPUÉS el crédito (vía
+        `anular_credito_de_venta`), el abono en efectivo del fiado toma la
+        sesión ANTES que el crédito y el cierre solo toma la sesión — nadie
+        pide un bloqueo «hacia atrás», así que no hay ciclo de espera.
 
         La carrera de dos aperturas implícitas concurrentes la decide el
         índice único parcial `ux_caja_sesion_abierta` (ADR-021): quien pierde
@@ -649,11 +655,14 @@ class VentasService:
         # confirmar en medio, y la venta insertar contra una sesión ya
         # `cerrada` — huérfana de todo arqueo. Con él, cierre y sync se
         # serializan sobre la fila: quien llega segundo la ve `cerrada` (la
-        # consulta filtra `abierta`) y abre una implícita nueva. No hay
-        # inversión de orden de bloqueo: quien llama toma la sesión DESPUÉS
-        # de los productos (tanto `_registrar_venta` como `_anular_venta`) y
-        # el cierre solo toma la sesión — la fila de sesión es siempre el
-        # último bloqueo del lote. El costo (lotes concurrentes del mismo
+        # consulta filtra `abierta`) y abre una implícita nueva. El orden de
+        # bloqueo es consistente entre módulos: productos → sesión → crédito
+        # del fiado. Quien llama toma la sesión DESPUÉS de los productos
+        # (tanto `_registrar_venta` como `_anular_venta`), la anulación toma
+        # DESPUÉS el crédito (vía `anular_credito_de_venta`), el abono en
+        # efectivo del fiado toma la sesión ANTES que el crédito y el cierre
+        # solo toma la sesión — nadie pide un bloqueo «hacia atrás», así que
+        # no hay ciclo de espera. El costo (lotes concurrentes del mismo
         # tenant serializados en la fila) es despreciable a la escala de una
         # tienda.
         consulta = select(CajaSesion).where(CajaSesion.estado == "abierta").with_for_update()

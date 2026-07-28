@@ -63,7 +63,7 @@ logger = structlog.get_logger()
 #: Campos cuya divergencia convierte un reintento en 409 (mismo criterio que
 #: `_CAMPOS_DEL_MOVIMIENTO` de caja): si alguno difiere NO es un reintento.
 _CAMPOS_DEL_CLIENTE = ("nombre", "telefono", "nota", "limite_credito")
-_CAMPOS_DEL_ABONO = ("monto", "metodo_pago")
+_CAMPOS_DEL_ABONO = ("monto", "metodo_pago", "nota")
 
 
 def construir_whatsapp_url(cliente: Cliente, credito: FiadoCredito) -> str | None:
@@ -73,7 +73,14 @@ def construir_whatsapp_url(cliente: Cliente, credito: FiadoCredito) -> str | Non
     if not cliente.telefono:
         return None
     numero = cliente.telefono if len(cliente.telefono) > 10 else "57" + cliente.telefono
-    monto = f"${credito.saldo_pendiente:,}".replace(",", ".")
+    # El saldo vive en centavos; el mensaje lo lee una persona: en PESOS, que
+    # es como se habla el fiado. Los decimales solo aparecen cuando los hay
+    # («$43.000», «$430,50») — mostrar los centavos crudos como si fueran
+    # pesos inflaba la deuda 100x (revisión final del módulo).
+    pesos, centavos = divmod(credito.saldo_pendiente, 100)
+    monto = f"${pesos:,}".replace(",", ".")
+    if centavos:
+        monto += f",{centavos:02d}"
     mensaje = f"Hola {cliente.nombre}, te recuerdo el fiado de {monto} que tienes pendiente conmigo. ¿Cuándo me lo puedes pagar?"
     return f"https://wa.me/{numero}?text={quote(mensaje)}"
 
@@ -295,7 +302,11 @@ class FiadoService:
           la carrera la cierra el CHECK, traducido al mismo 422).
         - `efectivo` exige sesión abierta y guarda su `sesion_caja_id`
           (decisión 9: su plata entra al arqueo de esa sesión; los demás
-          métodos no tocan la gaveta).
+          métodos no tocan la gaveta). La sesión se resuelve y bloquea
+          ANTES que el crédito — sesión → crédito, el mismo orden que el
+          camino de ventas (productos → sesión → crédito): con el orden
+          inverso, un abono concurrente con la anulación de la misma venta
+          fiada era un deadlock que salía como 500 no traducido.
         - Al llegar a 0: `saldado` y evento `fiado.credito_saldado`. Un
           `saldado` nunca vuelve a `vigente` (ADR-022).
         """
@@ -313,6 +324,24 @@ class FiadoService:
             logger.info("fiado_abono_idempotente", abono_id=str(existente.id))
             return AbonoSalida.model_validate(existente)
 
+        sesion_caja_id: uuid.UUID | None = None
+        if datos.metodo_pago == "efectivo":
+            # FOR UPDATE como en `registrar_movimiento` de caja: el abono se
+            # serializa con el cierre y jamás cae en una sesión ya cerrada.
+            # Va ANTES del bloqueo del crédito (sesión → crédito): es el
+            # orden que usan `_registrar_venta` y `_anular_venta`, y romperlo
+            # aquí armaba un ciclo de espera con la anulación de la misma
+            # venta fiada (ella retiene la sesión y pide el crédito).
+            sesion = (
+                await self._session.execute(select(CajaSesion).where(CajaSesion.estado == "abierta").with_for_update())
+            ).scalar_one_or_none()
+            if sesion is None:
+                raise ConflictError(
+                    "No hay una caja abierta: el abono en efectivo entra a la gaveta y necesita su sesión.",
+                    code="caja_sin_sesion_abierta",
+                )
+            sesion_caja_id = sesion.id
+
         credito = await self._session.get(FiadoCredito, credito_id, with_for_update=True)
         if credito is None:
             raise NotFoundError("El crédito no existe.", code="credito_no_encontrado")
@@ -328,19 +357,6 @@ class FiadoService:
                 code="abono_excede_saldo",
                 details={"saldo_pendiente": credito.saldo_pendiente},
             )
-        sesion_caja_id: uuid.UUID | None = None
-        if datos.metodo_pago == "efectivo":
-            # FOR UPDATE como en `registrar_movimiento` de caja: el abono se
-            # serializa con el cierre y jamás cae en una sesión ya cerrada.
-            sesion = (
-                await self._session.execute(select(CajaSesion).where(CajaSesion.estado == "abierta").with_for_update())
-            ).scalar_one_or_none()
-            if sesion is None:
-                raise ConflictError(
-                    "No hay una caja abierta: el abono en efectivo entra a la gaveta y necesita su sesión.",
-                    code="caja_sin_sesion_abierta",
-                )
-            sesion_caja_id = sesion.id
 
         abono = FiadoAbono(
             id=datos.id,

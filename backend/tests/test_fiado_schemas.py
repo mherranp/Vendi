@@ -85,6 +85,11 @@ def test_la_nota_se_limpia_y_es_opcional():
 def test_reprogramar_admite_fecha_o_null():
     assert CreditoReprogramar.model_validate({"fecha_vencimiento": "2026-08-15"}).fecha_vencimiento is not None
     assert CreditoReprogramar.model_validate({"fecha_vencimiento": None}).fecha_vencimiento is None
+    # El campo es REQUERIDO: un body `{}` no es «sin fecha», es un payload
+    # ambiguo — 422. Dejar el fiado sin recordatorio exige el `null`
+    # explícito (un gesto deliberado, nunca el default de un campo ausente).
+    with pytest.raises(ValidationError):
+        CreditoReprogramar.model_validate({})
 
 
 def test_cliente_sync_es_el_contrato_del_lote():

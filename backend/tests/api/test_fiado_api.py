@@ -251,3 +251,6 @@ def test_las_cotas_son_422_nunca_500(app_con_base):
         headers=dueno,
     )
     assert mal_metodo.status_code == 422
+    # Reprogramar sin el campo es ambiguo (¿borrar la fecha?): 422. Dejar el
+    # fiado sin recordatorio exige el `null` explícito, un gesto deliberado.
+    assert cliente.patch(f"/api/v1/fiado/creditos/{uuid.uuid4()}", json={}, headers=dueno).status_code == 422

@@ -1158,13 +1158,15 @@ export interface components {
         };
         /**
          * CreditoReprogramar
-         * @description «Deme hasta el otro viernes»: nueva fecha de vencimiento (o null para
-         *     dejarlo sin recordatorio). Un `vencido` reprogramado a futuro vuelve a
-         *     `vigente` (decisión 7).
+         * @description «Deme hasta el otro viernes»: nueva fecha de vencimiento. El campo es
+         *     REQUERIDO: `null` explícito deja el fiado sin recordatorio, pero ese
+         *     gesto tiene que ser deliberado — un body `{}` es 422, nunca un borrado
+         *     tácito por el default del schema. Un `vencido` reprogramado a futuro
+         *     vuelve a `vigente` (decisión 7).
          */
         CreditoReprogramar: {
             /** Fecha Vencimiento */
-            fecha_vencimiento?: string | null;
+            fecha_vencimiento: string | null;
         };
         /**
          * CreditoResumenSalida

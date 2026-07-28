@@ -9,12 +9,13 @@ CHECK como red, y el historial append-only.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 
 import pytest
 import pytest_asyncio
 from datos_de_prueba import T1, T2
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.modules.fiado.schemas import (
@@ -24,6 +25,8 @@ from app.modules.fiado.schemas import (
     CreditoReprogramar,
 )
 from app.modules.fiado.service import FiadoService
+from app.modules.fiado.sync import anular_credito_de_venta
+from app.modules.ventas.models import CajaSesion
 from vendi_core.db.engine import create_engine
 from vendi_core.db.session import create_session_factory
 from vendi_core.errors.domain import (
@@ -162,6 +165,15 @@ async def _eventos(pg_platform_url: str, evento: str) -> list:
                 )
             ).all()
             return [f[0] for f in filas]
+    finally:
+        await engine.dispose()
+
+
+async def _uno(pg_platform_url: str, sql: str, **params):
+    engine = create_async_engine(pg_platform_url)
+    try:
+        async with engine.connect() as conn:
+            return (await conn.execute(text(sql), params)).first()
     finally:
         await engine.dispose()
 
@@ -329,6 +341,16 @@ async def test_el_abono_es_idempotente_por_su_id(servicio, pg_platform_url, semi
             credito_id, AbonoCrear.model_validate({"id": str(datos.id), "monto": 25000, "metodo_pago": "efectivo"})
         )
     assert exc2.value.code == "abono_id_divergente"
+    # La nota también es parte del hecho: mismo id con otra nota no es un
+    # reintento silencioso, es divergencia (409).
+    with pytest.raises(ConflictError) as exc3:
+        await servicio.registrar_abono(
+            credito_id,
+            AbonoCrear.model_validate(
+                {"id": str(datos.id), "monto": 20000, "metodo_pago": "efectivo", "nota": "dejó el destajo"}
+            ),
+        )
+    assert exc3.value.code == "abono_id_divergente"
 
 
 @pytest.mark.asyncio
@@ -341,11 +363,84 @@ async def test_el_abono_al_credito_del_vecino_es_404(servicio, pg_platform_url, 
             servicio_t2 = FiadoService(session=s2, tenant_id=T2, actor_id="dueno-t2")
             credito_de_t1 = await _credito(pg_platform_url, semilla, 50000, 50000)
             with pytest.raises(NotFoundError) as exc:
-                await servicio_t2.registrar_abono(credito_de_t1, _abono(1000))
+                # Transferencia: el efectivo resolvería ANTES la sesión de
+                # caja (orden sesión → crédito, contra el deadlock con la
+                # anulación) y T2 no tiene ninguna abierta — lo que se mide
+                # aquí es que el crédito del vecino es invisible (404).
+                await servicio_t2.registrar_abono(credito_de_t1, _abono(1000, "transferencia"))
             assert exc.value.code == "credito_no_encontrado"
     finally:
         current_tenant_id.reset(marca)
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_el_abono_y_la_anulacion_concurrentes_no_hacen_deadlock(servicio, pg_platform_url, semilla, pg_app_url):
+    """La carrera de la revisión final: un abono en efectivo contra la
+    anulación de la MISMA venta fiada. El orden de bloqueo global es sesión →
+    crédito en TODOS los caminos (en ventas: productos → sesión → crédito; el
+    cierre solo toma la sesión). Con el orden viejo del abono (crédito →
+    sesión) este par era un deadlock: la anulación retiene la sesión y pide
+    el crédito mientras el abono retenía el crédito y pedía la sesión — y el
+    detector de Postgres mataba a uno con un 500 no traducido.
+
+    La anulación reproduce el orden del camino de ventas con la sesión
+    retenida un instante (la ventana en la que el abono pide sus bloqueos) y
+    anula con la MISMA función que llama `_anular_venta`. El orden dominante
+    —la anulación arranca antes y gana— es el afirmado: el abono, serializado
+    detrás, relee el crédito ya `anulado` y sale con el 409 tipado (patrón
+    asyncio.gather de los tests de carrera de caja)."""
+    credito_id = await _credito(pg_platform_url, semilla, 50000, 50000)
+    venta_id = uuid.UUID(
+        (await _uno(pg_platform_url, "SELECT venta_id::text AS v FROM fiado_creditos WHERE id = :c", c=credito_id)).v
+    )
+
+    async def anulacion_con_sesion_retenida():
+        engine = create_engine(pg_app_url)
+        factory = create_session_factory(engine)
+        marca = current_tenant_id.set(T1)
+        try:
+            async with factory() as s:
+                # Sesión FOR UPDATE primero, como `_anular_venta`. La pausa
+                # con la fila retenida es la ventana en la que el abono pide
+                # sus bloqueos: con el orden viejo el ciclo queda armado.
+                await s.execute(select(CajaSesion).where(CajaSesion.estado == "abierta").with_for_update())
+                await asyncio.sleep(0.3)
+                await anular_credito_de_venta(s, T1, venta_id)
+                await s.commit()
+        finally:
+            current_tenant_id.reset(marca)
+            await engine.dispose()
+
+    async def abono_con_sesion_propia():
+        await asyncio.sleep(0.05)  # la anulación ya retiene la sesión
+        engine = create_engine(pg_app_url)
+        factory = create_session_factory(engine)
+        marca = current_tenant_id.set(T1)
+        try:
+            async with factory() as s:
+                fiado = FiadoService(session=s, tenant_id=T1, actor_id="dueno-prueba")
+                abono = await fiado.registrar_abono(credito_id, _abono(10000))
+                await s.commit()
+                return abono
+        finally:
+            current_tenant_id.reset(marca)
+            await engine.dispose()
+
+    resultados = await asyncio.wait_for(
+        asyncio.gather(anulacion_con_sesion_retenida(), abono_con_sesion_propia(), return_exceptions=True),
+        timeout=20,
+    )
+    anulacion, abono = resultados
+    if isinstance(anulacion, BaseException):
+        raise anulacion
+    # La anulación ganó: el abono esperó la sesión, releyó el crédito ya
+    # `anulado` y salió con el 409 tipado — nunca con un deadlock → 500.
+    assert isinstance(abono, ConflictError) and abono.code == "credito_no_abonable"
+    credito = await _uno(
+        pg_platform_url, "SELECT estado, saldo_pendiente FROM fiado_creditos WHERE id = :c", c=credito_id
+    )
+    assert credito.estado == "anulado" and credito.saldo_pendiente == 0
 
 
 @pytest.mark.asyncio
@@ -383,11 +478,16 @@ async def test_el_cuaderno_lista_pendientes_por_defecto(servicio, pg_platform_ur
 
 @pytest.mark.asyncio
 async def test_el_detalle_arma_el_wa_me_y_lo_omite_sin_telefono(servicio, pg_platform_url, semilla):
-    credito_id = await _credito(pg_platform_url, semilla, 43000, 43000)
+    # 4.300.000 centavos = $43.000: el mensaje va en PESOS, como se habla el
+    # fiado — mostrar los centavos crudos inflaba la deuda 100x («$4.300.000»).
+    credito_id = await _credito(pg_platform_url, semilla, 4_300_000, 4_300_000)
     detalle = await servicio.obtener_credito(credito_id)
     assert detalle.whatsapp_url is not None
     assert detalle.whatsapp_url.startswith("https://wa.me/573001234567?text=")
     assert "%2443.000" in detalle.whatsapp_url  # «$43.000» codificado
+    # Con centavos de verdad se muestran los decimales: 43.050 → «$430,50».
+    con_decimales = await _credito(pg_platform_url, semilla, 43050, 43050)
+    assert "%24430%2C50" in (await servicio.obtener_credito(con_decimales)).whatsapp_url
     sin_telefono = await servicio.crear_cliente(ClienteCrear.model_validate({"nombre": "Sin número"}))
     # El servicio hace flush pero NUNCA commit: sin esta línea el cliente no
     # existe para la conexión de plataforma y el crédito revienta la FK.

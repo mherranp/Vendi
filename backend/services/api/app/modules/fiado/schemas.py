@@ -112,13 +112,15 @@ class AbonoCrear(BaseModel):
 
 
 class CreditoReprogramar(BaseModel):
-    """«Deme hasta el otro viernes»: nueva fecha de vencimiento (o null para
-    dejarlo sin recordatorio). Un `vencido` reprogramado a futuro vuelve a
-    `vigente` (decisión 7)."""
+    """«Deme hasta el otro viernes»: nueva fecha de vencimiento. El campo es
+    REQUERIDO: `null` explícito deja el fiado sin recordatorio, pero ese
+    gesto tiene que ser deliberado — un body `{}` es 422, nunca un borrado
+    tácito por el default del schema. Un `vencido` reprogramado a futuro
+    vuelve a `vigente` (decisión 7)."""
 
     model_config = ConfigDict(extra="forbid")
 
-    fecha_vencimiento: date | None = None
+    fecha_vencimiento: date | None
 
 
 # --- Salidas -------------------------------------------------------------
