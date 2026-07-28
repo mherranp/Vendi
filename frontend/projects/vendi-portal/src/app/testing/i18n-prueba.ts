@@ -1,6 +1,6 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { Provider } from '@angular/core';
+import { EnvironmentProviders, Provider } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
   TranslateLoader,
@@ -32,7 +32,9 @@ class CargadorDePrueba extends TranslateLoader {
  * más los providers extra que pida el spec (p. ej. el número comercial de
  * WhatsApp). `TestBed.resetTestingModule()` primero: cada spec arranca limpio.
  */
-export function prepararPruebaI18n(proveedoresExtra: Provider[] = []): void {
+export function prepararPruebaI18n(
+  proveedoresExtra: (Provider | EnvironmentProviders)[] = [],
+): void {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     providers: [

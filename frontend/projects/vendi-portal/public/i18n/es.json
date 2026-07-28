@@ -57,9 +57,15 @@
     }
   },
   "portal": {
-    "lema": "El punto de venta para las tiendas de barrio de Colombia",
-    "descripcion": "Vendi te ayuda a vender más rápido y a saber siempre qué tienes en el mostrador.",
-    "entrar": "Entrar a mi negocio",
+    "nav": {
+      "precios": "Precios",
+      "confianza": "Por qué Vendi",
+      "entrar": "Entrar a mi negocio"
+    },
+    "footer": {
+      "lema": "El punto de venta para las tiendas de barrio de Colombia",
+      "hecho": "Hecho en Colombia"
+    },
     "hero": {
       "titulo": "Del cuaderno al celular",
       "subtitulo": "Vendi es el punto de venta hecho para las tiendas de barrio de Colombia: vende, fía y cierra la caja desde tu celular, aunque se vaya el internet.",

@@ -1,6 +1,19 @@
-<main class="vd-portal">
-  <h1 class="vd-portal__marca">{{ 'app.titulo' | translate }}</h1>
-  <p class="vd-portal__lema">{{ 'portal.lema' | translate }}</p>
-  <p class="vd-portal__descripcion">{{ 'portal.descripcion' | translate }}</p>
-  <a class="vd-portal__enlace" [href]="urlDeLaConsola">{{ 'portal.entrar' | translate }}</a>
+<header class="barra">
+  <span class="barra__marca">{{ 'app.titulo' | translate }}</span>
+  <nav class="barra__nav">
+    <a href="#precios">{{ 'portal.nav.precios' | translate }}</a>
+    <a href="#confianza">{{ 'portal.nav.confianza' | translate }}</a>
+    <a class="barra__entrar" [href]="urlDeLaConsola">{{ 'portal.nav.entrar' | translate }}</a>
+  </nav>
+</header>
+
+<main>
+  <vd-hero />
+  <vd-precios />
+  <vd-confianza />
 </main>
+
+<footer class="pie">
+  <p>{{ 'portal.footer.lema' | translate }}</p>
+  <p>{{ 'portal.footer.hecho' | translate }}</p>
+</footer>

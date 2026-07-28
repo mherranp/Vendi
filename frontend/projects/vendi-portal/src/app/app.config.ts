@@ -2,26 +2,28 @@ import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/
 import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 
-import { API_BASE_URL, proveerI18nVendi } from 'data-access';
+import { API_BASE_URL, CATALOGO_MINIMO_ES, fusionarCatalogos, proveerI18nVendi } from 'data-access';
 
+import catalogoPortal from '../../public/i18n/es.json';
 import { routes } from './app.routes';
 import { environment } from '../environments/environment';
 
-/** Configuración de arranque de la portal público. */
+/** Configuración de arranque del portal público. */
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
     // HttpClient es prerrequisito del cargador de traducciones.
     provideHttpClient(),
-    // Base de la API para `ApiService`. Los interceptores de sesión y de error
-    // se cablean en la Etapa 4, cuando estas apps empiecen a llamar endpoints.
+    // Base de la API para `ApiService`. El portal de Fase 1 no llama a la API
+    // (la captación es por WhatsApp, decisión 1 del plan comercial); el
+    // provider queda porque lo exige el contrato del workspace.
     { provide: API_BASE_URL, useValue: environment.apiUrl },
-    // i18n resiliente (ver `proveerI18nVendi` en data-access): español fijo,
-    // catálogo por HTTP con **respaldo empotrado**. El bloque anterior era
-    // fail-hard —si `/i18n/es.json` no se podía descargar, el inicializador
-    // rechazaba y Angular abortaba el bootstrap: pantalla en blanco—. Para un
-    // POS que promete funcionar sin conexión eso no es aceptable.
-    ...proveerI18nVendi(),
+    // i18n resiliente con el respaldo PROPIO del portal: el mínimo empotrado
+    // compartido no tiene ni una clave `portal.*`, y esta es la superficie
+    // pública y anónima — si `/i18n/es.json` no se puede descargar, la
+    // landing tiene que pintar exactamente lo mismo, no claves crudas ante
+    // el primer visitante. El coste es ~6 kB empotrados: nada.
+    ...proveerI18nVendi(fusionarCatalogos(CATALOGO_MINIMO_ES, catalogoPortal as never)),
   ],
 };

@@ -4,7 +4,10 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "../../out-tsc/spec",
-    "types": ["vitest/globals"]
+    "types": ["vitest/globals"],
+    // Los specs y el helper de pruebas importan el catálogo `es.json`.
+    "resolveJsonModule": true,
+    "esModuleInterop": true
   },
   "include": ["src/**/*.d.ts", "src/**/*.spec.ts"]
 }

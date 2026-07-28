@@ -1,64 +1,60 @@
-import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import {
-  TranslateLoader,
-  TranslateService,
-  TranslationObject,
-  provideTranslateService,
-} from '@ngx-translate/core';
-import { CATALOGO_MINIMO_ES, fusionarCatalogos } from 'data-access';
-import { Observable, of } from 'rxjs';
+import { CATALOGO_DE_RESPALDO } from 'data-access';
 
-import catalogoApp from '../../public/i18n/es.json';
 import { App } from './app';
+import { appConfig } from './app.config';
 import { routes } from './app.routes';
-
-class CargadorDePrueba extends TranslateLoader {
-  override getTranslation(): Observable<TranslationObject> {
-    return of(
-      fusionarCatalogos(CATALOGO_MINIMO_ES, catalogoApp as never) as unknown as TranslationObject,
-    );
-  }
-}
-
-function preparar(): void {
-  TestBed.resetTestingModule();
-  TestBed.configureTestingModule({
-    providers: [
-      provideRouter(routes),
-      provideHttpClient(),
-      provideHttpClientTesting(),
-      ...provideTranslateService({
-        lang: 'es',
-        fallbackLang: 'es',
-        loader: { provide: TranslateLoader, useClass: CargadorDePrueba },
-      }),
-    ],
-  });
-  TestBed.inject(TranslateService).use('es');
-}
+import { prepararPruebaI18n } from './testing/i18n-prueba';
 
 describe('App', () => {
   it('debería crearse', () => {
-    preparar();
+    prepararPruebaI18n();
     expect(TestBed.createComponent(App).componentInstance).toBeTruthy();
   });
 });
 
-describe('portal público', () => {
-  it('pinta el lema traducido y el enlace a la consola del negocio', async () => {
-    preparar();
+describe('la landing pública', () => {
+  async function pintar(): Promise<HTMLElement> {
+    // El router va por `proveedoresExtra`: `prepararPruebaI18n` termina con un
+    // `TestBed.inject`, y configurar el módulo después de instanciarlo lanza.
+    prepararPruebaI18n([provideRouter(routes)]);
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/');
-    const raiz = harness.fixture.nativeElement as HTMLElement;
-    expect(raiz.textContent).toContain('El punto de venta para las tiendas de barrio');
-    expect(raiz.textContent).not.toContain('portal.');
+    return harness.fixture.nativeElement as HTMLElement;
+  }
 
-    const enlace = raiz.querySelector('a');
-    // Otro origen: tiene que ser un href absoluto, no un routerLink.
-    expect(enlace?.getAttribute('href')).toBe('https://app.vendi.co');
+  it('pinta hero, precios y confianza, con los precios de ADR-010 y sin claves crudas', async () => {
+    const raiz = await pintar();
+    expect(raiz.textContent).toContain('Del cuaderno al celular');
+    expect(raiz.textContent).toContain('$19.500');
+    expect(raiz.textContent).toContain('$40.000');
+    expect(raiz.textContent).toContain('Hecho para la tienda de barrio');
+    // El catálogo de prueba es el real: una clave cruda aquí es una clave que
+    // falta en es.json.
+    expect(raiz.textContent).not.toContain('portal.');
+  });
+
+  it('sin número comercial no hay CTA de WhatsApp, y la consola sigue a un clic', async () => {
+    const raiz = await pintar();
+    expect(raiz.querySelector('a[href*="wa.me"]')).toBeNull();
+    // Otro origen: href absoluto, nunca routerLink.
+    expect(raiz.querySelector('a[href="https://app.vendi.co"]')).not.toBeNull();
+  });
+
+  it('cualquier ruta desconocida cae en la landing, no en blanco', () => {
+    const comodin = routes.find((r) => r.path === '**');
+    expect(comodin?.redirectTo).toBe('');
+  });
+});
+
+describe('el respaldo i18n del portal', () => {
+  it('es el propio catálogo de la landing: si /i18n/es.json falla, nada pinta claves crudas', () => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: appConfig.providers });
+    const respaldo = TestBed.inject(CATALOGO_DE_RESPALDO);
+    expect(typeof respaldo['portal']).toBe('object');
+    expect(JSON.stringify(respaldo['portal'])).toContain('Del cuaderno al celular');
   });
 });
