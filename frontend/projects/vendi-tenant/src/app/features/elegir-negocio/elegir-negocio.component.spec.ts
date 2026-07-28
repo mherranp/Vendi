@@ -187,15 +187,13 @@ describe('ElegirNegocioComponent — defensas que no cambian', () => {
     // `<img onerror=…>` ejecutaría script en la consola del dueño.
     p = await preparar([ORG_A]);
     const fixture = TestBed.createComponent(ElegirNegocioComponent);
-    p.http
-      .expectOne(MIOS)
-      .flush([
-        {
-          id: ORG_A,
-          nombre: '<img src=x onerror="alert(1)"> "La" <b>Esquina</b>',
-          estado: 'activo',
-        },
-      ]);
+    p.http.expectOne(MIOS).flush([
+      {
+        id: ORG_A,
+        nombre: '<img src=x onerror="alert(1)"> "La" <b>Esquina</b>',
+        estado: 'activo',
+      },
+    ]);
     fixture.detectChanges();
     const elemento = fixture.nativeElement as HTMLElement;
     expect(elemento.querySelector('img')).toBeNull();
