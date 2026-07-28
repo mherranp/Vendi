@@ -1,0 +1,26 @@
+<section class="hero" aria-labelledby="hero-titulo">
+  <h1 id="hero-titulo" class="hero__titulo">{{ 'portal.hero.titulo' | translate }}</h1>
+  <p class="hero__subtitulo">{{ 'portal.hero.subtitulo' | translate }}</p>
+
+  <ul class="hero__beneficios">
+    @for (
+      beneficio of ['beneficio_1', 'beneficio_2', 'beneficio_3', 'beneficio_4'];
+      track beneficio
+    ) {
+      <li>{{ 'portal.hero.' + beneficio | translate }}</li>
+    }
+  </ul>
+
+  <div class="hero__acciones">
+    @if (enlaceWhatsapp) {
+      <a class="hero__cta" [href]="enlaceWhatsapp" target="_blank" rel="noopener noreferrer">
+        {{ 'portal.hero.cta_probar' | translate }}
+      </a>
+    }
+    <a class="hero__secundario" [href]="urlDeLaConsola">
+      {{ 'portal.hero.cta_entrar' | translate }}
+    </a>
+  </div>
+
+  <p class="hero__nota">{{ 'portal.hero.nota_prueba' | translate }}</p>
+</section>

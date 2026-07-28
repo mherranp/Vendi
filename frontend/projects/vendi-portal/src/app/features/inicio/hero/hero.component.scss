@@ -1,0 +1,69 @@
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--vd-espacio-6);
+  padding: var(--vd-espacio-12) var(--vd-espacio-4);
+  text-align: center;
+
+  &__titulo {
+    margin: 0;
+    font-size: var(--vd-texto-4xl);
+    line-height: 1.15;
+    color: var(--vd-texto-marca);
+  }
+
+  &__subtitulo {
+    margin: 0;
+    max-width: 40rem;
+    font-size: var(--vd-texto-lg);
+    color: var(--vd-texto-secundario);
+  }
+
+  &__beneficios {
+    display: grid;
+    gap: var(--vd-espacio-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    text-align: start;
+  }
+
+  &__acciones {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--vd-espacio-4);
+  }
+
+  &__cta,
+  &__secundario {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--vd-objetivo-tactil);
+    padding: 0 var(--vd-espacio-6);
+    border-radius: var(--vd-radio-completo);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  // Par medido a mano con la fórmula WCAG 2.1 al escribirlo: #047857 sobre
+  // #ffffff = 5.49:1 (AA para texto normal). El candado automático
+  // (`npm run verificar:contraste`) solo cubre los pares de `_tokens.scss`;
+  // éste NO — quien lo «ajuste» tiene que volver a medir y decirlo.
+  &__cta {
+    background: var(--vd-marca-700);
+    color: #ffffff;
+  }
+
+  &__secundario {
+    border: 1px solid var(--vd-borde-fuerte);
+    color: var(--vd-texto-primario);
+  }
+
+  &__nota {
+    margin: 0;
+    font-size: var(--vd-texto-sm);
+    color: var(--vd-texto-secundario);
+  }
+}
