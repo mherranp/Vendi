@@ -58,7 +58,7 @@ Los *entitlements* se evalúan en servidor (la API rechaza operaciones fuera de 
 
 Mobile-first (el tendero paga desde el mismo celular), sin registro con contraseña: identificación por **celular + OTP de WhatsApp**. Pantallas:
 
-1. **`/pro` — Landing de planes.** Tres tarjetas (Gratis actual / Light / Pro) con badge de "1 mes de Pro gratis al registrarte", precio anclado "menos de \$1.300 al día", métodos de pago visibles (logos PSE/Nequi/Efecty) — esto genera confianza en el segmento.
+1. **`/pro` — Landing de planes.** Tres tarjetas (Gratis actual / Light / Pro) con badge de "1 mes de Pro gratis al registrarte", precio anclado "menos de \$1.350 al día", métodos de pago visibles (logos PSE/Nequi/Efecty) — esto genera confianza en el segmento.
 2. **`/checkout` — 3 pasos:** (a) celular + OTP → vincula al tenant existente; (b) datos de facturación (nombre/razón social, CC/NIT, municipio — prellenado si ya existe); (c) método de pago.
 3. **Métodos y su lógica de recurrencia:**
 
@@ -127,7 +127,7 @@ GRATIS ──pago confirmado──► ACTIVO ──faltan 3 días──► POR_V
 
 **Al detectar uso activo (3+ días con ventas):**
 
-> {nombre}, vi que ya le estás sacando el jugo a Vendi 🙌 Con el plan Pro se te activa el asistente que te dice qué es lo que más vendes, te avisa cuando se te está acabando un producto y puedes registrar compras con solo tomarle foto a la factura del proveedor. Vale menos de \$1.300 al día. ¿Te paso el link para activarlo? Pagas con Nequi, PSE o en Efecty, como te quede fácil.
+> {nombre}, vi que ya le estás sacando el jugo a Vendi 🙌 Con el plan Pro se te activa el asistente que te dice qué es lo que más vendes, te avisa cuando se te está acabando un producto y puedes registrar compras con solo tomarle foto a la factura del proveedor. Vale menos de \$1.350 al día. ¿Te paso el link para activarlo? Pagas con Nequi, PSE o en Efecty, como te quede fácil.
 
 **Cierre con link de pago:**
 
