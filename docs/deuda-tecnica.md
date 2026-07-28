@@ -12,8 +12,6 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 | D-03 | El realm es semilla, no estado deseado continuo (mitigado en la Etapa 5: se aplica el subconjunto seguro) | Fase 1 | backend |
 | D-09 | El tier del negocio se resuelve como `pro` para todos (módulo catálogo, decisión 2 del plan) | Fase 1 (módulo de suscripciones) | backend |
 | D-16 | El check 23 de `verify-setup.sh` no tiene prueba negativa ejecutada (nadie lo ha visto fallar) | Fase 1 (Etapa 1.5) | backend |
-| D-17 | `alembic check` (deriva metadata↔DDL) no corre en CI | Fase 1 | backend |
-| D-18 | El watermark del delta se fija con `now()` antes de leer: una edición confirmada en la ventana se pierde para ese dispositivo | Fase 1 (antes del piloto) | backend |
 | D-19 | El reenvío de una compra con el mismo `id` y payload distinto devuelve la existente en silencio (asimetría con ajustes y ventas) | Fase 1 (antes del piloto) | backend |
 | D-20 | El `FOR UPDATE` del producto que exige `aplicar_movimiento` es convención documentada, no enforced | Fase 1 (antes del piloto o al primer llamante nuevo) | backend |
 | D-23 | El reintento de un ajuste cuyo producto fue dado de baja después devuelve 422 `producto_no_encontrado` en vez de la respuesta idempotente original | Fase 1 (antes del piloto) | backend |
@@ -64,6 +62,15 @@ vencimiento de ambas): **D-13** (la carrera TOCTOU del cupo del catálogo:
 `_exigir_cupo`) y **D-21** (el sync de ventas bloquea los productos ordenados
 por `producto_id`, la receta de la compra: el deadlock de orden inverso,
 reproducido, ya no ocurre).
+
+Cerradas en el pago de deuda del watermark y el candado de esquema (Fase 1 —
+el vencimiento de ambas): **D-17** (`alembic check` corre en el job de
+integración del CI contra la base migrada al head; la primera corrida ya
+mordió: el `env.py` no importaba los modelos de negocio y el check proponía
+borrar sus tablas) y **D-18** (el watermark del delta es
+`now() - interval '5 seconds'`: la edición confirmada en la ventana se
+re-entrega en el siguiente delta y el solape es inocuo porque el cliente
+hace upsert por id).
 
 > Runbooks operativos relacionados: el procedimiento completo de respaldo y
 > restauración (qué se vuelca, qué NO, y cómo se promueve una copia a base
@@ -196,67 +203,6 @@ local y pegar la salida del fallo en este registro al cerrarla.
   integration»): `[OK] aud=vendi-backend, rol de negocio y permisos de
   catálogo y ventas en el token del dueño` — si la siembra deja de incluir
   un permiso, el CI se pone rojo en el siguiente push.
-
----
-
-## D-17 · `alembic check` no corre en CI
-
-**Qué es.** Nada compara la metadata de los modelos SQLAlchemy con el DDL
-que producen las migraciones (`alembic check`): una columna añadida al
-modelo sin migración (o al revés) solo se nota cuando un test la toca.
-
-**Por qué se aceptó.** En el módulo ventas los modelos se escribieron contra
-la migración (tarea 2, «alineados con la migración 0005») y los tests de
-integración contra PostgreSQL real ejercitan el DDL completo, así que la
-deriva habría reventado la suite. El candado automático es defensa en
-profundidad, no la primera línea.
-
-**Riesgo si se olvida.** Una deriva metadata↔DDL que ningún test toque
-(columna sin uso todavía, índice olvidado) llegaría silenciosa a producción.
-
-**Vencimiento: Fase 1.** Añadir `alembic check` al job `ruff + mypy` del CI
-(o uno propio) con el stack levantado.
-
-**Candado mientras tanto:**
-
-- `backend/tests/test_rls_coverage.py` registra todo modelo nuevo y exige su
-  tabla con policy RLS — una tabla sin migrar lo pone rojo.
-- Los tests de integración corren contra la base migrada hasta head en cada
-  push (job «pytest -m integration», 0 SKIPPED permitidos).
-
----
-
-## D-18 · El watermark del delta se fija antes de leer
-
-**Qué es.** `delta_productos`
-(`backend/services/api/app/modules/ventas/service.py`) toma `hasta = now()`
-del servidor y DESPUÉS lee los productos con `updated_at > desde`. Una
-edición cuya transacción llevaba abierta un rato (su `updated_at` quedó por
-debajo del `hasta` capturado) pero que confirma DESPUÉS de la lectura no
-llega en esta respuesta ni llegará nunca: el próximo `desde` del dispositivo
-ya es mayor que su `updated_at`. El catálogo de ese dispositivo queda stale
-de forma silenciosa.
-
-**Por qué se aceptó.** Revisión final del módulo ventas (conclusión «With
-fixes», fix 4): la ventana es del tamaño de una consulta de catálogo
-(microsegundos en la práctica), la edición concurrente justo en ese instante
-es rara en una tienda de barrio, y el drenado tolera el solape — el cliente
-hace upsert por id, así que un producto de más no daña nada; uno de menos,
-sí. Registrarla era la condición, no cambiar el código.
-
-**Riesgo si se olvida.** Un producto editado en la ventana conserva precio
-viejo en ese dispositivo hasta que alguien lo vuelva a tocar: el ticket sale
-con el precio que el tendero ya había corregido.
-
-**Vencimiento: Fase 1, antes del piloto.** Mitigación propuesta: `hasta =
-now() - interval '5 seconds'` — el margen re-entrega lo confirmado en la
-ventana y el solape es inocuo porque el cliente hace upsert por id.
-
-**Candados mientras tanto:**
-
-- `backend/tests/test_ventas_servicio.py::test_el_delta_devuelve_los_cambios_desde_el_watermark`
-  fija el contrato del watermark (lo pone el reloj del servidor, ADR-017): al
-  aplicar el margen, ese test es el que hay que ajustar.
 
 ---
 
@@ -1086,6 +1032,129 @@ $ uv run pytest -q -rs -m integration     # run ci 30339144864 sobre 61d67fc
 - `backend/tests/test_inventario_adversarial.py` (la compra con 200
   productos ordenados) y `test_sync_idempotente.py`, vigentes: la receta de
   la compra y la idempotencia del sync no se tocaron.
+
+---
+
+### D-17 · `alembic check` no corría en CI
+
+**Qué era.** Nada comparaba la metadata de los modelos SQLAlchemy con el DDL
+que producen las migraciones: una columna añadida al modelo sin migración (o
+al revés) solo se notaba cuando un test la tocaba, y una deriva que ningún
+test tocara llegaba silenciosa a producción.
+
+**Cómo se cerró** (pago de deuda, Fase 1 — su vencimiento). La investigación
+previa respondió que `alembic check` (Alembic 1.18) sí funciona con el setup
+del repo: el `env.py` ya lee `DATABASE_URL` del entorno y no pide más
+variables. Y la primera corrida mordió de inmediato: el `env.py` solo
+importaba `Tenant`, `AuditLog`, `File` y `OutboxMessage`, así que el check
+proponía **borrar todas las tablas de negocio** (`productos`, `ventas`,
+`caja_sesiones`, `dispositivos`, `compras`, `clientes`…) por no estar en el
+metadata. Se corrigió el `env.py` importando los cinco módulos de modelos
+que faltaban (la misma lista que registra `test_rls_coverage.py`) y con eso
+el check sale limpio: no había deriva real, solo el punto ciego. El candado
+quedó como paso «Candado metadata↔DDL (alembic check)» del job
+`backend-integration` de `.github/workflows/ci.yml`, tras «Migrar y
+sembrar»: reutiliza el stack ya levantado y migrado al head (coste de
+segundos; en un job propio o con `services:` habría que reproducir el
+initdb de roles, ver la nota 1 de la cabecera del workflow) y corre con el
+mismo DSN de `vendi_platform` que `migrate.sh`.
+
+**Evidencia** (run ci 30342293905 sobre `d919b1a`, 2026-07-28; la corrida
+local usó un PostgreSQL 17 desechable con los init scripts del repo y las
+migraciones al head):
+
+```
+$ cd backend/services/api && DATABASE_URL="postgresql+asyncpg://vendi_platform:***@127.0.0.1:55432/vendi" \
+    uv run --project ../.. alembic check      # con el env.py ANTES del arreglo
+INFO  [alembic.autogenerate.compare.tables] Detected removed table 'productos'
+INFO  [alembic.autogenerate.compare.tables] Detected removed table 'ventas'
+... (12 tablas de negocio: el env.py no importaba sus modelos)
+FAILED: New upgrade operations detected: [('remove_index', ...), ('remove_table', Table('productos', ...
+
+$ ... alembic check                           # con el env.py ya corregido
+No new upgrade operations detected.           # exit=0: metadata y DDL al head coinciden
+
+# En el CI, run 30342293905, job «backend / pytest -m integration (stack real)»,
+# paso «Candado metadata↔DDL (alembic check)»: corre tras «Migrar y sembrar»
+# contra la base del compose en el head y termina en verde en el mismo run
+# que ejecuta la suite de integración (477 passed, 0 SKIPPED).
+```
+
+**Candados:**
+
+- El propio paso del CI: una deriva metadata↔DDL pone rojo el job de
+  integración en el siguiente push, con el diff del autogenerate en el log.
+- `backend/tests/test_rls_coverage.py` sigue registrando todo modelo nuevo:
+  un modelo que se añada allí pero no al `env.py` deja el check proponiendo
+  borrar su tabla — el candado avisa en los dos sentidos.
+
+---
+
+### D-18 · El watermark del delta se fijaba con `now()` antes de leer
+
+**Qué era.** `delta_productos` tomaba `hasta = now()` del servidor y DESPUÉS
+leía los productos con `updated_at > desde`: una edición confirmada en la
+ventana entre la captura y la lectura (su `updated_at` ya quedaba por debajo
+del `hasta`) no llegaba en esa respuesta ni en ninguna posterior, y el
+catálogo del dispositivo quedaba stale en silencio — el ticket salía con el
+precio que el tendero ya había corregido.
+
+**Cómo se cerró** (pago de deuda, Fase 1 — su vencimiento: antes del
+piloto). Con la mitigación firmada en la propia entrada: el watermark de
+salida es `now() - interval '5 seconds'`
+(`backend/services/api/app/modules/ventas/service.py::delta_productos`). El
+margen re-entrega en el siguiente delta lo confirmado dentro de la ventana,
+y el solape es inocuo porque el cliente hace upsert por id — verificado
+contra el contrato del endpoint: el docstring de `/sync/delta` manda guardar
+el `hasta` tal cual como próximo `desde`, y el de `DeltaSalida` (OpenAPI
+congelado) define los productos del delta como el estado a volcar en
+IndexedDB, no como un diff estricto. El test que fijaba el contrato del
+watermark se ajustó como la entrada ordenaba (el `hasta` con margen solo se
+garantiza por encima de un `desde` anterior al margen, que es el caso real)
+y dos tests nuevos fijan el margen: el watermark devuelto es `now() - 5s`
+(el cliente lo guarda tal cual) y un producto editado «justo ahora» llega de
+todos modos en el delta siguiente. El primer run del CI mordió además el
+test de API del delta (`test_el_delta_baja_el_catalogo_y_las_tumbas`), que
+daba por sentado «desde el watermark devuelto no hay nada nuevo»: con el
+margen, lo confirmado dentro de los 5s se re-entrega, y ese test ahora fija
+exactamente eso — la re-entrega del producto recién creado y nada más.
+
+**Evidencia** (run ci 30342293905 sobre `d919b1a`, 2026-07-28; la corrida
+local usó un PostgreSQL 17 desechable con los init scripts del repo y las
+migraciones al head):
+
+```
+# ROJO previo (los dos tests nuevos, código sin el arreglo):
+$ cd backend && uv run pytest tests/test_ventas_servicio.py -k 'watermark or margen'
+FAILED tests/test_ventas_servicio.py::test_el_watermark_del_delta_lleva_el_margen_de_solape
+FAILED tests/test_ventas_servicio.py::test_un_producto_editado_dentro_del_margen_llega_en_el_siguiente_delta
+2 failed, 1 passed        # el producto editado en la ventana NO llegaba en
+                          # el siguiente delta: el catálogo quedaba stale
+
+$ uv run pytest -q tests/test_ventas_servicio.py
+26 passed                 # con el margen: los dos tests nuevos y el contrato
+                          # del watermark (ajustado como la entrada mandaba)
+
+$ uv run pytest -q -m 'not integration'
+430 passed
+$ uv run ruff check .
+All checks passed!
+
+$ uv run pytest -q -rs -m integration     # run ci 30342293905 sobre d919b1a
+477 passed, 430 deselected                # 0 SKIPPED (el grep del job lo exige)
+```
+
+**Candados:**
+
+- `backend/tests/test_ventas_servicio.py::test_el_watermark_del_delta_lleva_el_margen_de_solape`:
+  exige que el `hasta` quede ≥4s por debajo del `now()` del servidor; muere
+  si alguien quita el margen.
+- `backend/tests/test_ventas_servicio.py::test_un_producto_editado_dentro_del_margen_llega_en_el_siguiente_delta`:
+  la edición dentro de la ventana llega en el delta siguiente; muere si el
+  watermark vuelve a adelantarse a la lectura.
+- `backend/tests/api/test_ventas_sync.py::test_el_delta_baja_el_catalogo_y_las_tumbas`
+  fija el solape a nivel de endpoint: desde el `hasta` devuelto llega de
+  nuevo lo confirmado dentro del margen, y nada más.
 
 ---
 

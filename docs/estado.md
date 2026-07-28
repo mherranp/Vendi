@@ -323,6 +323,14 @@ fuera del CI).
 > INSERT en `_exigir_cupo`; la carrera 101/100 que documentaba el QA
 > adversarial ahora deja 100/100 con la segunda alta rechazada. Evidencia en
 > el registro de deuda.)*
+>
+> *(Actualización del pago de deuda del watermark y el candado de esquema,
+> 2026-07-28: **D-17** y **D-18** quedaron **cerradas** — `alembic check`
+> corre como paso «Candado metadata↔DDL» del job de integración del CI (y su
+> primera corrida ya mordió: el `env.py` no importaba los modelos de
+> negocio), y el watermark del delta es `now() - interval '5 seconds'`: la
+> edición confirmada en la ventana se re-entrega en el siguiente delta.
+> Evidencia en el registro de deuda.)*
 
 ---
 
