@@ -17,7 +17,6 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 | D-24 | Un ajuste con el `id` de otro tenant recibe 409 `ajuste_id_divergente` (efecto de la RLS que oculta la fila; criterio no firmado, espejo de `dispositivo_id_en_conflicto`) | Fase 1 (antes del piloto) | backend |
 | D-25 | Una compra con `costo_unitario = 0` deja `ultimo_costo = 0` y el P&L mostrará margen del 100% hasta la próxima compra con costo real (decisión de producto pendiente) | Fase 1 (antes del piloto) | backend |
 | D-26 | Una sesión puede cerrarse con `efectivo_esperado` NEGATIVO sin error (un egreso mayor que todo el efectivo de la sesión; decisión de producto pendiente: ¿advertencia al cerrar?) | Fase 1 (antes del piloto) | backend |
-| D-27 | El abono de fiado NO viaja por el lote del sync: es REST online (ADR-022 contempla el abono offline; la ancla — el `id` del cliente requerido en el POST — ya está puesta) | Fase 1 (antes del piloto) | backend |
 | D-28 | No hay delta de clientes hacia dispositivos: un cliente creado en una caja llega a la otra solo online (GET /clientes) | Fase 1 (antes del piloto) | backend |
 
 Cerradas en la Etapa 5, con su evidencia al final de este documento: **D-01**
@@ -76,6 +75,14 @@ vencimiento: antes del piloto): **D-19** (el reenvío de una compra con el
 mismo `id` y payload distinto devolvía la existente en silencio): el
 servicio compara el payload como `_reintento_de_ajuste` y el divergente es
 409 `compra_id_divergente` con `details.campos`.
+
+Cerrada en el pago de deuda del abono offline (Fase 1 — su vencimiento:
+antes del piloto): **D-27** (el abono de fiado solo se registraba por REST
+online): la operación `fiado.abonar` entra al lote del sync reutilizando
+`FiadoService.registrar_abono` dentro del SAVEPOINT por operación — misma
+ancla (el `id` de la operación), mismo FOR UPDATE, misma sesión de caja
+resuelta en el servidor al aplicarse — y el cobro sin señal ya sube con la
+cola del dispositivo.
 
 > Runbooks operativos relacionados: el procedimiento completo de respaldo y
 > restauración (qué se vuelca, qué NO, y cómo se promueve una copia a base
@@ -390,43 +397,6 @@ produjo; la señal llega tarde o no llega.
   esperado negativo, cierre sin error, diferencia contra el negativo —
   para que cualquier cambio sea una decisión explícita, no un efecto
   colateral.
-
----
-
-## D-27 · El abono de fiado no viaja por el lote del sync
-
-**Qué es.** Los abonos del cuaderno se registran SOLO por REST online
-(`POST /api/v1/fiado/creditos/{credito_id}/abonos`). ADR-022 contempla «un
-abono registrado sin señal tiene que sincronizar sin duplicarse», pero la
-operación `fiado.abonar` del lote NO entra en el módulo 5: su alcance
-firmado era el endpoint REST online.
-
-**Por qué se aceptó.** Decisión 6 del plan del módulo fiado y clientes. El
-mecanismo que hace seguro el abono offline — el `id` generado en el cliente
-como ancla de idempotencia — quedó puesto desde ya: el POST exige `id` y el
-reenvío con el mismo `id` es idempotente. Cuando `fiado.abonar` entre al
-lote, reutilizará el mismo ancla sin romper nada de lo entregado. Tensión
-declarada con ADR-022, no escondida.
-
-**Riesgo si se olvida.** En el piloto, un cobro de fiado hecho sin señal
-no se puede registrar en el momento: el tendero cobra, la app no puede
-anotarlo offline, y el cuaderno muestra un saldo que ya no es real hasta
-que haya red. Si el piloto opera en zonas de mala cobertura, el cuaderno
-miente justo en su operación más frecuente.
-
-**Vencimiento: Fase 1, antes del piloto.** Añadir la operación
-`fiado.abonar` al lote del sync (mismo SAVEPOINT por operación, misma
-traducción de `IntegrityError` a `duplicada`/`rechazada`).
-
-**Candados mientras tanto:**
-
-- `backend/tests/test_fiado_servicio.py::test_el_abono_es_idempotente_por_su_id`
-  (integration, corre en CI): la ancla del abono offline ya existe y se
-  comporta como la del resto del sistema — reenvío idéntico = misma
-  respuesta sin doble descuento del saldo.
-- El endpoint REST está completo y probado (17 tests de servicio, 8 de
-  API), así que el arreglo es añadir UN camino del lote que llame al mismo
-  servicio, no rehacer la operación.
 
 ---
 
@@ -1188,6 +1158,116 @@ $ uv run pytest -q -m integration    # run ci 30344948097 sobre 91060d1 (contien
   el reenvío idéntico sigue siendo un no-op (ni doble fila, stock ni evento).
 - `backend/tests/test_inventario_adversarial.py::test_dos_primeros_envios_concurrentes_de_la_misma_compra_dejan_una`:
   la carrera de dos primeros envíos se resuelve por la pkey con 409 tipado.
+
+---
+
+### D-27 · El abono de fiado no viajaba por el lote del sync
+
+**Qué era.** Los abonos del cuaderno se registraban SOLO por REST online
+(`POST /api/v1/fiado/creditos/{credito_id}/abonos`). ADR-022 firma «un
+abono registrado sin señal tiene que sincronizar sin duplicarse», pero la
+operación `fiado.abonar` del lote quedó fuera del módulo 5 (decisión 6):
+en una tienda, cobrar un fiado sin señal es tan normal como vender sin
+señal — el POS encolaba la venta y el abono no podía encolarse, y el
+cuaderno del dispositivo y el del servidor se desarmaban hasta que hubiera
+red para cobrar por REST.
+
+**Cómo se cerró** (pago de deuda, Fase 1 — su vencimiento: antes del
+piloto). Con la receta de la propia entrada: UN camino nuevo del lote que
+llama al MISMO servicio, sin tocar lo entregado.
+
+- Schema `AbonoSync` (`fiado/schemas.py`): `cliente_id` REQUERIDO como
+  ancla de coherencia (el dispositivo cobró contra el crédito que veía en
+  el cuaderno de ESE cliente), `credito_id`, `monto` en centavos con la
+  cota `le=TOPE_PRECIO` del abono online, `metodo_pago` de la lista
+  firmada, `nota` con el validador `before` que no asume `str`.
+  `sesion_caja_id` NO viaja (`extra="forbid"`): la sesión la resuelve el
+  servidor.
+- Dispatch `fiado.abonar` en `VentasService._aplicar_operacion`, dentro del
+  SAVEPOINT por operación → `_registrar_abono`: el permiso `fiado:abonar`
+  se exige POR OPERACIÓN (flag `puede_abonar`, fail-closed, patrón
+  `puede_anular`); para `efectivo` se resuelve la sesión abierta ANTES del
+  crédito (sesión → crédito, el orden que rompe el ciclo de espera con la
+  anulación) abriendo la implícita si no hay ninguna (ADR-018: el cobro
+  ocurrió físicamente, el lote no lo rechaza); y se delega en
+  `registrar_abono_sync` (`fiado/sync.py`), que verifica el ancla
+  cliente↔crédito (`rechazada abono_cliente_divergente`) y aplica con
+  `FiadoService.registrar_abono` — el id del abono ES el id de la
+  operación, la ancla de ADR-022 ya puesta en el POST online.
+- Los errores de dominio del servicio (`abono_excede_saldo`,
+  `credito_no_encontrado`, `credito_no_abonable`, `abono_id_divergente`)
+  suben como excepción FUERA del savepoint y `_aplicar_operacion` los
+  traduce a `rechazada` con el `code` como motivo: el 422/409/404 del
+  online es por operación en el lote y no arrastra a las demás. El
+  `campos_desconocidos` de `_validar_datos` se re-lanza intacto: sigue
+  siendo el 422 del request entero, como antes.
+- Idempotencia: la existencia previa de la PK distingue `duplicada` de
+  `aceptada` (la fila es la prueba, ADR-017); el reenvío con otro monto es
+  `rechazada abono_id_divergente`, nunca un no-op mudo. Cross-tenant: el
+  crédito ajeno es invisible por RLS → `rechazada credito_no_encontrado`,
+  el MISMO motivo que un inexistente — sin fuga.
+- El contrato OpenAPI NO cambia (`fiado.abonar` viaja en
+  `OperacionSync.datos`, como `cliente.crear`): el codegen contra el
+  congelado no produce diff.
+
+**Evidencia** (run ci 30348115730 sobre `0b613e8`, 2026-07-28; la corrida
+local usó un PostgreSQL 17 desechable —contenedor `vendi-d27-pg`, puerto
+127.0.0.1:55432, init scripts del repo y migraciones al head— sin tocar los
+contenedores ajenos):
+
+```
+# ROJO previo (los 7 tests nuevos contra el backend SIN el cambio, vía
+# `git stash` del código y pop inmediato):
+$ cd backend && VENDI_TEST_PG_PORT=55432 uv run pytest tests/test_fiado_abono_sync.py -q
+7 errors            # el fixture revienta: `VentasService` no conoce
+                    # `puede_abonar` ni existe el dispatch `fiado.abonar`
+
+$ VENDI_TEST_PG_PORT=55432 uv run pytest tests/test_fiado_abono_sync.py -q
+7 passed            # feliz (saldo baja, sesión resuelta en el servidor,
+                    # evento), sesión implícita si no hay abierta,
+                    # reintento = duplicada sin doble descuento ni doble
+                    # evento, exceso = rechazada abono_excede_saldo sin
+                    # arrastrar el lote, almacenista = permiso_ausente,
+                    # crédito ajeno = credito_no_encontrado sin fuga,
+                    # ancla cliente↔crédito = abono_cliente_divergente
+
+# Suites integration vecinas contra el PG desechable (regresión):
+$ VENDI_TEST_PG_PORT=55432 uv run pytest -q tests/test_fiado_sync.py \
+    tests/test_fiado_servicio.py tests/test_fiado_adversarial.py \
+    tests/test_ventas_servicio.py tests/test_sync_idempotente.py \
+    tests/test_caja_servicio.py tests/test_caja_anulacion_sync.py \
+    tests/test_caja_adversarial.py tests/test_aislamiento_fiado.py \
+    tests/test_ventas_adversarial.py tests/test_ventas_fixes_qa.py \
+    tests/test_fiado_vencimientos.py
+178 passed
+
+$ uv run pytest -q -m 'not integration'
+432 passed, 487 deselected
+$ uv run ruff check . && uv run ruff format --check services/api/app tests
+All checks passed! · 142 files already formatted
+
+$ CODEGEN_SCHEMA_FILE=docs/api/openapi-fase0.json bash scripts/codegen-api-client.sh
+✨ openapi-typescript 7.13.0 → openapi.json e index.ts sin diff
+
+$ uv run pytest -q -rs -m integration   # run ci 30348115730 sobre 0b613e8
+487 passed, 432 deselected              # 0 SKIPPED (el grep del job lo exige);
+                                        # los 11 jobs del run, success
+```
+
+**Candados:**
+
+- `backend/tests/test_fiado_abono_sync.py` (7 tests, integration, corren en
+  CI): el abono offline descuenta el saldo y cae en la sesión abierta al
+  aplicarse; sin sesión abre la implícita; el reintento es `duplicada` sin
+  doble descuento y la divergencia `abono_id_divergente`; el exceso es
+  `rechazada abono_excede_saldo` y el abono bueno que viaja detrás se
+  aplica; sin `fiado:abonar` es `permiso_ausente`; el crédito de otro
+  tenant es `credito_no_encontrado` sin fuga; y el `cliente_id` que no es
+  el del crédito es `abono_cliente_divergente`.
+- `backend/tests/test_fiado_schemas.py::test_abono_sync_exige_cliente_credito_monto_y_metodo`
+  y `::test_abono_sync_lleva_las_cotas_del_abono_online` (no integration):
+  el ancla requerida, las cotas y el `sesion_caja_id` rechazado por
+  `extra="forbid"` mueren si el contrato se afloja.
 
 ---
 

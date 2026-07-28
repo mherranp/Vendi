@@ -1,11 +1,12 @@
 """Clientes y el cuaderno: `/api/v1/clientes/*` y `/api/v1/fiado/creditos/*`.
 
 Los endpoints de ABONOS son REST ONLINE puros (decisión 6 del plan): el
-abono offline por el lote llega con su propia decisión (D-27), y el `id`
-requerido ya deja puesta su ancla. Los créditos NACEN en el sync (Tarea 7):
-aquí se consultan, se reprograman y se cobran. Todo trabaja con la sesión
-de TENANT (rol `vendi_app`, RLS activo): ningún handler recibe `tenant_id`.
-El 403 por rol es la respuesta correcta y esperada (ADR-023).
+abono offline ya viaja por el lote del sync como `fiado.abonar` (cierre de
+D-27) reutilizando la misma ancla — el `id` requerido que aquí se exige.
+Los créditos NACEN en el sync (Tarea 7): aquí se consultan, se reprograman
+y se cobran. Todo trabaja con la sesión de TENANT (rol `vendi_app`, RLS
+activo): ningún handler recibe `tenant_id`. El 403 por rol es la respuesta
+correcta y esperada (ADR-023).
 """
 
 from __future__ import annotations

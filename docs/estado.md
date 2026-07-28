@@ -870,6 +870,14 @@ eventos de la misma transacción no tiene consumidor todavía (el primero
 será el módulo 7, que consume `fiado.credito_vencido`): si alguno de los
 dos muerde de verdad, se registra con su vencimiento.
 
+> *(Actualización del pago de deuda, 2026-07-28: **D-27** quedó **cerrada** —
+> la operación `fiado.abonar` ya viaja por el lote del sync reutilizando
+> `FiadoService.registrar_abono` dentro del SAVEPOINT por operación: misma
+> ancla (el `id` de la operación), exceso de saldo como `rechazada` tipada
+> sin arrastrar el lote, efectivo en la sesión abierta al aplicarse en el
+> servidor y `fiado:abonar` exigido por operación. Evidencia en el registro
+> de deuda.)*
+
 ---
 
 ## La suite de tests
