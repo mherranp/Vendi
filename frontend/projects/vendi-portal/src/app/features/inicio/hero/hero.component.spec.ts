@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 
 import { environment } from '../../../../environments/environment';
+import { environment as entornoDesarrollo } from '../../../../environments/environment.development';
 import { prepararPruebaI18n } from '../../../testing/i18n-prueba';
 import { WHATSAPP_COMERCIAL } from '../whatsapp-comercial.token';
 import { HeroComponent } from './hero.component';
@@ -43,5 +44,27 @@ describe('HeroComponent', () => {
   it('el número del entorno, si existe, es apto para wa.me (solo dígitos)', () => {
     // Candado de formato: un '+' o un espacio rompe el enlace silenciosamente.
     expect(environment.whatsappComercial).toMatch(/^\d*$/);
+  });
+
+  it('el candado cubre TAMBIÉN el entorno de desarrollo (se prueba en local el mismo enlace)', () => {
+    expect(entornoDesarrollo.whatsappComercial).toMatch(/^\d*$/);
+  });
+
+  it('la fábrica del token toma el número del entorno de producción, sin atajos', () => {
+    prepararPruebaI18n();
+    expect(TestBed.inject(WHATSAPP_COMERCIAL)).toBe(environment.whatsappComercial);
+  });
+
+  it('un número malformado («abc») produce un enlace wa.me roto: el candado del entorno es la ÚNICA defensa', () => {
+    // Comportamiento actual, fijado a propósito como advertencia: el componente
+    // confía en el token y NO valida. Si alguien debilita el candado del
+    // entorno, este test es el que recuerda por qué importa.
+    prepararPruebaI18n([{ provide: WHATSAPP_COMERCIAL, useValue: 'abc' }]);
+    const fixture = TestBed.createComponent(HeroComponent);
+    fixture.detectChanges();
+    const cta = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>(
+      'a.hero__cta',
+    );
+    expect(cta?.getAttribute('href')).toContain('wa.me/abc');
   });
 });

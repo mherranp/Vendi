@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 
 import { prepararPruebaI18n } from '../../../testing/i18n-prueba';
+import { pesosPorDia } from '../moneda';
+import { TIERS } from '../planes';
 import { PreciosComponent } from './precios.component';
 
 describe('PreciosComponent', () => {
@@ -50,5 +52,39 @@ describe('PreciosComponent', () => {
     }
     // Nada de ✓/✗ mudas: un lector de pantalla tiene que poder leer la tabla.
     expect(raiz.textContent).toContain('No incluido');
+  });
+
+  it('la comparativa fija celda a celda los límites de ADR-010 (no solo «aparecen por ahí»)', () => {
+    prepararPruebaI18n();
+    const componente = TestBed.createComponent(PreciosComponent).componentInstance;
+    const fila = (sufijo: string) =>
+      componente.filas.find((f) => f.clave === `portal.precios.${sufijo}`)?.valores;
+    expect(fila('fila_productos')).toEqual(['100', '500', 'ilimitado']);
+    expect(fila('fila_usuarios')).toEqual(['1', '2', '3']);
+    expect(fila('fila_fiado')).toEqual(['no', 'si', 'si']);
+    expect(fila('fila_asistente')).toEqual(['asistente_5_mes', 'asistente_30_dia', 'ilimitado']);
+    expect(fila('fila_reportes')).toEqual(['no', 'reportes_briefing', 'reportes_completos']);
+    // Toda fila tiene exactamente una celda por tier: una de más o de menos
+    // descuadra la comparativa entera silenciosamente.
+    for (const f of componente.filas) {
+      expect(f.valores).toHaveLength(TIERS.length);
+    }
+  });
+
+  it('el ancla «menos de» es cierta para cada tier de pago: cubre el mes entero', () => {
+    for (const tier of TIERS.filter((t) => t.precioMensualPesos > 0)) {
+      expect(pesosPorDia(tier.precioMensualPesos) * 30).toBeGreaterThan(tier.precioMensualPesos);
+    }
+  });
+
+  it('el plan gratis NO muestra ancla por día ni precio distinto de $0', () => {
+    const raiz = crear();
+    const gratis = Array.from(raiz.querySelectorAll('.precios__tier')).find((t) =>
+      t.querySelector('h3')?.textContent?.includes('Gratis'),
+    );
+    expect(gratis).toBeDefined();
+    expect(gratis?.querySelector('.precios__dia')).toBeNull();
+    expect(gratis?.textContent).toContain('$0');
+    expect(gratis?.textContent).not.toContain('al día');
   });
 });

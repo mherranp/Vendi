@@ -47,6 +47,33 @@ describe('la landing pública', () => {
     const comodin = routes.find((r) => r.path === '**');
     expect(comodin?.redirectTo).toBe('');
   });
+
+  it('hay exactamente UN h1 en toda la página', async () => {
+    const raiz = await pintar();
+    expect(raiz.querySelectorAll('h1')).toHaveLength(1);
+  });
+
+  it('los anclajes de la barra resuelven a secciones que existen (nada de #rotos)', async () => {
+    const raiz = await pintar();
+    const internos = Array.from(raiz.querySelectorAll<HTMLAnchorElement>('nav a[href^="#"]'));
+    expect(internos.length).toBeGreaterThan(0);
+    for (const enlace of internos) {
+      const destino = enlace.getAttribute('href')?.slice(1) ?? '';
+      expect(raiz.querySelector(`#${destino}`), `ancla rota: #${destino}`).not.toBeNull();
+    }
+  });
+
+  it('todo enlace de la landing tiene destino: ningún botón muerto navegable por teclado', async () => {
+    const raiz = await pintar();
+    const enlaces = Array.from(raiz.querySelectorAll<HTMLAnchorElement>('a'));
+    expect(enlaces.length).toBeGreaterThan(0);
+    for (const enlace of enlaces) {
+      expect(enlace.getAttribute('href')).toBeTruthy();
+    }
+    // Los únicos interactivos de la página son enlaces: la tabla de precios es
+    // contenido estático legible, sin trampas de foco.
+    expect(raiz.querySelectorAll('button, input, select, textarea')).toHaveLength(0);
+  });
 });
 
 describe('el respaldo i18n del portal', () => {
