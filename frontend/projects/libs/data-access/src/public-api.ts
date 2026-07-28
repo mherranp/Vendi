@@ -41,6 +41,8 @@ export { FeatureFlagsService } from './lib/services/feature-flags.service';
 
 // --- Offline (ADR-017/ADR-018): IndexedDB como verdad local ----------------
 export { VendiDb } from './lib/offline/vendi.db';
+export { VentasOfflineService } from './lib/offline/ventas-offline.service';
+export type { EntradaCobro } from './lib/offline/ventas-offline.service';
 export type {
   ClaveMeta,
   ClienteLocal,
