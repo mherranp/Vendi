@@ -2440,11 +2440,15 @@ async def test_el_forecast_suma_saldo_mas_promedios_menos_egresos(servicio, semi
 
     forecast = await servicio.forecast()
 
-    assert forecast.saldo_actual_centavos == 50000 + 10000  # base + la venta en efectivo
+    # OJO (corrección de la ejecución, commit bad5544): el egreso de 8000 está
+    # registrado contra la sesión abierta, así que ENTRA en el esperado vivo
+    # (base + ventas + ingresos − egresos, ADR-021). El plan afirmaba 60000
+    # olvidando su propio egreso.
+    assert forecast.saldo_actual_centavos == 50000 + 10000 - 8000  # base + venta − egreso
     assert forecast.ventas_proyectadas_centavos == 10000  # promedio diario × 30 con días en 0
     assert forecast.cobros_fiado_proyectados_centavos == 0  # sin fuente hasta el módulo 5: declarado
     assert forecast.egresos_proyectados_centavos == 8000
-    assert forecast.saldo_proyectado_centavos == 60000 + 10000 + 0 - 8000
+    assert forecast.saldo_proyectado_centavos == 52000 + 10000 + 0 - 8000
     assert forecast.dias_con_datos == 1
     assert "módulo 5" in forecast.fuentes["cobros_fiado"]
     assert "egresos de caja de los últimos 30" in forecast.fuentes["egresos_proyectados"]
