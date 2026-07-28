@@ -1,6 +1,121 @@
 {
   "components": {
     "schemas": {
+      "AbonoCrear": {
+        "additionalProperties": false,
+        "description": "Un pago contra el crédito que el usuario tocó (ADR-022).\n\n`id` es REQUERIDO (es dinero: solo la ancla hace seguro el reintento\ntras un timeout — y deja lista la vía del abono offline por el lote,\ndecisión 6). El servidor descuenta el saldo en la misma transacción; un\nabono mayor que el saldo es 422 `abono_excede_saldo` (el CHECK es la\nred, no la regla).",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "metodo_pago": {
+            "enum": [
+              "efectivo",
+              "transferencia",
+              "otro"
+            ],
+            "title": "Metodo Pago",
+            "type": "string"
+          },
+          "monto": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 2147483647.0,
+            "title": "Monto",
+            "type": "integer"
+          },
+          "nota": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nota"
+          }
+        },
+        "required": [
+          "id",
+          "monto",
+          "metodo_pago"
+        ],
+        "title": "AbonoCrear",
+        "type": "object"
+      },
+      "AbonoSalida": {
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "credito_id": {
+            "format": "uuid",
+            "title": "Credito Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "metodo_pago": {
+            "title": "Metodo Pago",
+            "type": "string"
+          },
+          "monto": {
+            "title": "Monto",
+            "type": "integer"
+          },
+          "nota": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nota"
+          },
+          "registrado_por": {
+            "title": "Registrado Por",
+            "type": "string"
+          },
+          "sesion_caja_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sesion Caja Id"
+          }
+        },
+        "required": [
+          "id",
+          "credito_id",
+          "monto",
+          "metodo_pago",
+          "registrado_por"
+        ],
+        "title": "AbonoSalida",
+        "type": "object"
+      },
       "AjusteCreado": {
         "description": "La respuesta del alta: lo mismo que la fila, más el nivel de alerta en\nque quedó el producto (lo deriva el servidor, que es la única autoridad\ndel umbral — decisión 2).",
         "properties": {
@@ -439,6 +554,350 @@
         "title": "ArqueoSalida",
         "type": "object"
       },
+      "ClienteConSaldo": {
+        "description": "El cliente con su deuda viva: `SUM(saldo_pendiente)` de sus créditos\n`vigente`/`vencido` — calculado en cada lectura, nunca guardado\n(ADR-022) — y el cupo evaluado (decisión 8).",
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "cupo_excedido": {
+            "title": "Cupo Excedido",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "limite_credito": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limite Credito"
+          },
+          "nombre": {
+            "title": "Nombre",
+            "type": "string"
+          },
+          "nota": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nota"
+          },
+          "saldo_pendiente_total": {
+            "title": "Saldo Pendiente Total",
+            "type": "integer"
+          },
+          "telefono": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telefono"
+          }
+        },
+        "required": [
+          "id",
+          "nombre",
+          "saldo_pendiente_total",
+          "cupo_excedido"
+        ],
+        "title": "ClienteConSaldo",
+        "type": "object"
+      },
+      "ClienteCrear": {
+        "additionalProperties": false,
+        "description": "Alta online de un cliente. `id` es el UUID del cliente (ADR-017):\nreenviar el mismo alta devuelve el existente; con otro contenido, 409.",
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "limite_credito": {
+            "anyOf": [
+              {
+                "maximum": 2147483647.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limite Credito"
+          },
+          "nombre": {
+            "maxLength": 160,
+            "minLength": 2,
+            "title": "Nombre",
+            "type": "string"
+          },
+          "nota": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nota"
+          },
+          "telefono": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telefono"
+          }
+        },
+        "required": [
+          "nombre"
+        ],
+        "title": "ClienteCrear",
+        "type": "object"
+      },
+      "ClienteDetalleSalida": {
+        "description": "La ficha del cliente: sus datos, su saldo y sus fiados con deuda.",
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "creditos": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CreditoResumenSalida"
+            },
+            "title": "Creditos",
+            "type": "array"
+          },
+          "cupo_excedido": {
+            "title": "Cupo Excedido",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "limite_credito": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limite Credito"
+          },
+          "nombre": {
+            "title": "Nombre",
+            "type": "string"
+          },
+          "nota": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nota"
+          },
+          "saldo_pendiente_total": {
+            "title": "Saldo Pendiente Total",
+            "type": "integer"
+          },
+          "telefono": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telefono"
+          }
+        },
+        "required": [
+          "id",
+          "nombre",
+          "saldo_pendiente_total",
+          "cupo_excedido"
+        ],
+        "title": "ClienteDetalleSalida",
+        "type": "object"
+      },
+      "ClienteEditar": {
+        "additionalProperties": false,
+        "description": "Edición parcial. `null` explícito en `limite_credito`/`telefono`/`nota`\nBORRA el valor (vuelve a «sin cupo»/«sin teléfono»).",
+        "properties": {
+          "limite_credito": {
+            "anyOf": [
+              {
+                "maximum": 2147483647.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limite Credito"
+          },
+          "nombre": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "minLength": 2,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nombre"
+          },
+          "nota": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nota"
+          },
+          "telefono": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telefono"
+          }
+        },
+        "title": "ClienteEditar",
+        "type": "object"
+      },
+      "ClienteSalida": {
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "limite_credito": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limite Credito"
+          },
+          "nombre": {
+            "title": "Nombre",
+            "type": "string"
+          },
+          "nota": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nota"
+          },
+          "telefono": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telefono"
+          }
+        },
+        "required": [
+          "id",
+          "nombre"
+        ],
+        "title": "ClienteSalida",
+        "type": "object"
+      },
       "CompraCrear": {
         "additionalProperties": false,
         "description": "Una compra a proveedor. `proveedor_nombre` es texto libre (ADR-020:\nla factura es un papel; no hay tabla de proveedores). El `id` del\ncliente se acepta como PK (ADR-017): reenviar la misma compra es un\nno-op. El total NO viaja: lo calcula el servidor (decisión 7).",
@@ -679,6 +1138,199 @@
         "title": "CompraSalida",
         "type": "object"
       },
+      "CreditoDetalleSalida": {
+        "description": "La pantalla del fiado: su historial de pagos (ADR-009) y el enlace\n`wa.me` prearmado para cobrarle (ADR-022: WhatsApp manual). `null` si el\ncliente no tiene teléfono.",
+        "properties": {
+          "abonos": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AbonoSalida"
+            },
+            "title": "Abonos",
+            "type": "array"
+          },
+          "cliente_id": {
+            "format": "uuid",
+            "title": "Cliente Id",
+            "type": "string"
+          },
+          "cliente_nombre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cliente Nombre"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "fecha_vencimiento": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha Vencimiento"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "monto_total": {
+            "title": "Monto Total",
+            "type": "integer"
+          },
+          "saldo_pendiente": {
+            "title": "Saldo Pendiente",
+            "type": "integer"
+          },
+          "venta_id": {
+            "format": "uuid",
+            "title": "Venta Id",
+            "type": "string"
+          },
+          "whatsapp_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Whatsapp Url"
+          }
+        },
+        "required": [
+          "id",
+          "cliente_id",
+          "venta_id",
+          "monto_total",
+          "saldo_pendiente",
+          "estado"
+        ],
+        "title": "CreditoDetalleSalida",
+        "type": "object"
+      },
+      "CreditoReprogramar": {
+        "additionalProperties": false,
+        "description": "«Deme hasta el otro viernes»: nueva fecha de vencimiento (o null para\ndejarlo sin recordatorio). Un `vencido` reprogramado a futuro vuelve a\n`vigente` (decisión 7).",
+        "properties": {
+          "fecha_vencimiento": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha Vencimiento"
+          }
+        },
+        "title": "CreditoReprogramar",
+        "type": "object"
+      },
+      "CreditoResumenSalida": {
+        "description": "Un fiado del cuaderno. `monto_total` y `saldo_pendiente` en centavos.",
+        "properties": {
+          "cliente_id": {
+            "format": "uuid",
+            "title": "Cliente Id",
+            "type": "string"
+          },
+          "cliente_nombre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cliente Nombre"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "fecha_vencimiento": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha Vencimiento"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "monto_total": {
+            "title": "Monto Total",
+            "type": "integer"
+          },
+          "saldo_pendiente": {
+            "title": "Saldo Pendiente",
+            "type": "integer"
+          },
+          "venta_id": {
+            "format": "uuid",
+            "title": "Venta Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "cliente_id",
+          "venta_id",
+          "monto_total",
+          "saldo_pendiente",
+          "estado"
+        ],
+        "title": "CreditoResumenSalida",
+        "type": "object"
+      },
       "DeltaSalida": {
         "description": "El drenado de datos de referencia hacia el dispositivo (ADR-017).\n\n`hasta` es la marca del SERVIDOR que el dispositivo guarda y devuelve\ncomo próximo `desde`: el watermark nunca lo pone el reloj del cliente.\n`eliminados` son tumbas: el dispositivo los quita de su IndexedDB.",
         "properties": {
@@ -712,7 +1364,7 @@
         "type": "object"
       },
       "DesgloseSalida": {
-        "description": "La cuenta del arqueo (ADR-021: «una cuenta, no una pantalla mágica»).\n\n`esperado = base + ventas_efectivo + abonos_efectivo + ingresos\n− egresos − devoluciones`. `abonos_efectivo` es 0 hasta el módulo 5\n(fiado, ADR-022) — declarado en `docs/api/README.md`.",
+        "description": "La cuenta del arqueo (ADR-021: «una cuenta, no una pantalla mágica»).\n\n`esperado = base + ventas_efectivo + abonos_efectivo + ingresos\n− egresos − devoluciones`. `abonos_efectivo` son los abonos de fiado en\nefectivo de la sesión (ADR-021/022), sumados desde `fiado_abonos`.",
         "properties": {
           "abonos_efectivo": {
             "title": "Abonos Efectivo",
@@ -865,7 +1517,7 @@
         "type": "string"
       },
       "ForecastSalida": {
-        "description": "El forecast a 30 días: una proyección explicada, no una promesa\n(ADR-006). Cada número declara su fuente; lo que no tiene fuente todavía\n(cobros de fiado) viaja en 0 y lo dice.",
+        "description": "El forecast a 30 días: una proyección explicada, no una promesa\n(ADR-006). Cada número declara su fuente; los cobros de fiado proyectan\nel saldo de los créditos que vencen en la ventana (los sin fecha no\nentran, declarado).",
         "properties": {
           "cobros_fiado_proyectados_centavos": {
             "title": "Cobros Fiado Proyectados Centavos",
@@ -1159,6 +1811,37 @@
         "title": "PagedList[ArqueoSalida]",
         "type": "object"
       },
+      "PagedList_ClienteConSaldo_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ClienteConSaldo"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "PagedList[ClienteConSaldo]",
+        "type": "object"
+      },
       "PagedList_CompraSalida_": {
         "properties": {
           "items": {
@@ -1188,6 +1871,37 @@
           "limit"
         ],
         "title": "PagedList[CompraSalida]",
+        "type": "object"
+      },
+      "PagedList_CreditoResumenSalida_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CreditoResumenSalida"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "PagedList[CreditoResumenSalida]",
         "type": "object"
       },
       "PagedList_MovimientoSalida_": {
@@ -2098,6 +2812,7 @@
   "paths": {
     "/api/v1/caja/movimientos": {
       "get": {
+        "description": "El listado es del cajero (`caja:leer`) salvo los `retiro_dueno`: el\nretiro del dueño es tan sensible como el costo y solo aparece — en la\nlista y en el total — con `caja:cerrar` (C-3 del QA, misma lección que\n`ultimo_costo`).",
         "operationId": "listar_movimientos_api_v1_caja_movimientos_get",
         "parameters": [
           {
@@ -2505,7 +3220,7 @@
     },
     "/api/v1/caja/sesiones/{sesion_id}/cerrar": {
       "post": {
-        "description": "El arqueo (ADR-021): el servidor calcula `esperado = base + ventas en\nefectivo + abonos (0 hasta el módulo 5) + ingresos − egresos −\ndevoluciones` sumando desde las tablas de origen, y lo CONGELA con el\n`contado` y la `diferencia` en la sesión. Desde entonces nada lo reabre:\nni una venta que sincroniza tarde, ni una anulación posterior. El\nreintento con el mismo conteo devuelve el arqueo firmado.",
+        "description": "El arqueo (ADR-021): el servidor calcula `esperado = base + ventas en\nefectivo + abonos de fiado en efectivo + ingresos − egresos −\ndevoluciones` sumando desde las tablas de origen, y lo CONGELA con el\n`contado` y la `diferencia` en la sesión. Desde entonces nada lo reabre:\nni una venta que sincroniza tarde, ni una anulación posterior. El\nreintento con el mismo conteo devuelve el arqueo firmado.",
         "operationId": "cerrar_caja_api_v1_caja_sesiones__sesion_id__cerrar_post",
         "parameters": [
           {
@@ -2599,6 +3314,346 @@
         "summary": "Cerrar la caja con arqueo (conteo físico)",
         "tags": [
           "caja"
+        ]
+      }
+    },
+    "/api/v1/clientes": {
+      "get": {
+        "description": "El saldo es `SUM(saldo_pendiente)` de vigente/vencido, calculado en\ncada lectura (ADR-022): nunca una columna que se desactualice. `q`\nbusca por nombre.",
+        "operationId": "listar_clientes_api_v1_clientes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 160,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedList_ClienteConSaldo_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "La libreta de clientes con su deuda viva",
+        "tags": [
+          "fiado"
+        ]
+      },
+      "post": {
+        "description": "Idempotente por el `id` del cliente (ADR-017): reenviar el mismo alta\ndevuelve el existente; con otro contenido, 409 `cliente_id_divergente`.",
+        "operationId": "crear_cliente_api_v1_clientes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClienteCrear"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClienteSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "El id ya existe con datos distintos (o está en uso)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Crear un cliente",
+        "tags": [
+          "fiado"
+        ]
+      }
+    },
+    "/api/v1/clientes/{cliente_id}": {
+      "get": {
+        "description": "Con `saldo_pendiente_total` y `cupo_excedido` calculados (decisión 8):\nes lo que el POS muestra antes de fiarle más.",
+        "operationId": "obtener_cliente_api_v1_clientes__cliente_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cliente_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Cliente Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClienteDetalleSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "El cliente no existe"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "La ficha del cliente: saldo, cupo y sus fiados con deuda",
+        "tags": [
+          "fiado"
+        ]
+      },
+      "patch": {
+        "description": "`null` explícito borra el valor (quitar el cupo vuelve a «sin tope»).\nEl cliente no se borra (decisión 13): el cuaderno lo referencia.",
+        "operationId": "editar_cliente_api_v1_clientes__cliente_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cliente_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Cliente Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClienteEditar"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClienteSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "El cliente no existe"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Editar un cliente",
+        "tags": [
+          "fiado"
         ]
       }
     },
@@ -2910,6 +3965,380 @@
         "summary": "Registrar un dispositivo del negocio",
         "tags": [
           "ventas"
+        ]
+      }
+    },
+    "/api/v1/fiado/creditos": {
+      "get": {
+        "description": "Por defecto solo lo que se debe (`vigente` + `vencido`); `estado=todos`\nincluye la historia. La lista de estados es CERRADA: uno arbitrario es\n422, no una lista vacía. El fiado ES el cuaderno (ADR-009).",
+        "operationId": "listar_creditos_api_v1_fiado_creditos_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "estado",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(vigente|vencido|saldado|anulado|todos)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Estado"
+            }
+          },
+          {
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedList_CreditoResumenSalida_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "El cuaderno: los fiados, lo que vence primero arriba",
+        "tags": [
+          "fiado"
+        ]
+      }
+    },
+    "/api/v1/fiado/creditos/{credito_id}": {
+      "get": {
+        "description": "El historial de abonos es la verdad y no se reescribe (ADR-022). El\n`wa.me` va prearmado con el saldo; `null` si el cliente no tiene teléfono.",
+        "operationId": "obtener_credito_api_v1_fiado_creditos__credito_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credito_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credito Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditoDetalleSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "El crédito no existe"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "El fiado: historial de pagos y enlace de WhatsApp prearmado",
+        "tags": [
+          "fiado"
+        ]
+      },
+      "patch": {
+        "description": "«Deme hasta el otro viernes»: un `vencido` reprogramado a futuro (o\ndejado sin fecha) vuelve a `vigente` (decisión 7).",
+        "operationId": "reprogramar_credito_api_v1_fiado_creditos__credito_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credito_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credito Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreditoReprogramar"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditoResumenSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "El crédito no existe"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "El crédito está saldado o anulado"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reprogramar la fecha de vencimiento",
+        "tags": [
+          "fiado"
+        ]
+      }
+    },
+    "/api/v1/fiado/creditos/{credito_id}/abonos": {
+      "post": {
+        "description": "El saldo se descuenta en la misma transacción con el CHECK como red\n(ADR-022). `efectivo` entra al arqueo de la sesión abierta (decisión 9);\nun abono mayor que el saldo es 422 `abono_excede_saldo`.",
+        "operationId": "registrar_abono_api_v1_fiado_creditos__credito_id__abonos_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credito_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credito Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbonoCrear"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AbonoSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "El crédito no existe"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "El crédito no admite abonos, no hay caja abierta, o el id diverge"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Registrar un abono",
+        "tags": [
+          "fiado"
         ]
       }
     },
@@ -4090,7 +5519,7 @@
     },
     "/api/v1/reportes/forecast": {
       "get": {
-        "description": "Proyección explicada, no promesa (ADR-006): saldo vivo + promedio de\nventas en efectivo 30d + cobros de fiado (0 hasta el módulo 5,\ndeclarado) − promedio de egresos de caja 30d. Cada número declara su\nfuente.",
+        "description": "Proyección explicada, no promesa (ADR-006): saldo vivo + promedio de\nventas en efectivo 30d + cobros de fiado (saldo de los créditos que\nvencen en la ventana) − promedio de egresos de caja 30d. Cada número\ndeclara su fuente.",
         "operationId": "forecast_api_v1_reportes_forecast_get",
         "responses": {
           "200": {

@@ -64,6 +64,14 @@ qué cambió en el contrato.
 | `GET /api/v1/caja/movimientos` | `caja:leer` | listado paginado de una sesión (la abierta por defecto) |
 | `GET /api/v1/reportes/pyl` | `reporte:leer` | P&L simple del período (`dia`/`semana`/`mes` en America/Bogota, `fecha` opcional); cada número declara su fuente en `fuentes`; el costo es `ultimo_costo` ACTUAL (declarado) |
 | `GET /api/v1/reportes/forecast` | `reporte:leer` | forecast a 30 días: saldo vivo + promedio ventas efectivo 30d + cobros fiado (saldo de créditos vigente/vencido que vencen en la ventana; los sin fecha no entran) − promedio egresos 30d |
+| `POST /api/v1/clientes` | `cliente:gestionar` | alta con `id` del cliente opcional (idempotente); divergente = 409 `cliente_id_divergente`; choque de id ajeno = 409 `cliente_id_en_conflicto` |
+| `GET /api/v1/clientes` | `cliente:gestionar` | la libreta con `saldo_pendiente_total` (SUM calculado, ADR-022) y `cupo_excedido`; `q` busca por nombre |
+| `GET /api/v1/clientes/{id}` | `cliente:gestionar` | ficha con saldo, cupo y los fiados con deuda (lo que vence primero arriba) |
+| `PATCH /api/v1/clientes/{id}` | `cliente:gestionar` | edición parcial; `null` explícito borra (quitar el cupo = «sin tope»); no hay DELETE (el cuaderno referencia) |
+| `GET /api/v1/fiado/creditos` | `fiado:crear` | el cuaderno: pendientes por defecto (`vigente`+`vencido`), `estado=todos` incluye la historia |
+| `GET /api/v1/fiado/creditos/{id}` | `fiado:crear` | detalle con historial de abonos y `whatsapp_url` prearmada (null sin teléfono) |
+| `PATCH /api/v1/fiado/creditos/{id}` | `fiado:crear` | reprogramar vencimiento; un `vencido` a futuro vuelve a `vigente`; `saldado`/`anulado` = 409 `credito_no_editable` |
+| `POST /api/v1/fiado/creditos/{id}/abonos` | `fiado:abonar` | descuenta el saldo en la misma transacción (CHECK como red); `id` requerido (ancla); exceso = 422 `abono_excede_saldo`; `efectivo` exige caja abierta (409 `caja_sin_sesion_abierta`) y entra al arqueo |
 
 Todos los errores usan el mismo sobre: `{"success": false, "message": "...",
 "code": "..."}`. El `code` es estable y es el que debe consumir el frontend para
@@ -76,7 +84,10 @@ decidir qué mensaje mostrar — `tenant_suspendido`, `requiere_platform_admin`,
 `fecha_sin_zona`, `campos_desconocidos`, `compra_no_encontrada`,
 `compra_id_duplicado`, `ajuste_id_divergente`, `total_fuera_de_rango`,
 `caja_ya_abierta`, `caja_sin_sesion_abierta`, `caja_sesion_no_encontrada`,
-`caja_ya_cerrada`, `sesion_id_duplicado`, `movimiento_id_divergente`.
+`caja_ya_cerrada`, `sesion_id_duplicado`, `movimiento_id_divergente`,
+`cliente_id_divergente`, `cliente_id_en_conflicto`, `cliente_no_encontrado`,
+`credito_no_encontrado`, `credito_no_abonable`, `credito_no_editable`,
+`abono_excede_saldo`, `abono_id_divergente`.
 
 En las respuestas de productos, `ultimo_costo` viaja en `null` para quien no
 tiene `compra:crear` (el cajero): los costos son el margen del negocio y viven
@@ -113,3 +124,22 @@ Eventos nuevos del outbox en este contrato: `caja.sesion_abierta`,
 `caja.movimiento_registrado` y `caja.sesion_cerrada` — esta última con el
 resumen completo del arqueo (desglose, esperado, contado, diferencia), que
 es el insumo del briefing matutino de IA y de la telemetría.
+
+El crédito nace en el sync (misma transacción de la venta fiada): el lote
+gana la operación `cliente.crear` (el id del dispositivo ES la PK del
+cliente) y la venta con `medio_pago="fiado"` acepta `fecha_vencimiento`
+opcional. El servidor NO rechaza por cupo (ADR-018): la operación aceptada
+lo señala con `detalles.cupo_excedido=true`. La anulación de la venta fiada
+anula el crédito (`anulado`, saldo 0); los abonos son historia intocable y
+la devolución del dinero es un egreso de caja manual.
+
+Eventos nuevos del outbox en este contrato: `fiado.credito_creado`,
+`fiado.abono_registrado`, `fiado.credito_saldado`, `fiado.credito_anulado` y
+`fiado.credito_vencido` (este último lo emite el trabajo diario del worker;
+lo consume el módulo de notificaciones para el push — sin PII en el
+payload, ADR-025). El WhatsApp del recordatorio es un `wa.me` prearmado en
+el detalle del crédito: manual y de coste cero (ADR-022).
+
+Los abonos en efectivo entran al arqueo de la sesión abierta (sumados desde
+`fiado_abonos`, nunca duplicados como movimiento) y el forecast proyecta los
+cobros de fiado del saldo que vence en 30 días (los sin fecha no entran).

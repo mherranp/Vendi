@@ -20,7 +20,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Movimientos de una sesión (la abierta, por defecto) */
+        /**
+         * Movimientos de una sesión (la abierta, por defecto)
+         * @description El listado es del cajero (`caja:leer`) salvo los `retiro_dueno`: el
+         *     retiro del dueño es tan sensible como el costo y solo aparece — en la
+         *     lista y en el total — con `caja:cerrar` (C-3 del QA, misma lección que
+         *     `ultimo_costo`).
+         */
         get: operations["listar_movimientos_api_v1_caja_movimientos_get"];
         put?: never;
         /**
@@ -98,7 +104,7 @@ export interface paths {
         /**
          * Cerrar la caja con arqueo (conteo físico)
          * @description El arqueo (ADR-021): el servidor calcula `esperado = base + ventas en
-         *     efectivo + abonos (0 hasta el módulo 5) + ingresos − egresos −
+         *     efectivo + abonos de fiado en efectivo + ingresos − egresos −
          *     devoluciones` sumando desde las tablas de origen, y lo CONGELA con el
          *     `contado` y la `diferencia` en la sesión. Desde entonces nada lo reabre:
          *     ni una venta que sincroniza tarde, ni una anulación posterior. El
@@ -109,6 +115,59 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clientes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * La libreta de clientes con su deuda viva
+         * @description El saldo es `SUM(saldo_pendiente)` de vigente/vencido, calculado en
+         *     cada lectura (ADR-022): nunca una columna que se desactualice. `q`
+         *     busca por nombre.
+         */
+        get: operations["listar_clientes_api_v1_clientes_get"];
+        put?: never;
+        /**
+         * Crear un cliente
+         * @description Idempotente por el `id` del cliente (ADR-017): reenviar el mismo alta
+         *     devuelve el existente; con otro contenido, 409 `cliente_id_divergente`.
+         */
+        post: operations["crear_cliente_api_v1_clientes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clientes/{cliente_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * La ficha del cliente: saldo, cupo y sus fiados con deuda
+         * @description Con `saldo_pendiente_total` y `cupo_excedido` calculados (decisión 8):
+         *     es lo que el POS muestra antes de fiarle más.
+         */
+        get: operations["obtener_cliente_api_v1_clientes__cliente_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Editar un cliente
+         * @description `null` explícito borra el valor (quitar el cupo vuelve a «sin tope»).
+         *     El cliente no se borra (decisión 13): el cuaderno lo referencia.
+         */
+        patch: operations["editar_cliente_api_v1_clientes__cliente_id__patch"];
         trace?: never;
     };
     "/api/v1/compras": {
@@ -170,6 +229,76 @@ export interface paths {
          *     mismo id devuelve el existente, sin duplicar fila.
          */
         post: operations["registrar_dispositivo_api_v1_dispositivos_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fiado/creditos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * El cuaderno: los fiados, lo que vence primero arriba
+         * @description Por defecto solo lo que se debe (`vigente` + `vencido`); `estado=todos`
+         *     incluye la historia. La lista de estados es CERRADA: uno arbitrario es
+         *     422, no una lista vacía. El fiado ES el cuaderno (ADR-009).
+         */
+        get: operations["listar_creditos_api_v1_fiado_creditos_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fiado/creditos/{credito_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * El fiado: historial de pagos y enlace de WhatsApp prearmado
+         * @description El historial de abonos es la verdad y no se reescribe (ADR-022). El
+         *     `wa.me` va prearmado con el saldo; `null` si el cliente no tiene teléfono.
+         */
+        get: operations["obtener_credito_api_v1_fiado_creditos__credito_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Reprogramar la fecha de vencimiento
+         * @description «Deme hasta el otro viernes»: un `vencido` reprogramado a futuro (o
+         *     dejado sin fecha) vuelve a `vigente` (decisión 7).
+         */
+        patch: operations["reprogramar_credito_api_v1_fiado_creditos__credito_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/fiado/creditos/{credito_id}/abonos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Registrar un abono
+         * @description El saldo se descuenta en la misma transacción con el CHECK como red
+         *     (ADR-022). `efectivo` entra al arqueo de la sesión abierta (decisión 9);
+         *     un abono mayor que el saldo es 422 `abono_excede_saldo`.
+         */
+        post: operations["registrar_abono_api_v1_fiado_creditos__credito_id__abonos_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -368,9 +497,9 @@ export interface paths {
         /**
          * Forecast de flujo de caja a 30 días
          * @description Proyección explicada, no promesa (ADR-006): saldo vivo + promedio de
-         *     ventas en efectivo 30d + cobros de fiado (0 hasta el módulo 5,
-         *     declarado) − promedio de egresos de caja 30d. Cada número declara su
-         *     fuente.
+         *     ventas en efectivo 30d + cobros de fiado (saldo de los créditos que
+         *     vencen en la ventana) − promedio de egresos de caja 30d. Cada número
+         *     declara su fuente.
          */
         get: operations["forecast_api_v1_reportes_forecast_get"];
         put?: never;
@@ -570,6 +699,57 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AbonoCrear
+         * @description Un pago contra el crédito que el usuario tocó (ADR-022).
+         *
+         *     `id` es REQUERIDO (es dinero: solo la ancla hace seguro el reintento
+         *     tras un timeout — y deja lista la vía del abono offline por el lote,
+         *     decisión 6). El servidor descuenta el saldo en la misma transacción; un
+         *     abono mayor que el saldo es 422 `abono_excede_saldo` (el CHECK es la
+         *     red, no la regla).
+         */
+        AbonoCrear: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Metodo Pago
+             * @enum {string}
+             */
+            metodo_pago: "efectivo" | "transferencia" | "otro";
+            /** Monto */
+            monto: number;
+            /** Nota */
+            nota?: string | null;
+        };
+        /** AbonoSalida */
+        AbonoSalida: {
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Credito Id
+             * Format: uuid
+             */
+            credito_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Metodo Pago */
+            metodo_pago: string;
+            /** Monto */
+            monto: number;
+            /** Nota */
+            nota?: string | null;
+            /** Registrado Por */
+            registrado_por: string;
+            /** Sesion Caja Id */
+            sesion_caja_id?: string | null;
+        };
+        /**
          * AjusteCreado
          * @description La respuesta del alta: lo mismo que la fila, más el nivel de alerta en
          *     que quedó el producto (lo deriva el servidor, que es la única autoridad
@@ -737,6 +917,113 @@ export interface components {
             id: string;
         };
         /**
+         * ClienteConSaldo
+         * @description El cliente con su deuda viva: `SUM(saldo_pendiente)` de sus créditos
+         *     `vigente`/`vencido` — calculado en cada lectura, nunca guardado
+         *     (ADR-022) — y el cupo evaluado (decisión 8).
+         */
+        ClienteConSaldo: {
+            /** Created At */
+            created_at?: string | null;
+            /** Cupo Excedido */
+            cupo_excedido: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Limite Credito */
+            limite_credito?: number | null;
+            /** Nombre */
+            nombre: string;
+            /** Nota */
+            nota?: string | null;
+            /** Saldo Pendiente Total */
+            saldo_pendiente_total: number;
+            /** Telefono */
+            telefono?: string | null;
+        };
+        /**
+         * ClienteCrear
+         * @description Alta online de un cliente. `id` es el UUID del cliente (ADR-017):
+         *     reenviar el mismo alta devuelve el existente; con otro contenido, 409.
+         */
+        ClienteCrear: {
+            /** Id */
+            id?: string | null;
+            /** Limite Credito */
+            limite_credito?: number | null;
+            /** Nombre */
+            nombre: string;
+            /** Nota */
+            nota?: string | null;
+            /** Telefono */
+            telefono?: string | null;
+        };
+        /**
+         * ClienteDetalleSalida
+         * @description La ficha del cliente: sus datos, su saldo y sus fiados con deuda.
+         */
+        ClienteDetalleSalida: {
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Creditos
+             * @default []
+             */
+            creditos: components["schemas"]["CreditoResumenSalida"][];
+            /** Cupo Excedido */
+            cupo_excedido: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Limite Credito */
+            limite_credito?: number | null;
+            /** Nombre */
+            nombre: string;
+            /** Nota */
+            nota?: string | null;
+            /** Saldo Pendiente Total */
+            saldo_pendiente_total: number;
+            /** Telefono */
+            telefono?: string | null;
+        };
+        /**
+         * ClienteEditar
+         * @description Edición parcial. `null` explícito en `limite_credito`/`telefono`/`nota`
+         *     BORRA el valor (vuelve a «sin cupo»/«sin teléfono»).
+         */
+        ClienteEditar: {
+            /** Limite Credito */
+            limite_credito?: number | null;
+            /** Nombre */
+            nombre?: string | null;
+            /** Nota */
+            nota?: string | null;
+            /** Telefono */
+            telefono?: string | null;
+        };
+        /** ClienteSalida */
+        ClienteSalida: {
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Limite Credito */
+            limite_credito?: number | null;
+            /** Nombre */
+            nombre: string;
+            /** Nota */
+            nota?: string | null;
+            /** Telefono */
+            telefono?: string | null;
+        };
+        /**
          * CompraCrear
          * @description Una compra a proveedor. `proveedor_nombre` es texto libre (ADR-020:
          *     la factura es un papel; no hay tabla de proveedores). El `id` del
@@ -828,6 +1115,91 @@ export interface components {
             total_centavos: number;
         };
         /**
+         * CreditoDetalleSalida
+         * @description La pantalla del fiado: su historial de pagos (ADR-009) y el enlace
+         *     `wa.me` prearmado para cobrarle (ADR-022: WhatsApp manual). `null` si el
+         *     cliente no tiene teléfono.
+         */
+        CreditoDetalleSalida: {
+            /**
+             * Abonos
+             * @default []
+             */
+            abonos: components["schemas"]["AbonoSalida"][];
+            /**
+             * Cliente Id
+             * Format: uuid
+             */
+            cliente_id: string;
+            /** Cliente Nombre */
+            cliente_nombre?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Estado */
+            estado: string;
+            /** Fecha Vencimiento */
+            fecha_vencimiento?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Monto Total */
+            monto_total: number;
+            /** Saldo Pendiente */
+            saldo_pendiente: number;
+            /**
+             * Venta Id
+             * Format: uuid
+             */
+            venta_id: string;
+            /** Whatsapp Url */
+            whatsapp_url?: string | null;
+        };
+        /**
+         * CreditoReprogramar
+         * @description «Deme hasta el otro viernes»: nueva fecha de vencimiento (o null para
+         *     dejarlo sin recordatorio). Un `vencido` reprogramado a futuro vuelve a
+         *     `vigente` (decisión 7).
+         */
+        CreditoReprogramar: {
+            /** Fecha Vencimiento */
+            fecha_vencimiento?: string | null;
+        };
+        /**
+         * CreditoResumenSalida
+         * @description Un fiado del cuaderno. `monto_total` y `saldo_pendiente` en centavos.
+         */
+        CreditoResumenSalida: {
+            /**
+             * Cliente Id
+             * Format: uuid
+             */
+            cliente_id: string;
+            /** Cliente Nombre */
+            cliente_nombre?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Estado */
+            estado: string;
+            /** Fecha Vencimiento */
+            fecha_vencimiento?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Monto Total */
+            monto_total: number;
+            /** Saldo Pendiente */
+            saldo_pendiente: number;
+            /**
+             * Venta Id
+             * Format: uuid
+             */
+            venta_id: string;
+        };
+        /**
          * DeltaSalida
          * @description El drenado de datos de referencia hacia el dispositivo (ADR-017).
          *
@@ -851,8 +1223,8 @@ export interface components {
          * @description La cuenta del arqueo (ADR-021: «una cuenta, no una pantalla mágica»).
          *
          *     `esperado = base + ventas_efectivo + abonos_efectivo + ingresos
-         *     − egresos − devoluciones`. `abonos_efectivo` es 0 hasta el módulo 5
-         *     (fiado, ADR-022) — declarado en `docs/api/README.md`.
+         *     − egresos − devoluciones`. `abonos_efectivo` son los abonos de fiado en
+         *     efectivo de la sesión (ADR-021/022), sumados desde `fiado_abonos`.
          */
         DesgloseSalida: {
             /** Abonos Efectivo */
@@ -919,8 +1291,9 @@ export interface components {
         /**
          * ForecastSalida
          * @description El forecast a 30 días: una proyección explicada, no una promesa
-         *     (ADR-006). Cada número declara su fuente; lo que no tiene fuente todavía
-         *     (cobros de fiado) viaja en 0 y lo dice.
+         *     (ADR-006). Cada número declara su fuente; los cobros de fiado proyectan
+         *     el saldo de los créditos que vencen en la ventana (los sin fecha no
+         *     entran, declarado).
          */
         ForecastSalida: {
             /** Cobros Fiado Proyectados Centavos */
@@ -1058,10 +1431,32 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** PagedList[ClienteConSaldo] */
+        PagedList_ClienteConSaldo_: {
+            /** Items */
+            items: components["schemas"]["ClienteConSaldo"][];
+            /** Limit */
+            limit: number;
+            /** Skip */
+            skip: number;
+            /** Total */
+            total: number;
+        };
         /** PagedList[CompraSalida] */
         PagedList_CompraSalida_: {
             /** Items */
             items: components["schemas"]["CompraSalida"][];
+            /** Limit */
+            limit: number;
+            /** Skip */
+            skip: number;
+            /** Total */
+            total: number;
+        };
+        /** PagedList[CreditoResumenSalida] */
+        PagedList_CreditoResumenSalida_: {
+            /** Items */
+            items: components["schemas"]["CreditoResumenSalida"][];
             /** Limit */
             limit: number;
             /** Skip */
@@ -1785,6 +2180,237 @@ export interface operations {
             };
         };
     };
+    listar_clientes_api_v1_clientes_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                skip?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PagedList_ClienteConSaldo_"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    crear_cliente_api_v1_clientes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClienteCrear"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClienteSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El id ya existe con datos distintos (o está en uso) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    obtener_cliente_api_v1_clientes__cliente_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cliente_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClienteDetalleSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El cliente no existe */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    editar_cliente_api_v1_clientes__cliente_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cliente_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClienteEditar"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClienteSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El cliente no existe */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listar_compras_api_v1_compras_get: {
         parameters: {
             query?: {
@@ -2003,6 +2629,257 @@ export interface operations {
                 };
             };
             /** @description Request malformado (validación de estructura) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listar_creditos_api_v1_fiado_creditos_get: {
+        parameters: {
+            query?: {
+                estado?: string | null;
+                skip?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PagedList_CreditoResumenSalida_"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    obtener_credito_api_v1_fiado_creditos__credito_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credito_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditoDetalleSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El crédito no existe */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reprogramar_credito_api_v1_fiado_creditos__credito_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credito_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreditoReprogramar"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditoResumenSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El crédito no existe */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El crédito está saldado o anulado */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    registrar_abono_api_v1_fiado_creditos__credito_id__abonos_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credito_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AbonoCrear"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AbonoSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El crédito no existe */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description El crédito no admite abonos, no hay caja abierta, o el id diverge */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
             422: {
                 headers: {
                     [name: string]: unknown;
