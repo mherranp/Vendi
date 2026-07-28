@@ -15,6 +15,7 @@ import {
   VendiDb,
   VentasOfflineService,
 } from 'data-access';
+import { MILI_POR_UNIDAD } from 'domain';
 import { expect, vi } from 'vitest';
 import { PosComponent } from './pos.component';
 
@@ -143,6 +144,23 @@ describe('PosComponent (el POS offline)', () => {
     componente.fijarCantidad('p-1', '2.5');
     expect(componente.lineas()[0].cantidad_mili).toBe(2500);
     expect(componente.total()).toBe(10000);
+  });
+
+  it('la cantidad que cuantiza a 0.000 kg no entra al ticket y avisa (BUG-B)', async () => {
+    const componente = await crearComponente();
+    await sembrarProducto();
+    await componente.buscar('arroz');
+    componente.agregar(componente.resultados()[0]);
+    const aviso = vi.spyOn(TestBed.inject(Notificador), 'advertencia');
+
+    componente.fijarCantidad('p-1', '0,0004');
+    // La línea NO queda en 0 mili ($0 en el ticket y veneno para el lote).
+    expect(componente.lineas()[0].cantidad_mili).toBe(MILI_POR_UNIDAD);
+    expect(aviso).toHaveBeenCalledOnce();
+
+    // 0,0005 sí entra: cuantiza a 0,001 con el half-up que el servidor aplica.
+    componente.fijarCantidad('p-1', '0,0005');
+    expect(componente.lineas()[0].cantidad_mili).toBe(1);
   });
 
   it('cobra sin red: la venta y su operación quedan en la base local', async () => {

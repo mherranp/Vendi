@@ -103,6 +103,7 @@
         } @else {
           <input
             type="search"
+            maxlength="160"
             [ngModel]="consultaCliente()"
             (ngModelChange)="buscarCliente($event)"
             [placeholder]="'pos.cliente_placeholder' | translate"

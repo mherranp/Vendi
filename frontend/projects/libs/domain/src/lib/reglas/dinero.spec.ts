@@ -28,6 +28,17 @@ describe('dinero (ADR-018: enteros, nunca flotantes)', () => {
     expect(() => miliDeCantidad(Number.POSITIVE_INFINITY)).toThrow();
   });
 
+  it('rechaza la positiva que cuantiza a 0 mili (BUG-B: la línea de 0.000 kg gratis)', () => {
+    // 0,0004 kg pasa el filtro de `> 0` pero redondea a 0 mili: el ticket la
+    // cobraría a $0 y el servidor rechazaría TODA la venta (cuantiza a 0).
+    expect(() => miliDeCantidad(0.0004)).toThrow();
+    expect(() => miliDeCantidad(0.0001)).toThrow();
+  });
+
+  it('acepta la fracción mínima que cuantiza a 1 mili (half-up, la regla del servidor)', () => {
+    expect(miliDeCantidad(0.0005)).toBe(1);
+  });
+
   it('serializa la cantidad como string de 3 decimales (lo que el backend cuantiza)', () => {
     expect(textoDeCantidad(1500)).toBe('1.500');
     expect(textoDeCantidad(333)).toBe('0.333');

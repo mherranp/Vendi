@@ -62,6 +62,17 @@ function preparar(): {
   };
 }
 
+async function cobrarUna(ventas: VentasOfflineService): Promise<string> {
+  return (
+    await ventas.cobrar({
+      lineas: LINEA,
+      medio_pago: 'efectivo',
+      cliente: null,
+      fecha_vencimiento: null,
+    })
+  ).id;
+}
+
 async function cobrarTres(ventas: VentasOfflineService): Promise<string[]> {
   const ids: string[] = [];
   for (let n = 0; n < 3; n++) {
@@ -221,6 +232,119 @@ describe('SincronizadorService (drenado FIFO, ADR-017)', () => {
       // se espera el drenado en vez de un solo tick, para no correrlo.
       await vi.waitFor(async () => {
         expect(await db.cola_sync.count()).toBe(0);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('un drenado parcial exitoso reprograma el reintento de lo que quedó pendiente (BUG-C)', async () => {
+    // Solo se congela setTimeout/Date: fake-indexeddb agenda con setImmediate.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const a = await cobrarUna(ventas);
+      const b = await cobrarUna(ventas);
+      // B ya intentó 3 veces: su próximo backoff es de 40 s, el de A de 5 s.
+      await db.cola_sync.update(b, { intentos: 3 });
+
+      const primer = sync.sincronizar();
+      (await vi.waitFor(() => http.expectOne('/api/v1/sync/lotes'))).error(
+        new ProgressEvent('error'),
+      );
+      await primer;
+      expect((await db.cola_sync.get(a))?.intentos).toBe(1); // +5 s
+      expect((await db.cola_sync.get(b))?.intentos).toBe(4); // +40 s
+
+      // A los 5 s drena A SOLA (B no es elegible): lote parcial exitoso.
+      const avance1 = vi.advanceTimersByTimeAsync(ESPERA_BASE_MS + 100);
+      const reqA = await vi.waitFor(() => http.expectOne('/api/v1/sync/lotes'));
+      expect(
+        (reqA.request.body as { operaciones: { id: string }[] }).operaciones.map((op) => op.id),
+      ).toEqual([a]);
+      reqA.flush({
+        resultados: [
+          { id: a, tipo: 'venta.crear', resultado: 'aceptada', motivo: null, detalles: null },
+        ],
+      });
+      await avance1;
+      // La respuesta viaja por microtareas hasta la transacción de Dexie:
+      // se espera el drenado en vez de un solo tick, para no correrlo.
+      await vi.waitFor(async () => {
+        expect(await db.cola_sync.get(a)).toBeUndefined();
+      });
+      expect((await db.cola_sync.get(b))?.estado).toBe('pendiente');
+
+      // BUG-C: sin el reintento programado tras el drenado parcial, B no sube
+      // sola jamás. Con él, al vencerse SU backoff (40 s) sale sin que nadie
+      // la rescate (ni cobro nuevo, ni evento online, ni botón manual).
+      const avance2 = vi.advanceTimersByTimeAsync(40_000);
+      const reqB = await vi.waitFor(() => http.expectOne('/api/v1/sync/lotes'));
+      expect(
+        (reqB.request.body as { operaciones: { id: string }[] }).operaciones.map((op) => op.id),
+      ).toEqual([b]);
+      reqB.flush({
+        resultados: [
+          { id: b, tipo: 'venta.crear', resultado: 'aceptada', motivo: null, detalles: null },
+        ],
+      });
+      await avance2;
+      await vi.waitFor(async () => {
+        expect(await db.cola_sync.count()).toBe(0);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('una operación que el servidor OMITE de resultados queda en error, no enviando eterna', async () => {
+    const ids = [await cobrarUna(ventas), await cobrarUna(ventas)];
+    const promesa = sync.sincronizar();
+    // Respuesta fuera de contrato: el servidor solo devuelve UN resultado.
+    (await esperarPeticion(http, '/api/v1/sync/lotes')).flush({
+      resultados: [
+        { id: ids[0], tipo: 'venta.crear', resultado: 'aceptada', motivo: null, detalles: null },
+      ],
+    });
+    await promesa;
+
+    expect(await db.cola_sync.get(ids[0])).toBeUndefined();
+    const omitida = await db.cola_sync.get(ids[1]);
+    // Dead-letter visible: ni `enviando` congelada ni `pendiente` en bucle.
+    expect(omitida?.estado).toBe('error');
+    expect(omitida?.ultimo_error).toBe('omitida_en_resultados');
+    expect(sync.enError()).toBe(1);
+  });
+
+  it('el registro sin red NO entra en bucle caliente: lleva su propio backoff (BUG-D)', async () => {
+    // Solo se congela setTimeout/Date: fake-indexeddb agenda con setImmediate.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      await cobrarUna(ventas); // pendiente fresca: proximo_intento_en = 0
+      const registro = vi
+        .spyOn(TestBed.inject(DispositivoService), 'asegurarRegistro')
+        .mockRejectedValue(new Error('sin red'));
+
+      await sync.sincronizar();
+      expect(registro).toHaveBeenCalledTimes(1);
+
+      // BUG-D: el reintento heredaba el mínimo crudo de la cola (0) y
+      // martilleaba el registro 102 veces en 100 ms. Con su propio backoff,
+      // en 100 ms NO hay un segundo intento.
+      await vi.advanceTimersByTimeAsync(100);
+      expect(registro).toHaveBeenCalledTimes(1);
+
+      // Al vencerse el primer backoff (5 s) sí reintenta — una sola vez más.
+      await vi.advanceTimersByTimeAsync(ESPERA_BASE_MS + 100);
+      await vi.waitFor(() => {
+        expect(registro).toHaveBeenCalledTimes(2);
+      });
+
+      // Y el backoff CRECE: el tercer intento no llega en otros 5 s, sino en 10.
+      await vi.advanceTimersByTimeAsync(ESPERA_BASE_MS + 100);
+      expect(registro).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(ESPERA_BASE_MS + 100);
+      await vi.waitFor(() => {
+        expect(registro).toHaveBeenCalledTimes(3);
       });
     } finally {
       vi.useRealTimers();

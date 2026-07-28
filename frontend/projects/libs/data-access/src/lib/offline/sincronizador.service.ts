@@ -36,6 +36,11 @@ export function esperaDeReintento(intentos: number): number {
  *    operaciones del lote vuelven a `pendiente` con `intentos+1`. El reenvío
  *    es seguro porque el servidor es idempotente por PK (la re-aplicación
  *    responde `duplicada` y no re-emite eventos).
+ *  - Tras CADA drenado se programa el próximo intento de lo que quedó
+ *    pendiente (BUG-C del QA): ninguna pendiente con espera queda huérfana de
+ *    temporizador. Y una operación que el servidor OMITE de `resultados`
+ *    (fuera de contrato) se marca dead-letter visible: jamás `enviando`
+ *    eterna.
  *  - Los avisos globales de error se silencian en estas llamadas: la tienda
  *    no necesita un aviso por cada reintento de fondo; el estado lo da el
  *    contador de pendientes.
@@ -54,6 +59,7 @@ export class SincronizadorService implements OnDestroy {
   readonly sincronizando = this._sincronizando.asReadonly();
 
   private drenajeEnVuelo = false;
+  private fallosRegistro = 0;
   private temporizador: ReturnType<typeof setTimeout> | null = null;
   private escuchando = false;
 
@@ -96,11 +102,32 @@ export class SincronizadorService implements OnDestroy {
     this.drenajeEnVuelo = true;
     this._sincronizando.set(true);
     try {
-      const dispositivoId = await this.dispositivos.asegurarRegistro();
+      let dispositivoId: string;
+      try {
+        dispositivoId = await this.dispositivos.asegurarRegistro();
+        this.fallosRegistro = 0;
+      } catch (error) {
+        // BUG-D del QA: un registro que falla sin red con pendientes frescas
+        // (`proximo_intento_en = 0`) armaba un setTimeout(0) — el mínimo crudo
+        // de la cola — y martilleaba el registro 102 veces en 100 ms (medido
+        // con fake timers): CPU, batería y red quemados sin que `intentos`
+        // crezca jamás. El reintento del registro lleva SU PROPIO backoff,
+        // con el mismo patrón exponencial de los lotes.
+        this.fallosRegistro += 1;
+        console.warn('El registro del dispositivo se pospone.', error);
+        this.programarReintento(Date.now() + esperaDeReintento(this.fallosRegistro));
+        return;
+      }
       let quedanPorDrenar = true;
       while (quedanPorDrenar) {
         quedanPorDrenar = await this.drenarLote(dispositivoId);
       }
+      // BUG-C del QA: un drenado parcial exitoso dejaba pendientes con
+      // `proximo_intento_en` futuro SIN temporizador (el backoff solo se
+      // armaba con la cola vacía o al reventar el transporte), y esa operación
+      // no subía sola jamás. Al salir del while se programa SIEMPRE: si no
+      // queda nada, `proximaPendiente` devuelve null y no pasa nada.
+      this.programarReintento();
     } catch (error) {
       // Sin red (en el registro o en el lote): se pospone con backoff y se
       // sigue vendiendo. La cola es la verdad; el aviso lo da el contador.
@@ -122,7 +149,6 @@ export class SincronizadorService implements OnDestroy {
       .filter((op) => op.proximo_intento_en <= ahora)
       .slice(0, LOTE_MAXIMO);
     if (lote.length === 0) {
-      this.programarReintento();
       return false;
     }
 
@@ -162,6 +188,7 @@ export class SincronizadorService implements OnDestroy {
           // El servidor no inventa ids; si lo hiciera, no tocamos nada.
           continue;
         }
+        porId.delete(resultado.id);
         if (resultado.resultado === 'aceptada' || resultado.resultado === 'duplicada') {
           await this.db.cola_sync.delete(operacion.id);
         } else {
@@ -170,6 +197,16 @@ export class SincronizadorService implements OnDestroy {
             ultimo_error: resultado.motivo ?? 'rechazada_sin_motivo',
           });
         }
+      }
+      // Defensa ante un servidor FUERA DE CONTRATO: una operación que no
+      // viene en `resultados` no puede quedar `enviando` para siempre —
+      // invisible para los contadores, congelada en caliente hasta el próximo
+      // arranque. Se marca dead-letter visible con su motivo.
+      for (const omitida of porId.values()) {
+        await this.db.cola_sync.update(omitida.id, {
+          estado: 'error',
+          ultimo_error: 'omitida_en_resultados',
+        });
       }
     });
   }
@@ -188,8 +225,12 @@ export class SincronizadorService implements OnDestroy {
     });
   }
 
-  /** Programa el próximo drenado para la pendiente más próxima, si la hay. */
-  private programarReintento(): void {
+  /**
+   * Programa el próximo drenado para la pendiente más próxima, si la hay.
+   * `noAntesDe` es el piso del backoff propio del registro (BUG-D): sin red,
+   * la pendiente más próxima es 0 y sin ese piso el registro se martillea.
+   */
+  private programarReintento(noAntesDe: number | null = null): void {
     if (this.temporizador) {
       return;
     }
@@ -198,12 +239,13 @@ export class SincronizadorService implements OnDestroy {
         if (instante === null) {
           return;
         }
+        const objetivo = noAntesDe === null ? instante : Math.max(instante, noAntesDe);
         this.temporizador = setTimeout(
           () => {
             this.temporizador = null;
             void this.sincronizar();
           },
-          Math.max(0, instante - Date.now()),
+          Math.max(0, objetivo - Date.now()),
         );
       })
       .catch(() => {

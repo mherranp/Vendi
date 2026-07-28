@@ -112,6 +112,12 @@ export class VentasOfflineService {
       // `rechazada` segura en el servidor y una venta fiada huérfana detrás.
       throw new Error('El nombre del cliente necesita al menos 2 letras.');
     }
+    if (nombre.length > 160) {
+      // BUG-E del QA: ClienteCrearSync también tiene max 160 y sin el tope
+      // local el `cliente.crear` moría como dead-letter — y la venta fiada
+      // detrás, en cascada, con `cliente_no_encontrado`.
+      throw new Error('El nombre del cliente no puede pasar de 160 letras.');
+    }
     const ahora = new Date();
     return this.db.transaction(
       'rw',

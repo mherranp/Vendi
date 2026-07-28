@@ -13,9 +13,10 @@
  * y se convierte en el borde (`miliDeCantidad`).
  *
  * La regla de redondeo la fija el plan del POS (decisión 6) y no la mueve
- * nadie sin revisarla: el servidor NO recalcula el total —acepta el que manda
- * el dispositivo—, así que la consistencia entre el ticket del tendero y la
- * caja del negocio depende de que esta función sea determinista.
+ * nadie sin revisarla: el servidor verifica la coherencia total/ítems con la
+ * MISMA regla —cada línea redondeada a centavos enteros (ROUND_HALF_UP) y
+ * luego sumada—, así que la consistencia entre el ticket del tendero y la
+ * caja del negocio depende de que estas funciones sean deterministas.
  */
 
 /** Factor de la unidad de cantidad: 1 unidad = 1000 mili-unidades. */
@@ -34,14 +35,23 @@ export interface LineaTicket {
  *
  * Lanza sobre lo no vendible (cero, negativos, NaN, infinito): quien llama
  * decide si ignora la tecla o avisa, pero ninguna de esas cantidades llega al
- * ticket. Más de 3 decimales se truncan al mili (el tendero no pesa
- * microgramos; el backend cuantiza igual).
+ * ticket. Más de 3 decimales se redondean half-up al mili (la MISMA regla
+ * ROUND_HALF_UP del backend: cliente y servidor cuantizan igual).
+ *
+ * Y lanza también cuando la positiva cuantiza a 0 mili (BUG-B del QA): una
+ * línea de 0.000 kg vale $0 en el ticket y el servidor la rechaza como dato
+ * inválido, envenenando la venta entera. El conteo 0 solo existe en ajustes
+ * de inventario; en ventas no hay cantidad vendible menor que 0,001.
  */
 export function miliDeCantidad(cantidad: number): number {
   if (!Number.isFinite(cantidad) || cantidad <= 0) {
     throw new Error(`Cantidad no vendible: ${cantidad}`);
   }
-  return Math.round(cantidad * MILI_POR_UNIDAD);
+  const mili = Math.round(cantidad * MILI_POR_UNIDAD);
+  if (mili === 0) {
+    throw new Error(`Cantidad menor que 0,001: ${cantidad}`);
+  }
+  return mili;
 }
 
 /**

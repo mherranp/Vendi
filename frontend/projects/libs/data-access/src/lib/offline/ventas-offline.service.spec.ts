@@ -187,4 +187,18 @@ describe('VentasOfflineService (outbox local, ADR-017/ADR-018)', () => {
     await expect(servicio.crearClienteLocal({ nombre: 'A', telefono: null })).rejects.toThrow();
     await expect(servicio.crearClienteLocal({ nombre: '   ', telefono: null })).rejects.toThrow();
   });
+
+  it('rechaza el nombre por encima del techo del contrato (max 160, BUG-E)', async () => {
+    const { servicio, db } = preparar();
+    // ClienteCrearSync tiene max_length=160: sin el tope local, el
+    // `cliente.crear` moría como dead-letter y la venta fiada en cascada.
+    await expect(
+      servicio.crearClienteLocal({ nombre: 'N'.repeat(161), telefono: null }),
+    ).rejects.toThrow(/160/);
+    expect(await db.clientes.count()).toBe(0);
+    expect(await db.cola_sync.count()).toBe(0);
+    // En el techo exacto sí entra.
+    const cliente = await servicio.crearClienteLocal({ nombre: 'N'.repeat(160), telefono: null });
+    expect((await db.cola_sync.get(cliente.id))?.tipo).toBe('cliente.crear');
+  });
 });

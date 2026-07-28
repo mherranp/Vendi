@@ -134,7 +134,15 @@ export class PosComponent implements OnInit {
     if (!Number.isFinite(cantidad) || cantidad <= 0) {
       return;
     }
-    const mili = miliDeCantidad(cantidad);
+    let mili: number;
+    try {
+      mili = miliDeCantidad(cantidad);
+    } catch {
+      // Positiva que cuantiza a 0 mili (p. ej. 0,0004 kg): una línea de
+      // 0.000 kg vale $0 en el ticket y el servidor rechaza la venta entera.
+      this.notificador.advertencia(this.traductor.instant('pos.cantidad_minima'));
+      return;
+    }
     this.lineas.update((lineas) =>
       lineas.map((l) => (l.producto_id === productoId ? { ...l, cantidad_mili: mili } : l)),
     );
@@ -161,6 +169,12 @@ export class PosComponent implements OnInit {
   async crearCliente(): Promise<void> {
     const nombre = this.consultaCliente().trim();
     if (nombre.length < 2) {
+      return;
+    }
+    if (nombre.length > 160) {
+      // El techo de ClienteCrearSync: sin este aviso el cliente moría como
+      // dead-letter en el servidor y la venta fiada en cascada (BUG-E).
+      this.notificador.advertencia(this.traductor.instant('pos.cliente_nombre_largo'));
       return;
     }
     const cliente = await this.ventas.crearClienteLocal({ nombre, telefono: null });
