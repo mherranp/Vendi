@@ -1057,6 +1057,168 @@ $ git show b6958b5 3018b5d -- frontend/angular.json | grep -E "budget|maximum"
 
 ---
 
+## Landing comercial de `vendi-portal` (Fase 1, Etapa 1.3, pista comercial)
+
+Fecha de corte: **2026-07-28**. La pista comercial de la Etapa 1.3 —la
+landing pública del MVP: hero con la propuesta de valor «del cuaderno al
+celular», los precios de ADR-010 con candado y la captación por WhatsApp—,
+cerrada con su gate. Plan:
+[`docs/superpowers/plans/2026-07-29-vendi-portal-comercial-plan.md`](superpowers/plans/2026-07-29-vendi-portal-comercial-plan.md)
+(6 tareas TDD, commits `22314a4`…`d2fe0a3`, cada una con revisión
+independiente registrada en `.superpowers/sdd/`).
+
+Como en la pista móvil, **los tests del frontend corren en local** (Vitest
+sobre jsdom, sin stack): la evidencia de esta sección es local, reproducida
+comando a comando al cierre, más el run del CI sobre el HEAD de corte
+`d2fe0a3` — `ci` **30373265838** en verde:
+
+```
+$ gh run list --workflow ci.yml --limit 3
+completed  success  Landing comercial completa: página ensamblada…  ci  main  push  30373265838
+completed  success  Sección de confianza de la landing…            ci  main  push  30372194740
+completed  success  Sección de precios de la landing…              ci  main  push  30371826014
+```
+
+### Qué se entregó, y el comando que lo demuestra
+
+**El modelo comercial con candado de precios (ADR-010), TS puro en el
+feature `inicio`.** `planes.ts` (los tres tiers: Gratis $0, Light
+$19.500/mes, Pro $40.000/mes —piso del rango firmado—, los límites de
+`monetizacion-web` §2, el trial de 1 mes de Pro sin tarjeta y el add-on
+DIAN «Próximamente — Fase 2» sin precio) y `moneda.ts` (formato de pesos
+colombianos con separador de miles de punto, sin `Intl`, idéntico en CI,
+navegador y test; el ancla por día redondea estrictamente al alza al
+múltiplo de $50 siguiente: Light → «menos de $700 al día», Pro → «menos de
+$1.350 al día», ambos verdaderos). Cambiar un precio rompe un test a
+propósito:
+
+```
+$ cd frontend && npx ng test --watch=false   # exit 0
+ ✓ |vendi-portal| projects/vendi-portal/src/app/features/inicio/planes.spec.ts (3 tests)
+ ✓ |vendi-portal| projects/vendi-portal/src/app/features/inicio/moneda.spec.ts (8 tests)
+```
+
+**El hero con captación por WhatsApp, que nace OCULTO.** El número
+comercial es configuración (`environment.whatsappComercial`, hoy cadena
+vacía, leído por el token `WHATSAPP_COMERCIAL`): con cadena vacía el CTA no
+se renderiza; con número, sale el `wa.me` con el mensaje prearmado
+codificado; y un tercer spec bloquea el formato (solo dígitos). El CTA NO
+apunta a la app porque el realm no tiene auto-registro — prometerlo sería
+mentira; el enlace a `app.vendi.co` queda como «Ya tengo cuenta: entrar a
+mi negocio», que es lo único cierto hoy:
+
+```
+ ✓ |vendi-portal| projects/vendi-portal/src/app/features/inicio/hero/hero.component.spec.ts (4 tests)
+```
+
+**La tabla de precios y la sección de confianza.** Los tres tiers con sus
+límites, «Incluido/No incluido» como texto (nunca ✓/✗ mudas), el sello «1
+mes de Pro gratis» con `StatusBadgeComponent` de `ui-kit`, DIAN como
+«Próximamente» sin precio; y la confianza en lenguaje de mostrador:
+offline-first, datos aislados por negocio, hecho para la tienda de barrio:
+
+```
+ ✓ |vendi-portal| projects/vendi-portal/src/app/features/inicio/precios/precios.component.spec.ts (5 tests)
+ ✓ |vendi-portal| projects/vendi-portal/src/app/features/inicio/confianza/confianza.component.spec.ts (2 tests)
+```
+
+**La página ensamblada: una sola ruta con anclas, respaldo i18n propio y
+metas SEO/OG estáticas.** `h1` único, landmarks
+(`header`/`nav`/`main`/`footer`), objetivo táctil de 48px en todo enlace,
+anclas `#precios`/`#confianza` sin rutas nuevas; el portal pasa su propio
+catálogo como respaldo a `proveerI18nVendi(respaldo)` — si `/i18n/es.json`
+falla, la superficie pública pinta exactamente lo mismo, nunca claves
+crudas; y título, meta description y Open Graph mínimo a mano en
+`index.html` (sin `og:image`: no hay asset de marca):
+
+```
+ ✓ |vendi-portal| projects/vendi-portal/src/app/app.spec.ts (5 tests)
+$ grep -c 'property="og:' dist/vendi-portal/browser/index.html
+6
+```
+
+**Gate completo verde: 9 proyectos en test y lint, formato, contraste,
+build de producción dentro de los budgets, sin URLs de desarrollo.**
+
+```
+$ cd frontend && npm ci --no-audit --no-fund && npm run build:libs   # exit 0
+$ npx ng test --watch=false   # exit 0
+ Test Files  6 passed (6)   ·  Tests  52 passed (52)   — auth
+ Test Files  13 passed (13) ·  Tests  95 passed (95)   — data-access
+ Test Files  3 passed (3)   ·  Tests  21 passed (21)   — domain
+ Test Files  2 passed (2)   ·  Tests  3 passed (3)     — native
+ Test Files  5 passed (5)   ·  Tests  54 passed (54)   — ui-kit
+ Test Files  5 passed (5)   ·  Tests  47 passed (47)   — vendi-admin
+ Test Files  2 passed (2)   ·  Tests  13 passed (13)   — vendi-app
+ Test Files  6 passed (6)   ·  Tests  27 passed (27)   — vendi-portal
+ Test Files  4 passed (4)   ·  Tests  22 passed (22)   — vendi-tenant
+$ npx ng lint                               # exit 0
+All files pass linting.   (×9 proyectos, fronteras incluidas)
+$ npm run format:check                      # exit 0
+All matched files use Prettier code style!
+$ npm run verificar:contraste               # exit 0
+12 pares verificados, todos ≥ 4.5:1.   (los tokens no se tocaron; el único
+par nuevo —marca-700 #047857 sobre blanco, 5.49:1— está medido a mano y
+documentado en el SCSS del hero)
+$ npx ng build vendi-portal --configuration production   # exit 0
+main     358.35 kB   ·   styles  13.15 kB
+Initial total  371.50 kB  |  101.59 kB transfer   (budget: 500kB/1MB, sin relajar)
+$ grep -rE "localhost:[0-9]{4}|environment\.development" dist/vendi-portal/browser || echo "sin URLs de desarrollo"
+sin URLs de desarrollo
+```
+
+**El servidor estático, la imagen, el contrato y el backend: ni un byte.**
+
+```
+$ git diff --exit-code -- frontend/nginx-spa.conf frontend/Dockerfile docs/api/openapi-fase0.json
+(exit 0: intactos)
+$ CODEGEN_SCHEMA_FILE=docs/api/openapi-fase0.json bash scripts/codegen-api-client.sh && git diff --exit-code
+[OK] Esquema válido.  ✨ openapi-typescript 7.13.0   (exit 0: el cliente generado no deriva)
+$ git status --porcelain -- backend/ | wc -l
+0
+```
+
+**Sin deuda nueva registrada**: los hallazgos de las revisiones de la pista
+no cumplen el criterio del registro (riesgo real y vencimiento).
+
+### Alcance honesto y decisiones clave de la entrega
+
+- **SIN endpoint de leads, por YAGNI justificado** (decisión 1 del plan):
+  un `POST /interesados` exigiría tabla, migración, router público sin
+  tenant (rompe el patrón de la API), rate-limit que no existe y cambio del
+  contrato OpenAPI — y no tiene consumidor: la infraestructura de
+  notificación (`notify.jobs`) es Fase 2, así que los leads se pudrirían en
+  una tabla que nadie lee durante el piloto. Además, almacenar
+  nombre+celular de anónimos exige la autorización de la Ley 1581 (Habeas
+  Data) que el portal no tiene. El canal de venta real ya existe y es
+  WhatsApp (agentes de barrio con guion, `monetizacion-web` §6). El
+  endpoint se reevalúa en Fase 2.
+- **SIN auto-registro: el CTA no miente.** Verificado en
+  `infra/keycloak/realm-vendi-co.json`: el realm no tiene
+  `registrationEnabled` (ADR-027: el alta de tienda es por `provisioner`,
+  asistida por agentes). El CTA principal es «Quiero probarlo gratis» →
+  WhatsApp; el agente da de alta y el trial aplica igual.
+- **El CTA de WhatsApp nace OCULTO — pendiente operativo.** En el repo no
+  hay número oficial de WhatsApp e inventar uno sería un placeholder
+  prohibido. Cuando operaciones tenga el número: UNA línea en
+  `environment.ts` (`whatsappComercial`) y rebuild de la imagen — el portal
+  se sirve estático, no hay configuración en caliente.
+- **Pro se publica a $40.000/mes: el piso del rango firmado** de ADR-010
+  («~$40.000–$60.000», hipótesis de piloto). La landing no puede mostrar un
+  rango sin engañar; el spec de la Tarea 1 bloquea los tres precios:
+  cambiarlos es una decisión de negocio que rompe un test a propósito.
+- **Sin `og:image`** (no hay asset de marca: la rampa de color es
+  provisional, dice `_tokens.scss`) y **sin SSR ni prerender** (YAGNI de
+  Fase 1: Google ejecuta JS e indexa la SPA; los scrapers sociales solo
+  leen las metas estáticas, que están).
+- **Una sola página con anclas, sin rutas nuevas**: `/precios` como ruta
+  llegará con el `/pro` transaccional de Fase 2.
+- **El contenido provisional de Fase 0 se retiró en bloque** (las claves
+  `portal.lema`/`portal.descripcion`/`portal.entrar` y el layout
+  centrado); el spec viejo se reemplazó por specs de la página real.
+
+---
+
 ## La suite de tests
 
 ```
