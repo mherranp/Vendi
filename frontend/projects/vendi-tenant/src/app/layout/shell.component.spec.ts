@@ -16,7 +16,6 @@ vi.mock('keycloak-js', async () => {
 import { AuthService } from 'auth';
 import { KeycloakFake, arrancarSesionFalsa } from 'auth/testing';
 
-import { AvisosComponent } from './avisos.component';
 import { ShellComponent } from './shell.component';
 
 class SnackBarFalso {
@@ -95,15 +94,18 @@ describe('ShellComponent de vendi-tenant', () => {
   });
 });
 
-describe('AvisosComponent de vendi-tenant', () => {
+describe('los avisos del shell de vendi-tenant', () => {
   beforeEach(() => {
     KeycloakFake.reiniciar();
   });
 
   it('lo que acumula Notificador acaba en pantalla', async () => {
+    // El anfitrión vive en `ui-kit` y recibe el aviso por input (ADR-011 le
+    // veta inyectar `Notificador`); este spec prueba el puente del shell:
+    // `notificador.ultimo()` → `[aviso]` → snackbar.
     const barra = new SnackBarFalso();
     await preparar(barra);
-    const fixture = TestBed.createComponent(AvisosComponent);
+    const fixture = TestBed.createComponent(ShellComponent);
     fixture.detectChanges();
 
     TestBed.inject(Notificador).advertencia('La cuenta del negocio está suspendida.');

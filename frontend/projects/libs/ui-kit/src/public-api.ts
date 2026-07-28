@@ -9,6 +9,8 @@
 // --- Componentes ----------------------------------------------------------
 export { ConfirmDialogComponent } from './lib/components/confirm-dialog/confirm-dialog.component';
 export type { ConfirmDialogData } from './lib/components/confirm-dialog/confirm-dialog.component';
+export { AvisosComponent } from './lib/avisos/avisos.component';
+export type { AvisoEnPantalla } from './lib/avisos/avisos.component';
 export { DataTableComponent } from './lib/components/data-table/data-table.component';
 export type { ColumnaTabla } from './lib/components/data-table/data-table.component';
 export { EmptyStateComponent } from './lib/components/empty-state/empty-state.component';

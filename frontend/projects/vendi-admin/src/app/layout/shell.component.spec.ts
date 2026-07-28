@@ -16,7 +16,6 @@ vi.mock('keycloak-js', async () => {
 import { AuthService } from 'auth';
 import { KeycloakFake, arrancarSesionFalsa } from 'auth/testing';
 
-import { AvisosComponent } from './avisos.component';
 import { ShellComponent } from './shell.component';
 
 /** Registro de lo que se le pidió pintar al snackbar. */
@@ -108,19 +107,20 @@ describe('ShellComponent', () => {
   });
 });
 
-describe('AvisosComponent', () => {
+describe('los avisos del shell', () => {
   beforeEach(() => {
     KeycloakFake.reiniciar();
   });
 
   it('lo que acumula Notificador acaba en pantalla', async () => {
-    // Sin este anfitrión, el mensaje traducido que produce `errorInterceptor`
+    // Sin este puente, el mensaje traducido que produce `errorInterceptor`
     // ante un 500 se queda en una señal que nadie lee: la operación falla en
-    // silencio. `Notificador` vive en `data-access`, que por ADR-011 no puede
-    // conocer la UI, así que el puente tiene que estar en la app.
+    // silencio. El anfitrión vive en `ui-kit` y la frontera de ADR-011 le
+    // impide inyectar `Notificador`, así que el shell se lo pasa por input:
+    // este spec prueba esa cadena completa.
     const barra = new SnackBarFalso();
     await preparar(['platform:admin'], barra);
-    const fixture = TestBed.createComponent(AvisosComponent);
+    const fixture = TestBed.createComponent(ShellComponent);
     fixture.detectChanges();
 
     TestBed.inject(Notificador).error('Tuvimos un problema.');
@@ -136,7 +136,7 @@ describe('AvisosComponent', () => {
     // vuelve a fallar, tiene que enterarse de que falló otra vez.
     const barra = new SnackBarFalso();
     await preparar(['platform:admin'], barra);
-    const fixture = TestBed.createComponent(AvisosComponent);
+    const fixture = TestBed.createComponent(ShellComponent);
     fixture.detectChanges();
 
     const notificador = TestBed.inject(Notificador);
@@ -151,7 +151,7 @@ describe('AvisosComponent', () => {
   it('no repinta el mismo aviso en cada ciclo de detección de cambios', async () => {
     const barra = new SnackBarFalso();
     await preparar(['platform:admin'], barra);
-    const fixture = TestBed.createComponent(AvisosComponent);
+    const fixture = TestBed.createComponent(ShellComponent);
     fixture.detectChanges();
 
     TestBed.inject(Notificador).info('Una sola vez');
