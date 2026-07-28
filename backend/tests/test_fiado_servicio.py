@@ -18,10 +18,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.modules.fiado.schemas import (
-    AbonoCrear,  # noqa: F401 — lo usa la Tarea 6 (abonos)
+    AbonoCrear,
     ClienteCrear,
     ClienteEditar,
-    CreditoReprogramar,  # noqa: F401 — lo usa la Tarea 6
+    CreditoReprogramar,
 )
 from app.modules.fiado.service import FiadoService
 from vendi_core.db.engine import create_engine
@@ -29,7 +29,7 @@ from vendi_core.db.session import create_session_factory
 from vendi_core.errors.domain import (
     ConflictError,
     NotFoundError,
-    ValidationError,  # noqa: F401 — lo usa la Tarea 6
+    ValidationError,
 )
 from vendi_core.tenant.context import current_tenant_id
 
@@ -237,3 +237,157 @@ async def test_buscar_por_nombre(servicio, semilla):
     assert total == 1 and filas[0].nombre == "Don Carlos"
     filas, total = await servicio.listar_clientes("nadie-se-llama-así")
     assert total == 0 and filas == []
+
+
+# --- Abonos, cuaderno y reprogramación (Tarea 6) ---------------------------
+
+
+def _abono(monto: int, metodo: str = "efectivo", **cambios) -> AbonoCrear:
+    return AbonoCrear.model_validate({"id": str(uuid.uuid4()), "monto": monto, "metodo_pago": metodo, **cambios})
+
+
+@pytest.mark.asyncio
+async def test_el_abono_descuenta_al_peso(servicio, pg_platform_url, semilla):
+    """El candado firmado de ADR-022: crédito de 100, abonos de 30 + 30:
+    saldo 40. El descuento va en la misma transacción del abono."""
+    credito_id = await _credito(pg_platform_url, semilla, 100000, 100000)
+    primero = await servicio.registrar_abono(credito_id, _abono(30000))
+    assert primero.sesion_caja_id == semilla["sesion"]  # el efectivo cae en la sesión abierta (decisión 9)
+    await servicio.registrar_abono(credito_id, _abono(30000))
+    detalle = await servicio.obtener_credito(credito_id)
+    assert detalle.saldo_pendiente == 40000
+    assert [a.monto for a in detalle.abonos] == [30000, 30000]  # el historial (ADR-009)
+
+
+@pytest.mark.asyncio
+async def test_el_abono_mayor_que_el_saldo_es_422_tipado(servicio, pg_platform_url, semilla):
+    """El candado de ADR-022 («abono de 41 revienta») con la traducción de la
+    lección: el pre-chequeo da el 422; el CHECK es la red, no la regla."""
+    credito_id = await _credito(pg_platform_url, semilla, 40000, 40000)
+    with pytest.raises(ValidationError) as exc:
+        await servicio.registrar_abono(credito_id, _abono(41000))
+    assert exc.value.code == "abono_excede_saldo"
+    assert (await servicio.obtener_credito(credito_id)).saldo_pendiente == 40000
+
+
+@pytest.mark.asyncio
+async def test_el_abono_que_salda_cierra_el_credito_y_emite_los_dos_eventos(servicio, pg_platform_url, semilla):
+    credito_id = await _credito(pg_platform_url, semilla, 50000, 50000)
+    await servicio.registrar_abono(credito_id, _abono(50000, "transferencia"))
+    await servicio._session.commit()
+    assert (await servicio.obtener_credito(credito_id)).estado == "saldado"
+    abonos = await _eventos(pg_platform_url, "fiado.abono_registrado")
+    saldados = await _eventos(pg_platform_url, "fiado.credito_saldado")
+    assert len(abonos) == 1 and abonos[0]["data"]["saldo_restante"] == 0
+    assert len(saldados) == 1 and saldados[0]["data"]["monto_total"] == 50000
+
+
+@pytest.mark.asyncio
+async def test_ni_un_saldado_ni_un_anulado_admiten_abonos(servicio, pg_platform_url, semilla):
+    saldado = await _credito(pg_platform_url, semilla, 50000, 0, estado="saldado")
+    anulado = await _credito(pg_platform_url, semilla, 50000, 0, estado="anulado")
+    for credito_id in (saldado, anulado):
+        with pytest.raises(ConflictError) as exc:
+            await servicio.registrar_abono(credito_id, _abono(1000))
+        assert exc.value.code == "credito_no_abonable"
+
+
+@pytest.mark.asyncio
+async def test_el_abono_en_efectivo_exige_caja_abierta(servicio, pg_platform_url, semilla):
+    """Sin sesión abierta, el efectivo entraría a una gaveta que ningún
+    arqueo mira: 409 `caja_sin_sesion_abierta` (decisión 9)."""
+    engine = create_async_engine(pg_platform_url)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "UPDATE caja_sesiones SET estado = 'cerrada', cerrada_por = 'dueno', cerrada_en = now(), "
+                "efectivo_esperado = 0, efectivo_contado = 0, diferencia = 0 WHERE id = :s"
+            ),
+            {"s": semilla["sesion"]},
+        )
+    await engine.dispose()
+    credito_id = await _credito(pg_platform_url, semilla, 50000, 50000)
+    with pytest.raises(ConflictError) as exc:
+        await servicio.registrar_abono(credito_id, _abono(10000))
+    assert exc.value.code == "caja_sin_sesion_abierta"
+    # La transferencia no toca la gaveta: pasa sin sesión y queda sin ella.
+    abono = await servicio.registrar_abono(credito_id, _abono(10000, "transferencia"))
+    assert abono.sesion_caja_id is None
+
+
+@pytest.mark.asyncio
+async def test_el_abono_es_idempotente_por_su_id(servicio, pg_platform_url, semilla):
+    credito_id = await _credito(pg_platform_url, semilla, 80000, 80000)
+    datos = _abono(20000)
+    primero = await servicio.registrar_abono(credito_id, datos)
+    segundo = await servicio.registrar_abono(credito_id, datos)
+    assert segundo.id == primero.id
+    assert (await servicio.obtener_credito(credito_id)).saldo_pendiente == 60000  # una sola vez
+    # El MISMO id con otro monto no es un reintento: es divergencia (409).
+    with pytest.raises(ConflictError) as exc2:
+        await servicio.registrar_abono(
+            credito_id, AbonoCrear.model_validate({"id": str(datos.id), "monto": 25000, "metodo_pago": "efectivo"})
+        )
+    assert exc2.value.code == "abono_id_divergente"
+
+
+@pytest.mark.asyncio
+async def test_el_abono_al_credito_del_vecino_es_404(servicio, pg_platform_url, semilla, pg_app_url):
+    engine = create_engine(pg_app_url)
+    factory = create_session_factory(engine)
+    marca = current_tenant_id.set(T2)
+    try:
+        async with factory() as s2:
+            servicio_t2 = FiadoService(session=s2, tenant_id=T2, actor_id="dueno-t2")
+            credito_de_t1 = await _credito(pg_platform_url, semilla, 50000, 50000)
+            with pytest.raises(NotFoundError) as exc:
+                await servicio_t2.registrar_abono(credito_de_t1, _abono(1000))
+            assert exc.value.code == "credito_no_encontrado"
+    finally:
+        current_tenant_id.reset(marca)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_reprogramar_un_vencido_a_futuro_lo_devuelve_a_vigente(servicio, pg_platform_url, semilla):
+    """«Deme hasta el otro viernes» (decisión 7): el `vencido` reprogramado
+    vuelve a `vigente` y podrá volver a vencer con su recordatorio."""
+    credito_id = await _credito(
+        pg_platform_url, semilla, 50000, 50000, estado="vencido", vencimiento="CURRENT_DATE - 1"
+    )
+    reprogramado = await servicio.reprogramar_vencimiento(
+        credito_id, CreditoReprogramar.model_validate({"fecha_vencimiento": "2099-01-15"})
+    )
+    assert reprogramado.estado == "vigente" and str(reprogramado.fecha_vencimiento) == "2099-01-15"
+    saldado = await _credito(pg_platform_url, semilla, 50000, 0, estado="saldado")
+    with pytest.raises(ConflictError) as exc:
+        await servicio.reprogramar_vencimiento(
+            saldado, CreditoReprogramar.model_validate({"fecha_vencimiento": "2099-01-15"})
+        )
+    assert exc.value.code == "credito_no_editable"
+
+
+@pytest.mark.asyncio
+async def test_el_cuaderno_lista_pendientes_por_defecto(servicio, pg_platform_url, semilla):
+    await _credito(pg_platform_url, semilla, 40000, 40000)
+    await _credito(pg_platform_url, semilla, 30000, 30000, estado="vencido", vencimiento="CURRENT_DATE - 3")
+    await _credito(pg_platform_url, semilla, 99000, 0, estado="saldado")
+    pendientes, total = await servicio.listar_creditos(None)
+    assert total == 2 and all(c.estado in ("vigente", "vencido") for c in pendientes)
+    assert all(c.cliente_nombre == "Don Carlos" for c in pendientes)
+    todos, total_todos = await servicio.listar_creditos("todos")
+    assert total_todos == 3
+    vencidos, _ = await servicio.listar_creditos("vencido")
+    assert len(vencidos) == 1 and vencidos[0].estado == "vencido"
+
+
+@pytest.mark.asyncio
+async def test_el_detalle_arma_el_wa_me_y_lo_omite_sin_telefono(servicio, pg_platform_url, semilla):
+    credito_id = await _credito(pg_platform_url, semilla, 43000, 43000)
+    detalle = await servicio.obtener_credito(credito_id)
+    assert detalle.whatsapp_url is not None
+    assert detalle.whatsapp_url.startswith("https://wa.me/573001234567?text=")
+    assert "%2443.000" in detalle.whatsapp_url  # «$43.000» codificado
+    sin_telefono = await servicio.crear_cliente(ClienteCrear.model_validate({"nombre": "Sin número"}))
+    credito_sin = await _credito(pg_platform_url, semilla, 10000, 10000, cliente_id=sin_telefono.id)
+    assert (await servicio.obtener_credito(credito_sin)).whatsapp_url is None
