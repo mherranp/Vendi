@@ -60,10 +60,7 @@ export function textoDeCantidad(cantidadMili: number): string {
  * una venta siempre lo son). La línea es la unidad que ve el tendero: el
  * ticket cuadra línea a línea y el total es su suma.
  */
-export function totalLineaCentavos(
-  precioUnitarioCentavos: number,
-  cantidadMili: number,
-): number {
+export function totalLineaCentavos(precioUnitarioCentavos: number, cantidadMili: number): number {
   return Math.round((precioUnitarioCentavos * cantidadMili) / MILI_POR_UNIDAD);
 }
 

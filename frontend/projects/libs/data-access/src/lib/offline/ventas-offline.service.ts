@@ -1,10 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import {
-  LineaTicket,
-  textoDeCantidad,
-  totalLineaCentavos,
-  totalTicketCentavos,
-} from 'domain';
+import { LineaTicket, textoDeCantidad, totalLineaCentavos, totalTicketCentavos } from 'domain';
 import type { ClaveMeta, ClienteLocal, OperacionEnCola, VentaLocal } from './modelos-locales';
 import { VendiDb } from './vendi.db';
 
@@ -91,7 +86,9 @@ export class VentasOfflineService {
           })),
         };
         await this.db.ventas_locales.add(venta);
-        await this.db.cola_sync.add(this.operacion(venta.id, 'venta.crear', secuencia, datos, ahora));
+        await this.db.cola_sync.add(
+          this.operacion(venta.id, 'venta.crear', secuencia, datos, ahora),
+        );
         await this.ponerMeta('consecutivo_local', consecutivo);
         await this.ponerMeta('ultima_secuencia', secuencia);
         return venta;
@@ -105,7 +102,10 @@ export class VentasOfflineService {
    * por adopción). El FIFO por `secuencia` garantiza que esta operación sube
    * ANTES que la venta que fía: la dependencia es estructural.
    */
-  async crearClienteLocal(entrada: { nombre: string; telefono: string | null }): Promise<ClienteLocal> {
+  async crearClienteLocal(entrada: {
+    nombre: string;
+    telefono: string | null;
+  }): Promise<ClienteLocal> {
     const nombre = entrada.nombre.trim();
     if (nombre.length < 2) {
       // Mismo piso que ClienteCrearSync (min 2): rechazar aquí evita una
@@ -144,11 +144,7 @@ export class VentasOfflineService {
 
   /** El historial local, del más reciente al más antiguo. */
   historial(limite = 50): Promise<VentaLocal[]> {
-    return this.db.ventas_locales
-      .orderBy('consecutivo_local')
-      .reverse()
-      .limit(limite)
-      .toArray();
+    return this.db.ventas_locales.orderBy('consecutivo_local').reverse().limit(limite).toArray();
   }
 
   private operacion(

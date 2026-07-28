@@ -69,8 +69,18 @@ describe('VentasOfflineService (outbox local, ADR-017/ADR-018)', () => {
 
   it('el consecutivo y la secuencia son monótonos y sobreviven a la recarga', async () => {
     const { servicio, db } = preparar();
-    await servicio.cobrar({ lineas: LINEAS, medio_pago: 'efectivo', cliente: null, fecha_vencimiento: null });
-    await servicio.cobrar({ lineas: LINEAS, medio_pago: 'efectivo', cliente: null, fecha_vencimiento: null });
+    await servicio.cobrar({
+      lineas: LINEAS,
+      medio_pago: 'efectivo',
+      cliente: null,
+      fecha_vencimiento: null,
+    });
+    await servicio.cobrar({
+      lineas: LINEAS,
+      medio_pago: 'efectivo',
+      cliente: null,
+      fecha_vencimiento: null,
+    });
     const nombre = db.name;
     await db.close();
 
@@ -95,7 +105,12 @@ describe('VentasOfflineService (outbox local, ADR-017/ADR-018)', () => {
     db.cola_sync.add = (() => Promise.reject(new Error('fallo simulado'))) as never;
 
     await expect(
-      servicio.cobrar({ lineas: LINEAS, medio_pago: 'efectivo', cliente: null, fecha_vencimiento: null }),
+      servicio.cobrar({
+        lineas: LINEAS,
+        medio_pago: 'efectivo',
+        cliente: null,
+        fecha_vencimiento: null,
+      }),
     ).rejects.toThrow('fallo simulado');
 
     expect(await db.ventas_locales.count()).toBe(0);
@@ -105,7 +120,12 @@ describe('VentasOfflineService (outbox local, ADR-017/ADR-018)', () => {
   it('el fiado exige cliente: sin él no hay venta ni operación', async () => {
     const { servicio, db } = preparar();
     await expect(
-      servicio.cobrar({ lineas: LINEAS, medio_pago: 'fiado', cliente: null, fecha_vencimiento: null }),
+      servicio.cobrar({
+        lineas: LINEAS,
+        medio_pago: 'fiado',
+        cliente: null,
+        fecha_vencimiento: null,
+      }),
     ).rejects.toThrow(/cliente/);
     expect(await db.ventas_locales.count()).toBe(0);
     expect(await db.cola_sync.count()).toBe(0);
@@ -132,7 +152,10 @@ describe('VentasOfflineService (outbox local, ADR-017/ADR-018)', () => {
 
   it('cliente.crear lleva solo los campos de ClienteCrearSync (extra=forbid)', async () => {
     const { servicio, db } = preparar();
-    const cliente = await servicio.crearClienteLocal({ nombre: 'Doña Ana', telefono: '3001234567' });
+    const cliente = await servicio.crearClienteLocal({
+      nombre: 'Doña Ana',
+      telefono: '3001234567',
+    });
     const enCola = await db.cola_sync.get(cliente.id);
     expect(enCola?.datos).toEqual({ nombre: 'Doña Ana', telefono: '3001234567' });
   });
