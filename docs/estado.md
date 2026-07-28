@@ -1231,6 +1231,16 @@ independiente registrada en `.superpowers/sdd/`). **La Etapa 1.3 NO se
 cierra**: la pista web queda entregada, pero la etapa completa incluye
 además la auth nativa por navegador del sistema (**D-29**, abierta); las
 pistas móvil y comercial ya cerraron como secciones propias de este
+
+> **Post-cierre (mismo día).** El QA adversarial de la pista web añadió 50
+> candados (`7a85fa1`: matriz de rutas ADR-023 por URL directa, doble envío,
+> XSS, doble clic de arqueo) y encontró 2 bugs reales, ambos corregidos
+> (`f8da74b`, `da28871`): el ajuste por conteo a cero («no queda nada») no
+> salía del diálogo aunque el backend lo admite a propósito, y una carrera
+> en Mis números dejaba el toggle en un período con los datos del otro.
+> Deuda nueva: D-31 (idempotencia del movimiento tras fallo de red con el
+> diálogo cerrado) y D-32 (`/tenants/mios` incompleto deja un negocio
+> inseleccionable). HEAD de código de cierre real: `da28871`.
 documento.
 
 Como en la pista móvil, **los tests del frontend corren en local** (Vitest
