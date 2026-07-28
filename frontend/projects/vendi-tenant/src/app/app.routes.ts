@@ -56,6 +56,12 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'numeros',
+        canActivate: [tenantGuard, permisoGuard('reporte:leer')],
+        loadComponent: () =>
+          import('./features/numeros/numeros.component').then((m) => m.NumerosComponent),
+      },
+      {
         path: 'elegir-negocio',
         loadComponent: () =>
           import('./features/elegir-negocio/elegir-negocio.component').then(

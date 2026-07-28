@@ -329,6 +329,40 @@
       "fallo": "No pudimos cargar el fiado."
     }
   },
+  "numeros": {
+    "titulo": "Mis números",
+    "subtitulo": "Lo que la tienda vendió, gastó y puede esperar",
+    "fallo": "No pudimos cargar tus números.",
+    "periodo": {
+      "dia": "Hoy",
+      "semana": "Esta semana",
+      "mes": "Este mes"
+    },
+    "pyl": {
+      "titulo": "Ganancias y pérdidas",
+      "ventas_netas": "Ventas netas",
+      "ventas_efectivo": "Ventas en efectivo",
+      "ventas_fiado": "Ventas a fiado",
+      "ventas_anuladas": "Ventas anuladas",
+      "costo_vendido": "Costo de lo vendido",
+      "margen_bruto": "Margen bruto",
+      "ingresos_caja": "Ingresos manuales de caja",
+      "egresos_caja": "Egresos de caja",
+      "compras": "Compras a proveedores (informativo: no se resta)",
+      "resultado": "Resultado operativo",
+      "fuentes": "De dónde salen estos números"
+    },
+    "forecast": {
+      "titulo": "Lo que viene (30 días)",
+      "saldo_actual": "Saldo actual en caja y por cobrar",
+      "ventas": "Ventas proyectadas",
+      "cobros": "Cobros de fiado proyectados",
+      "egresos": "Egresos proyectados",
+      "saldo_proyectado": "Saldo proyectado",
+      "base": "Proyección a {{dias}} días con {{diasConDatos}} días de datos reales.",
+      "fuentes": "De dónde sale esta proyección"
+    }
+  },
   "menu": {
     "caja": "Mi caja",
     "catalogo": "Catálogo",

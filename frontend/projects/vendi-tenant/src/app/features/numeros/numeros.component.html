@@ -1,0 +1,89 @@
+<vd-page-header titulo="numeros.titulo" subtitulo="numeros.subtitulo" />
+
+<mat-button-toggle-group
+  class="vd-numeros__periodos"
+  [value]="periodo()"
+  (change)="cambiarPeriodo($event.value)"
+>
+  <mat-button-toggle value="dia">{{ 'numeros.periodo.dia' | translate }}</mat-button-toggle>
+  <mat-button-toggle value="semana">{{ 'numeros.periodo.semana' | translate }}</mat-button-toggle>
+  <mat-button-toggle value="mes">{{ 'numeros.periodo.mes' | translate }}</mat-button-toggle>
+</mat-button-toggle-group>
+
+@if (cargando()) {
+  <vd-loading-spinner />
+} @else if (fallo()) {
+  <div class="vd-numeros__fallo" role="alert">
+    <span>{{ 'numeros.fallo' | translate }}</span>
+    <button matButton type="button" (click)="cargar()">
+      {{ 'comun.reintentar' | translate }}
+    </button>
+  </div>
+} @else {
+  @if (pyl(); as p) {
+    <mat-card class="vd-numeros__tarjeta">
+      <mat-card-header>
+        <mat-card-title>{{ 'numeros.pyl.titulo' | translate }}</mat-card-title>
+      </mat-card-header>
+      <mat-card-content>
+        <dl class="vd-numeros__lineas">
+          @for (linea of lineasPyl(); track linea.clave) {
+            <div
+              class="vd-numeros__linea"
+              [class.vd-numeros__linea--resultado]="linea.clave === 'numeros.pyl.resultado'"
+            >
+              <dt>{{ linea.clave | translate }}</dt>
+              <dd>{{ formatear(linea.centavos) }}</dd>
+            </div>
+          }
+        </dl>
+        <h3 class="vd-numeros__fuentes-titulo">{{ 'numeros.pyl.fuentes' | translate }}</h3>
+        <ul class="vd-numeros__fuentes">
+          @for (fuente of fuentesDe(p.fuentes); track fuente.nombre) {
+            <li>
+              <strong>{{ fuente.nombre }}:</strong>
+              {{ fuente.texto }}
+            </li>
+          }
+        </ul>
+      </mat-card-content>
+    </mat-card>
+  }
+
+  @if (forecast(); as f) {
+    <mat-card class="vd-numeros__tarjeta">
+      <mat-card-header>
+        <mat-card-title>{{ 'numeros.forecast.titulo' | translate }}</mat-card-title>
+      </mat-card-header>
+      <mat-card-content>
+        <p class="vd-numeros__base">
+          {{
+            'numeros.forecast.base' | translate: { dias: f.dias, diasConDatos: f.dias_con_datos }
+          }}
+        </p>
+        <dl class="vd-numeros__lineas">
+          @for (linea of lineasForecast(); track linea.clave) {
+            <div
+              class="vd-numeros__linea"
+              [class.vd-numeros__linea--resultado]="
+                linea.clave === 'numeros.forecast.saldo_proyectado'
+              "
+            >
+              <dt>{{ linea.clave | translate }}</dt>
+              <dd>{{ formatear(linea.centavos) }}</dd>
+            </div>
+          }
+        </dl>
+        <h3 class="vd-numeros__fuentes-titulo">{{ 'numeros.forecast.fuentes' | translate }}</h3>
+        <ul class="vd-numeros__fuentes">
+          @for (fuente of fuentesDe(f.fuentes); track fuente.nombre) {
+            <li>
+              <strong>{{ fuente.nombre }}:</strong>
+              {{ fuente.texto }}
+            </li>
+          }
+        </ul>
+      </mat-card-content>
+    </mat-card>
+  }
+}

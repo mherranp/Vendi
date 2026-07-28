@@ -1,0 +1,57 @@
+.vd-numeros__periodos {
+  margin-bottom: 1rem;
+}
+
+.vd-numeros__tarjeta {
+  margin-bottom: 1rem;
+}
+
+.vd-numeros__lineas {
+  margin: 0;
+
+  .vd-numeros__linea {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.35rem 0;
+
+    dt {
+      margin: 0;
+    }
+
+    dd {
+      margin: 0;
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  .vd-numeros__linea--resultado {
+    border-top: 1px solid var(--mat-sys-outline-variant);
+    margin-top: 0.35rem;
+    padding-top: 0.6rem;
+    font-weight: 600;
+  }
+}
+
+.vd-numeros__base {
+  color: var(--mat-sys-on-surface-variant);
+  margin-top: 0;
+}
+
+.vd-numeros__fuentes-titulo {
+  font-size: 0.85rem;
+  margin: 1rem 0 0.35rem;
+}
+
+.vd-numeros__fuentes {
+  color: var(--mat-sys-on-surface-variant);
+  font-size: 0.85rem;
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.vd-numeros__fallo {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+}
