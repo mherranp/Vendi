@@ -656,19 +656,195 @@ procesal sin riesgo en runtime.
 
 ---
 
+## Módulo fiado y clientes (Fase 1, Etapa 1.2)
+
+Fecha de corte: **2026-07-28**. Quinto módulo de negocio del MVP —el fiado
+de ADR-009/ADR-022, «el cuaderno»: créditos con saldo vivo, abonos,
+recordatorios de vencimiento y la base mínima de clientes—, cerrado con el
+gate de la Etapa 1.2 del plan maestro. Plan:
+[`docs/superpowers/plans/2026-07-28-modulo-fiado-plan.md`](superpowers/plans/2026-07-28-modulo-fiado-plan.md)
+(12 tareas TDD, commits `a991a68`…`fd55d86`, cada una con revisión
+independiente registrada en `.superpowers/sdd/`).
+
+Los comandos del gate que exigen el stack (migrar, tests de integración,
+`verify-setup.sh`) se citan desde el CI, que los ejecuta contra PostgreSQL,
+RabbitMQ y Keycloak reales en cada push: el run de corte es el `ci`
+**30331195290** sobre el SHA `fd55d86`, con los 11 jobs en verde
+(`gh run view 30331195290`).
+
+### Qué se entregó, y el comando que lo demuestra
+
+**Tres tablas nuevas con RLS, índices, checks y grants (ADR-022/023).**
+`clientes`, `fiado_creditos` (con `saldo_pendiente` materializado,
+`CHECK (saldo_pendiente >= 0)` y `CHECK (saldo_pendiente <= monto_total)`) y
+`fiado_abonos` (con la `sesion_caja_id` que cobró el efectivo) en la
+migración `0009`, aplicada hasta head en el stack del CI:
+
+```
+$ bash scripts/migrate.sh          # run ci 30331195290, job «pytest -m integration»
+INFO  [alembic.runtime.migration] Running upgrade 0008 -> 0009, Fiado y clientes: `clientes`, `fiado_creditos` y `fiado_abonos`
+0009 (head)
+```
+
+Las tres heredan los cuatro privilegios por defecto de `vendi_app`: el
+candado invertido (`test_privilegios_de_vendi_app.py`) pasa sin edición, y el
+de cobertura RLS (`test_rls_coverage.py`) las cubre.
+
+**Aislamiento cross-tenant contra PostgreSQL real, 0 SKIPPED.** 9 tests
+nuevos en `backend/tests/test_aislamiento_fiado.py` (SELECT de las tres
+tablas acotado por la policy, INSERT con `tenant_id` ajeno bloqueado por
+`WITH CHECK`, los CHECK de saldo/estado/método, un crédito por venta —
+`ux_fiado_creditos_venta`— y la FK del abono al crédito). El job de CI
+convierte cualquier `SKIPPED` en fallo, así que «passed» aquí significa que
+corrieron todos:
+
+```
+$ uv run pytest -q -m integration  # run ci 30331195290
+449 passed, 430 deselected
+```
+
+**El crédito nace EN EL SYNC, en la misma transacción de la venta (decisión
+1 del plan).** 15 tests en `backend/tests/test_fiado_sync.py`: la venta
+fiada se convierte en crédito con `saldo_pendiente = total` en el SAVEPOINT
+de la operación; `cliente.crear` entra al lote con el id del dispositivo
+como PK (cierre de D-10 por adopción); la venta fiada sin cliente conocido
+NO se rechaza — auto-alta placeholder `(sin nombre)`— y el `cliente.crear`
+que llega tarde MEJORA el placeholder en vez de ser rechazado por
+divergencia (fix `005c212`); el cupo se evalúa pero nunca rechaza y el
+exceso viaja en `detalles.cupo_excedido` del resultado (ADR-018); la
+anulación de la venta fiada anula el crédito (cuarto estado `anulado`,
+`saldo_pendiente = 0`) sin tocar los abonos; la venta que sube ya anulada no
+genera crédito; crear y anular la misma venta en el mismo lote funciona; y
+el lote reenviado no duplica cliente, crédito ni eventos.
+
+**Los candados firmados de ADR-022.** El saldo al peso
+(`test_fiado_servicio.py::test_el_abono_descuenta_al_peso`: crédito de
+100.000, abonos de 30.000 + 30.000 → saldo 40.000, historial intacto); el
+abono que excede el saldo es un 422 tipado con el CHECK como red final
+(`test_el_abono_mayor_que_el_saldo_es_422_tipado`); el trabajo diario
+(`test_fiado_vencimientos.py::test_marca_vencido_y_encola_exactamente_un_evento`:
+vencimiento de ayer → `vencido` + UN `fiado.credito_vencido`;
+`test_recorrer_la_pasada_es_noop`: la transición de estado ES el
+anti-duplicado; `test_no_toca_el_futuro_el_sin_fecha_el_saldado_ni_el_vecino`);
+y el aislamiento por tabla de la sección anterior. Todos verdes en el run
+de corte.
+
+**El candado firmado de ADR-023: el almacenista no toca el fiado; el
+cajero fía y cobra.**
+`tests/api/test_fiado_api.py::test_el_almacenista_recibe_403_en_todo_el_cuaderno`
+(403 en clientes, créditos, reprogramación y abonos) y
+`test_el_abono_descuenta_y_el_cuaderno_lo_cuenta` (el mismo gesto con el
+dueño y el cajero, 201, y el saldo se descuenta al peso); el cajero
+gestiona clientes (`test_el_cajero_gestiona_clientes_y_el_almacenista_no`)
+porque necesita saldo y cupo para fiar y cobrar (decisión 10). En el sync,
+la venta fiada exige `fiado:crear` POR OPERACIÓN y `cliente.crear` exige
+`cliente:gestionar` — la operación sin permiso es `rechazada`
+`permiso_ausente`, no un 403 del lote
+(`test_fiado_sync.py::test_la_venta_fiada_sin_permiso_es_rechazada_y_no_deja_credito`).
+`PERMISOS_POR_ROL ⊆ PERMISSION_CATALOG` verde en `test_auth_policies.py`.
+El catálogo queda COMPLETO: los 14 permisos de ADR-023, exigidos contra el
+realm vivo por el check 23 extendido:
+
+```
+[OK]    aud=vendi-backend, rol de negocio y los 14 permisos de dominio en el token del dueño
+[OK]    27 en verde · 2 omitidos · 0 fallos (de 29)
+```
+
+**El cuaderno: abonos al peso, historial, `wa.me` y reprogramación.** 17
+tests de servicio (`backend/tests/test_fiado_servicio.py`) y 8 de API
+(`backend/tests/api/test_fiado_api.py`), todos integration: el abono exige
+el `id` del cliente (ancla de idempotencia ya puesta para el abono offline
+de D-27), descuenta el saldo en la misma transacción con el crédito
+bloqueado `FOR UPDATE`, y el que salda cierra el crédito y emite
+`fiado.abono_registrado` Y `fiado.credito_saldado`
+(`test_el_abono_que_salda_cierra_el_credito_y_emite_los_dos_eventos`); ni
+un `saldado` ni un `anulado` admiten abonos (el historial no se reescribe);
+el abono en efectivo exige sesión de caja abierta y guarda su
+`sesion_caja_id` (`test_el_abono_en_efectivo_exige_caja_abierta`, 409
+`caja_sin_sesion_abierta`); el detalle arma la `whatsapp_url` con el saldo
+(`test_el_detalle_arma_el_wa_me_y_lo_omite_sin_telefono`); y reprogramar un
+`vencido` a futuro lo devuelve a `vigente` — podrá volver a vencer con su
+recordatorio (`test_reprogramar_un_vencido_a_futuro_lo_devuelve_a_vigente`).
+
+**Los puntos de cambio del módulo 4, activados.** El arqueo suma los abonos
+en efectivo de la sesión desde `fiado_abonos`
+(`test_caja_servicio.py::test_el_arqueo_suma_los_abonos_en_efectivo_de_la_sesion`)
+y el forecast proyecta cobros de fiado reales — `SUM(saldo_pendiente)` de
+créditos `vigente`/`vencido` con `fecha_vencimiento <= hoy + 30 días`
+(`test_reportes_servicio.py::test_el_forecast_proyecta_los_cobros_de_fiado`:
+50.000 = 20.000 + 30.000; los sin fecha no entran y la respuesta lo dice en
+`fuentes.cobros_fiado`).
+
+**Ocho endpoints (cinco rutas) nuevos en el contrato congelado:**
+
+```
+$ python3 -c "import json; d=json.load(open('docs/api/openapi-fase0.json')); [print(p, sorted(m for m in d['paths'][p] if m in ('get','post','patch'))) for p in sorted(d['paths']) if 'fiado' in p or 'cliente' in p]"
+/api/v1/clientes ['get', 'post']
+/api/v1/clientes/{cliente_id} ['get', 'patch']
+/api/v1/fiado/creditos ['get']
+/api/v1/fiado/creditos/{credito_id} ['get', 'patch']
+/api/v1/fiado/creditos/{credito_id}/abonos ['post']
+```
+
+**Eventos de outbox según ADR-022** (`fiado.credito_creado`,
+`fiado.abono_registrado`, `fiado.credito_saldado`, `fiado.credito_vencido`,
+más `fiado.credito_anulado` de la decisión 3, clave
+`<tenant_id>.<evento>`), emitidos en la misma transacción que la escritura
+— el del worker con el filtro `tenant_id` explícito de la sesión de
+plataforma (scope `tenant`, el primer trabajo de ese tipo).
+
+**Suite completa verde, lint verde, contrato sin deriva.**
+
+```
+$ uv run pytest -q -m 'not integration'   # run ci 30331195290; reproducido en local
+430 passed, 449 deselected
+$ uv run pytest -q -m integration         # run ci 30331195290
+449 passed, 430 deselected
+$ uv run ruff check .                     # job «ruff + mypy» del CI; reproducido en local
+All checks passed!
+$ CODEGEN_SCHEMA_FILE=docs/api/openapi-fase0.json bash scripts/codegen-api-client.sh && git status --short
+(exit 0 y `git status` vacío: el cliente TS regenerado es idéntico al commiteado)
+```
+
+`contrato.ts` sigue compilando: el job `frontend / contratos`, los cuatro
+`ng build` y `ng test` del mismo run, en verde. Los demás workflows sobre el
+SHA de corte (`gh run list`): `e2e` 30331195269 y `android` 30331195281,
+todos success.
+
+**Deuda cerrada en este módulo** (detalle y evidencia en
+[`docs/deuda-tecnica.md`](deuda-tecnica.md)): **D-10** (`ventas.cliente_id`
+sin FK: se cerró ADOPTANDO el `cliente_id` del dispositivo como PK de
+`clientes`, como mandaba su vencimiento; la columna se queda sin FK a
+propósito, decisión 4 del plan). **Deuda nueva registrada**: **D-27** (el
+abono de fiado no viaja por el lote todavía — es REST online con la ancla
+puesta; tensión declarada con ADR-022, decisión 6) y **D-28** (no hay delta
+de clientes hacia dispositivos: un cliente creado en una caja llega a la
+otra solo online, decisión 13). Ambas vencen antes del piloto. **Hallazgos
+de las revisiones NO registrados** (no cumplen el criterio del registro:
+riesgo real + vencimiento): `_CAMPOS_DEL_HECHO` sin `fecha_vencimiento` — el
+reenvío que solo cambia la fecha sale `duplicada` conservando la primera,
+pero la fecha es metadata del fiado corregible online por el endpoint de
+reprogramación, no parte del hecho de la venta — y `fiado.credito_creado`
+emitido antes que `venta.creada` en el outbox — el orden relativo de dos
+eventos de la misma transacción no tiene consumidor todavía (el primero
+será el módulo 7, que consume `fiado.credito_vencido`): si alguno de los
+dos muerde de verdad, se registra con su vencimiento.
+
+---
+
 ## La suite de tests
 
 ```
 cd backend && uv run pytest -q
-766 passed
+879 passed
 ```
 
-De ellos, **354 son `integration`** (cifra de Fase 0: 106; el crecimiento viene de
-los módulos catálogo, ventas, inventario y caja, ver sus secciones): hablan con el PostgreSQL, el
+De ellos, **449 son `integration`** (cifra de Fase 0: 106; el crecimiento viene de
+los módulos catálogo, ventas, inventario, caja y fiado, ver sus secciones): hablan con el PostgreSQL, el
 RabbitMQ y el Keycloak del compose, y con la API por su dominio. **No se omiten**
 si el servicio falta: fallan con un mensaje que dice qué falta. Un test que
 desaparece del recuento no prueba nada, y el job de CI convierte cualquier
-`SKIPPED` en fallo. *(Actualizado al HEAD 9510891, run ci 30318420990.)*
+`SKIPPED` en fallo. *(Actualizado al HEAD fd55d86, run ci 30331195290.)*
 
 Frontend: 250 specs (`npx ng test --watch=false`), más 2 specs E2E de
 Playwright (`npm run e2e`: login con passkey y CRUD de negocio) contra el

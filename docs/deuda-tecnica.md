@@ -11,7 +11,6 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 |---|---|---|---|
 | D-03 | El realm es semilla, no estado deseado continuo (mitigado en la Etapa 5: se aplica el subconjunto seguro) | Fase 1 | backend |
 | D-09 | El tier del negocio se resuelve como `pro` para todos (módulo catálogo, decisión 2 del plan) | Fase 1 (módulo de suscripciones) | backend |
-| D-10 | `ventas.cliente_id` no tiene FK: la tabla `clientes` es del módulo 5 | Fase 1 (módulo 5, clientes-fiado) | backend |
 | D-13 | Carrera TOCTOU del cupo de tier del catálogo: dos altas concurrentes dejan 101/100 (QA adversarial) | Fase 1 (antes del piloto) | backend |
 | D-16 | El check 23 de `verify-setup.sh` no tiene prueba negativa ejecutada (nadie lo ha visto fallar) | Fase 1 (Etapa 1.5) | backend |
 | D-17 | `alembic check` (deriva metadata↔DDL) no corre en CI | Fase 1 | backend |
@@ -23,6 +22,8 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 | D-24 | Un ajuste con el `id` de otro tenant recibe 409 `ajuste_id_divergente` (efecto de la RLS que oculta la fila; criterio no firmado, espejo de `dispositivo_id_en_conflicto`) | Fase 1 (antes del piloto) | backend |
 | D-25 | Una compra con `costo_unitario = 0` deja `ultimo_costo = 0` y el P&L mostrará margen del 100% hasta la próxima compra con costo real (decisión de producto pendiente) | Fase 1 (antes del piloto) | backend |
 | D-26 | Una sesión puede cerrarse con `efectivo_esperado` NEGATIVO sin error (un egreso mayor que todo el efectivo de la sesión; decisión de producto pendiente: ¿advertencia al cerrar?) | Fase 1 (antes del piloto) | backend |
+| D-27 | El abono de fiado NO viaja por el lote del sync: es REST online (ADR-022 contempla el abono offline; la ancla — el `id` del cliente requerido en el POST — ya está puesta) | Fase 1 (antes del piloto) | backend |
+| D-28 | No hay delta de clientes hacia dispositivos: un cliente creado en una caja llega a la otra solo online (GET /clientes) | Fase 1 (antes del piloto) | backend |
 
 Cerradas en la Etapa 5, con su evidencia al final de este documento: **D-01**
 (ROPC), **D-04** (Keycloak sin `--optimized`), **D-06** (`alembic_version`
@@ -52,6 +53,12 @@ Cerrada en la Tarea 11 del módulo caja y finanzas (Fase 1, Etapa 1.2): **D-11**
 (`caja_sesiones` existía y se poblaba sin endpoints propios): el módulo 4
 entregó los endpoints de apertura, sesión actual, historial, cierre con arqueo
 y movimientos (ADR-021).
+
+Cerrada en la Tarea 12 del módulo fiado y clientes (Fase 1, Etapa 1.2): **D-10**
+(`ventas.cliente_id` sin FK): se cerró adoptando el `cliente_id` del
+dispositivo como PK de `clientes` (operación `cliente.crear` del lote), como
+mandaba su vencimiento; la columna `ventas.cliente_id` se queda sin FK a
+propósito.
 
 > Runbooks operativos relacionados: el procedimiento completo de respaldo y
 > restauración (qué se vuelca, qué NO, y cómo se promueve una copia a base
@@ -155,38 +162,6 @@ fuente real del tier). El único punto de cambio es la dependencia
 - `backend/tests/api/test_catalogo_productos.py::test_el_limite_del_tier_da_403`
 - `backend/tests/test_catalogo_servicio.py::test_el_limite_del_tier_se_verifica_contra_las_filas_vivas`
 - `backend/tests/test_catalogo_servicio.py::test_el_limite_del_tier_light_se_detiene_en_500`
-
----
-
-## D-10 · `ventas.cliente_id` no tiene FK
-
-**Qué es.** La venta fiada lleva `cliente_id`, pero la columna no referencia
-a ninguna tabla: `clientes` es del módulo 5 y todavía no existe.
-
-**Por qué se aceptó.** Decisión 8 del plan del módulo ventas: el fiado sin
-red está permitido por ADR-018, así que el sync no puede rechazar una venta
-real porque su referencia aún no exista en el servidor. El crédito lo crea el
-módulo 5, que tiene todo lo que necesita en la venta y en el evento
-`venta.creada` (lleva `medio_pago`, `cliente_id` y total). Como los módulos
-se entregan en orden antes del piloto, ninguna venta real queda huérfana de
-crédito.
-
-**Riesgo si se olvida.** Si el módulo 5 crea `clientes` con su propia
-convención de ids sin mirar las ventas ya sincronizadas, los fiados vendidos
-antes de su llegada apuntarían a clientes que no existen y no generarían
-crédito.
-
-**Vencimiento: Fase 1, módulo 5 (clientes-fiado).** Al crear `clientes`, el
-módulo 5 adopta el `cliente_id` del dispositivo como PK (mismo patrón de id
-de cliente que `ventas` y `productos`) o migra las referencias.
-
-**Candados mientras tanto:**
-
-- `backend/tests/test_ventas_servicio.py`: fiado sin cliente es `rechazada`
-  con `fiado_requiere_cliente`, y cliente en venta no fiada con
-  `cliente_solo_en_fiado` — la columna solo se puebla en ventas fiadas.
-- El evento `venta.creada` conserva `cliente_id`, `medio_pago` y total para
-  que el módulo 5 cree el crédito sin releer la venta.
 
 ---
 
@@ -569,6 +544,85 @@ produjo; la señal llega tarde o no llega.
 
 ---
 
+## D-27 · El abono de fiado no viaja por el lote del sync
+
+**Qué es.** Los abonos del cuaderno se registran SOLO por REST online
+(`POST /api/v1/fiado/creditos/{credito_id}/abonos`). ADR-022 contempla «un
+abono registrado sin señal tiene que sincronizar sin duplicarse», pero la
+operación `fiado.abonar` del lote NO entra en el módulo 5: su alcance
+firmado era el endpoint REST online.
+
+**Por qué se aceptó.** Decisión 6 del plan del módulo fiado y clientes. El
+mecanismo que hace seguro el abono offline — el `id` generado en el cliente
+como ancla de idempotencia — quedó puesto desde ya: el POST exige `id` y el
+reenvío con el mismo `id` es idempotente. Cuando `fiado.abonar` entre al
+lote, reutilizará el mismo ancla sin romper nada de lo entregado. Tensión
+declarada con ADR-022, no escondida.
+
+**Riesgo si se olvida.** En el piloto, un cobro de fiado hecho sin señal
+no se puede registrar en el momento: el tendero cobra, la app no puede
+anotarlo offline, y el cuaderno muestra un saldo que ya no es real hasta
+que haya red. Si el piloto opera en zonas de mala cobertura, el cuaderno
+miente justo en su operación más frecuente.
+
+**Vencimiento: Fase 1, antes del piloto.** Añadir la operación
+`fiado.abonar` al lote del sync (mismo SAVEPOINT por operación, misma
+traducción de `IntegrityError` a `duplicada`/`rechazada`).
+
+**Candados mientras tanto:**
+
+- `backend/tests/test_fiado_servicio.py::test_el_abono_es_idempotente_por_su_id`
+  (integration, corre en CI): la ancla del abono offline ya existe y se
+  comporta como la del resto del sistema — reenvío idéntico = misma
+  respuesta sin doble descuento del saldo.
+- El endpoint REST está completo y probado (17 tests de servicio, 8 de
+  API), así que el arreglo es añadir UN camino del lote que llame al mismo
+  servicio, no rehacer la operación.
+
+---
+
+## D-28 · No hay delta de clientes hacia dispositivos
+
+**Qué es.** El delta del sync (`GET /api/v1/sync/delta`, ADR-017) drena el
+catálogo — productos vivos modificados y tumbas — pero NO los clientes: un
+cliente creado en una caja llega a la otra solo online, por
+`GET /api/v1/clientes`. Offline, cada dispositivo ve los clientes que él
+mismo creó.
+
+**Por qué se aceptó.** Decisión 13 del plan del módulo fiado y clientes.
+El caso real — dos cajas, una crea el cliente offline y la otra le fía sin
+red antes de sincronizar — no es alcanzable sin que el segundo dispositivo
+conozca el id del cliente, y ese id solo viaja hoy por la API online. La
+red de seguridad del servidor (auto-alta placeholder `(sin nombre)` cuando
+una venta fiada llega con un cliente desconocido, y el `cliente.crear`
+tardío que mejora el placeholder) garantiza que el cuaderno nunca pierde
+una deuda aunque el cliente llegue incompleto.
+
+**Riesgo si se olvida.** En una tienda multi-caja con mala cobertura, la
+caja 2 no puede fiarle a un cliente que la caja 1 acaba de crear: o espera
+a la red, o el cliente se crea dos veces (uno por dispositivo) y el
+cuaderno queda partido en dos fichas del mismo deudor, que alguien tiene
+que unificar a mano.
+
+**Vencimiento: Fase 1, antes del piloto.** Extender el delta con clientes
+(mismo patrón watermark + upsert por id del catálogo) o firmar la decisión
+contraria con su justificación si el piloto es monocaja.
+
+**Candados mientras tanto:**
+
+- `backend/tests/test_fiado_sync.py::test_la_venta_fiada_sin_cliente_conocido_no_se_rechaza`
+  (integration, corre en CI): la venta fiada con cliente desconocido no se
+  rechaza jamás — auto-alta placeholder editable después — así que la
+  ausencia del delta no pierde fiados, solo comodidad.
+- `backend/tests/test_fiado_sync.py::test_el_cliente_crear_tardio_mejora_el_placeholder`
+  (integration, corre en CI): cuando el `cliente.crear` del dispositivo
+  original llega, el placeholder se completa con el nombre real.
+- `GET /api/v1/clientes` con búsqueda por nombre
+  (`test_fiado_servicio.py::test_buscar_por_nombre`) es el camino online
+  completo mientras tanto.
+
+---
+
 ## Deuda menor que entra viva a Fase 1
 
 Anotada al cierre de Fase 0 por el arquitecto. Ninguna bloquea el cierre; toda
@@ -918,6 +972,59 @@ $ python3 -c "import json; print('\n'.join(sorted(p for p in json.load(open('../
 - Los nuevos del módulo: `backend/tests/test_aislamiento_caja.py` (9 tests
   cross-tenant) y los candados del arqueo de ADR-021 (cuadre al peso,
   congelamiento, carrera de aperturas y de cierres), en CI en cada push.
+
+---
+
+### D-10 · `ventas.cliente_id` no tenía FK
+
+**Qué era.** La venta fiada llevaba `cliente_id`, pero la columna no
+referenciaba a ninguna tabla: `clientes` era del módulo 5 y no existía. El
+vencimiento firmado mandaba: al crear `clientes`, adoptar el `cliente_id`
+del dispositivo como PK (mismo patrón que `ventas` y `productos`) o migrar
+las referencias.
+
+**Cómo se cerró** (módulo fiado y clientes, Tareas 7 y 12 — su propio
+vencimiento). Se adoptó la primera opción: la tabla `clientes` (migración
+`0009`) usa como PK el UUID que genera el dispositivo, y el cliente sube
+por el lote del sync con la operación nueva `cliente.crear` — el orden FIFO
+de la cola del dispositivo garantiza que precede a la venta fiada que lo
+referencia. La conversión venta → crédito existe y tiene tests: toda venta
+`medio_pago='fiado'` aceptada crea su `fiado_creditos` en la misma
+transacción (SAVEPOINT) de la operación, con `saldo_pendiente = total` y el
+evento `fiado.credito_creado`. La columna `ventas.cliente_id` se queda SIN
+FK a propósito (decisión 4 del plan): la venta no se rechaza jamás
+(ADR-018) y Postgres no aplica RLS al verificar llaves foráneas, así que la
+FK no añadiría aislamiento, solo fragilidad — un `cliente_id` de otro
+tenant pasaría la FK sin ser visible. Lo que sí lleva FK RESTRICT es
+`fiado_creditos.cliente_id`: el crédito lo crea el servidor, que garantiza
+la fila del cliente antes (incluida la auto-alta placeholder `(sin nombre)`
+cuando la venta fiada llega sin cliente conocido).
+
+**Evidencia** (run ci 30331195290 sobre `fd55d86`, 2026-07-28; los tests
+son integration y corren contra el PostgreSQL real del CI):
+
+```
+$ cd backend && uv run pytest --collect-only -q tests/test_fiado_sync.py
+15 tests collected     # cliente.crear del lote con el id del dispositivo
+                       # como PK; la venta fiada crea su crédito; la anulación
+                       # anula el crédito; el reenvío no duplica
+
+$ uv run pytest -q -m integration   # run ci 30331195290
+449 passed, 430 deselected          # incluye los 15 de test_fiado_sync.py
+                                    # y los 9 de test_aislamiento_fiado.py
+```
+
+**Candados:**
+
+- `backend/tests/test_fiado_sync.py::test_cliente_crear_del_lote_crea_la_fila`
+  y `::test_la_venta_fiada_se_convierte_en_credito_en_la_misma_transaccion`:
+  la adopción del id del dispositivo y la conversión venta → crédito.
+- `backend/tests/test_fiado_sync.py::test_la_venta_fiada_sin_cliente_conocido_no_se_rechaza`:
+  la red de seguridad — el cuaderno nunca pierde una deuda.
+- `backend/tests/test_ventas_servicio.py` (los candados que la deuda ya
+  declaraba, vigentes): fiado sin cliente es `rechazada`
+  `fiado_requiere_cliente`; cliente en venta no fiada,
+  `cliente_solo_en_fiado`.
 
 ---
 

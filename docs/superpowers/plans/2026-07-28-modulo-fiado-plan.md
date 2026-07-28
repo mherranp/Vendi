@@ -3960,7 +3960,7 @@ git commit -m "Check 23 con los 14 permisos de dominio, contrato OpenAPI del fia
 - Modify: `docs/estado.md` (sección nueva del módulo fiado y clientes, con fecha de corte y evidencia comando+salida)
 - Modify: `docs/deuda-tecnica.md` (D-10 pasa a «Cerradas en Fase 1» con su evidencia; D-27 y D-28 se registran)
 
-- [ ] **Paso 1: ejecutar el gate completo del módulo** (idéntico al de cualquier módulo de la Etapa 1.2):
+- [x] **Paso 1: ejecutar el gate completo del módulo** (idéntico al de cualquier módulo de la Etapa 1.2):
 
 ```bash
 bash scripts/migrate.sh
@@ -3977,16 +3977,16 @@ bash scripts/verify-setup.sh 2>&1 | grep -E "^\[(OK|FALLO)\]" | tail -3
 ```
 
 Gate por módulo (del plan maestro de Fase 1), a verificar ítem a ítem:
-- [ ] Migración con RLS + índice + grants, revisada por el agente de seguridad.
-- [ ] Tests de integración con aislamiento cross-tenant nuevo por tabla (`test_aislamiento_fiado.py`: las tres tablas con su policy y el `WITH CHECK`), 0 SKIPPED.
-- [ ] Los candados firmados de ADR-022: el saldo al peso (crédito de 100, abonos de 30+30 → 40; el de 41 revienta — aquí como 422 tipado con el CHECK de red, probado en aislamiento), el trabajo diario (vencimiento de ayer → `vencido` + exactamente un `fiado.credito_vencido`, idempotente al re-correr), y el aislamiento por tabla.
-- [ ] El candado firmado de ADR-023: almacenista que cobra fiado → 403, mismo gesto con dueño/cajero → 201 (`test_el_almacenista_recibe_403_en_todo_el_cuaderno` + `test_el_abono_descuenta_y_el_cuaderno_lo_cuenta`), y `PERMISOS_POR_ROL ⊆ PERMISSION_CATALOG` verde.
-- [ ] OpenAPI congelado actualizado + codegen + `contrato.ts` sigue compilando.
-- [ ] Eventos de outbox emitidos según ADR-022 (+`fiado.credito_anulado`, decisión 3) con clave `<tenant_id>.<evento>`; `pytest -m integration` verde; `ruff` verde.
+- [x] Migración con RLS + índice + grants, revisada por el agente de seguridad.
+- [x] Tests de integración con aislamiento cross-tenant nuevo por tabla (`test_aislamiento_fiado.py`: las tres tablas con su policy y el `WITH CHECK`), 0 SKIPPED.
+- [x] Los candados firmados de ADR-022: el saldo al peso (crédito de 100, abonos de 30+30 → 40; el de 41 revienta — aquí como 422 tipado con el CHECK de red, probado en aislamiento), el trabajo diario (vencimiento de ayer → `vencido` + exactamente un `fiado.credito_vencido`, idempotente al re-correr), y el aislamiento por tabla.
+- [x] El candado firmado de ADR-023: almacenista que cobra fiado → 403, mismo gesto con dueño/cajero → 201 (`test_el_almacenista_recibe_403_en_todo_el_cuaderno` + `test_el_abono_descuenta_y_el_cuaderno_lo_cuenta`), y `PERMISOS_POR_ROL ⊆ PERMISSION_CATALOG` verde.
+- [x] OpenAPI congelado actualizado + codegen + `contrato.ts` sigue compilando.
+- [x] Eventos de outbox emitidos según ADR-022 (+`fiado.credito_anulado`, decisión 3) con clave `<tenant_id>.<evento>`; `pytest -m integration` verde; `ruff` verde.
 
-- [ ] **Paso 2: actualizar `docs/estado.md`.** Añadir una sección «Módulo fiado y clientes (Fase 1, Etapa 1.2)» con: fecha de corte, qué se entregó (las tres tablas con el saldo materializado y su CHECK, el crédito que nace en el sync —incluida la venta tardía—, `cliente.crear` en el lote con el id del dispositivo como PK, la anulación que anula el crédito sin tocar abonos, los abonos REST al peso con los eventos, el cuaderno con `wa.me`, la reprogramación, el trabajo diario de vencidos una-sola-vez, el arqueo que ya suma abonos y el forecast que ya proyecta cobros, los tres permisos y su reparto, las 8 rutas, D-10 cerrada), y **al lado de cada afirmación el comando que la demuestra** con su salida pegada (regla del documento: no promete nada que un comando no demuestre).
+- [x] **Paso 2: actualizar `docs/estado.md`.** Añadir una sección «Módulo fiado y clientes (Fase 1, Etapa 1.2)» con: fecha de corte, qué se entregó (las tres tablas con el saldo materializado y su CHECK, el crédito que nace en el sync —incluida la venta tardía—, `cliente.crear` en el lote con el id del dispositivo como PK, la anulación que anula el crédito sin tocar abonos, los abonos REST al peso con los eventos, el cuaderno con `wa.me`, la reprogramación, el trabajo diario de vencidos una-sola-vez, el arqueo que ya suma abonos y el forecast que ya proyecta cobros, los tres permisos y su reparto, las 8 rutas, D-10 cerrada), y **al lado de cada afirmación el comando que la demuestra** con su salida pegada (regla del documento: no promete nada que un comando no demuestre).
 
-- [ ] **Paso 3: cerrar D-10 y registrar D-27/D-28 en `docs/deuda-tecnica.md`.**
+- [x] **Paso 3: cerrar D-10 y registrar D-27/D-28 en `docs/deuda-tecnica.md`.**
 
 - **D-10** (`ventas.cliente_id` sin FK) pasa a «Cerradas en Fase 1»: se cerró ADOPTANDO el `cliente_id` del dispositivo como PK de `clientes` (operación `cliente.crear` del lote + `id` opcional en el POST), como manda su vencimiento — la columna `ventas.cliente_id` se queda sin FK a propósito (decisión 4 del plan: la venta no se rechaza jamás y Postgres no aplica RLS al verificar llaves, así que la FK no añadiría aislamiento, solo fragilidad). Evidencia: `uv run pytest tests/test_fiado_sync.py -q` → 11 passed (el cliente sube por el lote y la venta fiada crea su crédito), y `tests/test_aislamiento_fiado.py` verde.
 - **D-27 (nueva):** el abono de fiado NO viaja por el lote del sync — es REST online (decisión 6 del plan; ADR-022 contempla el abono offline). El ancla ya está puesta (el `id` es requerido en el POST), así que `fiado.abonar` entra después sin romper nada. Vencimiento: Fase 1, antes del piloto.
@@ -3994,7 +3994,7 @@ Gate por módulo (del plan maestro de Fase 1), a verificar ítem a ítem:
 
 Formato del registro para ambas: qué es, por qué se aceptó, riesgo si se olvida, vencimiento, candados mientras tanto.
 
-- [ ] **Paso 4: commit de cierre**
+- [x] **Paso 4: commit de cierre**
 
 ```bash
 git add docs/estado.md docs/deuda-tecnica.md
