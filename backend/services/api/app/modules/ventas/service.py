@@ -43,7 +43,7 @@ from decimal import Decimal
 
 import structlog
 from pydantic import ValidationError as PydanticValidationError
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -764,11 +764,19 @@ class VentasService:
     async def delta_productos(self, desde: datetime) -> DeltaSalida:
         """Los cambios del catálogo desde el watermark del dispositivo.
 
-        El watermark de salida (`hasta`) es `now()` DEL SERVIDOR: el reloj
-        del cliente nunca arbitra el drenado (ADR-017). Las bajas lógicas
+        El watermark de salida (`hasta`) lo pone el reloj DEL SERVIDOR, nunca
+        el del cliente (ADR-017), y lleva un margen de 5 segundos: es
+        `now() - interval '5 seconds'`, no `now()` pelado. Sin el margen, una
+        edición cuya transacción confirmó ENTRE la captura del watermark y la
+        lectura (su `updated_at` quedó por debajo del `hasta`) no llegaba en
+        esta respuesta ni en ninguna posterior — el próximo `desde` del
+        dispositivo ya era mayor que su `updated_at` y el catálogo quedaba
+        stale en silencio (deuda D-18). El margen re-entrega lo confirmado en
+        la ventana, y el solape es inocuo porque el cliente hace upsert por
+        id (ver el docstring del endpoint `/sync/delta`). Las bajas lógicas
         llegan como tumbas en `eliminados` para que IndexedDB las quite.
         """
-        ahora = (await self._session.execute(select(func.now()))).scalar_one()
+        ahora = (await self._session.execute(select(func.now() - text("interval '5 seconds'")))).scalar_one()
         toco = or_(
             func.coalesce(Producto.updated_at, Producto.created_at) > desde,
             Producto.deleted_at > desde,

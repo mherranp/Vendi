@@ -232,6 +232,28 @@ jobs:
           bash scripts/migrate.sh
           bash scripts/seed.sh
 
+      - name: Candado metadata↔DDL (alembic check)
+        # Deuda D-17: compara el metadata de los modelos SQLAlchemy con el DDL
+        # que producen las migraciones en el head. Una columna añadida al modelo
+        # sin migración (o al revés) sale aquí como «New upgrade operations
+        # detected» y pone el job en rojo, en vez de llegar silenciosa a
+        # producción si ningún test la toca.
+        #
+        # Vive en ESTE job y no en `backend-lint` porque reutiliza el stack ya
+        # levantado y migrado: alembic necesita la base en el head y los roles
+        # del initdb (vendi_platform, con BYPASSRLS), que un `services:` de
+        # GitHub no reproduce (ver la nota 1 de la cabecera). El coste del
+        # candado aquí es segundos; en un job propio sería levantar Postgres
+        # otra vez. Corre con el mismo DSN de plataforma que migrate.sh, y el
+        # `env.py` importa TODOS los módulos de modelos — si falta uno, el
+        # propio check lo delata proponiendo borrar su tabla.
+        run: |
+          set -a; . ./.env; set +a
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.override.dev.yml \
+            run --rm --no-deps \
+            -e DATABASE_URL="postgresql+asyncpg://vendi_platform:${VENDI_PLATFORM_DB_PASSWORD}@postgres:5432/vendi" \
+            api uv run --project /src --no-sync alembic check
+
       - name: verify-setup.sh
         # En CI sí debe pasar entero: /etc/hosts hace el papel del resolver que
         # en el portátil del desarrollador exige sudo. Un fallo aquí es un fallo

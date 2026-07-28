@@ -593,7 +593,12 @@ async def test_el_delta_devuelve_los_cambios_desde_el_watermark(servicio, semill
     await _vender(servicio, semilla, uuid.uuid4())
     delta = await servicio.delta_productos(desde)
     assert semilla["producto"] in [p.id for p in delta.productos]
-    assert delta.hasta > desde, "el watermark lo pone el servidor (ADR-017)"
+    # El watermark lo pone el servidor (ADR-017), con el margen de solape de
+    # D-18: `hasta = now() - 5s`, así que solo se garantiza por encima de un
+    # `desde` anterior al margen — que es el caso real (el `desde` lo puso el
+    # delta anterior, no este segundo). El contrato fino del margen lo fijan
+    # los dos tests siguientes.
+    assert delta.hasta > desde - timedelta(seconds=5)
 
     # Y una baja lógica llega como tumba:
     engine = create_async_engine(pg_platform_url)
@@ -606,3 +611,42 @@ async def test_el_delta_devuelve_los_cambios_desde_el_watermark(servicio, semill
     delta = await servicio.delta_productos(desde)
     assert semilla["producto2"] in delta.eliminados
     assert semilla["producto2"] not in [p.id for p in delta.productos]
+
+
+async def test_el_watermark_del_delta_lleva_el_margen_de_solape(servicio, semilla, pg_platform_url):
+    """D-18: el `hasta` es `now() - interval '5 seconds'`, no `now()` pelado.
+
+    El cliente guarda el `hasta` tal cual y lo manda como `desde` del próximo
+    delta, así que el margen es lo que re-entrega lo confirmado dentro de la
+    ventana entre la captura del watermark y la lectura."""
+    delta = await servicio.delta_productos(datetime(2020, 1, 1, tzinfo=UTC))
+    ahora_real = (await _uno(pg_platform_url, "SELECT now() AS n")).n
+    assert delta.hasta <= ahora_real - timedelta(seconds=4), (
+        "el watermark lleva el margen de 5s: un `hasta = now()` deja una ventana "
+        "en la que una edición confirmada se pierde para siempre (D-18)"
+    )
+    assert delta.hasta >= ahora_real - timedelta(seconds=60), "el margen es de segundos, no de minutos"
+
+
+async def test_un_producto_editado_dentro_del_margen_llega_en_el_siguiente_delta(servicio, semilla, pg_platform_url):
+    """D-18: una edición cuyo `updated_at` cae dentro del margen se entrega de
+    nuevo en el delta siguiente (el solape es inocuo: el cliente hace upsert
+    por id — ver el docstring del endpoint `/sync/delta`)."""
+    # Edición «justo ahora»: su updated_at queda por ENCIMA del hasta con margen.
+    engine = create_async_engine(pg_platform_url)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE productos SET precio_venta = 2600, updated_at = now() WHERE id = :p"),
+            {"p": semilla["producto"]},
+        )
+    await engine.dispose()
+
+    delta1 = await servicio.delta_productos(datetime(2020, 1, 1, tzinfo=UTC))
+    assert semilla["producto"] in [p.id for p in delta1.productos]
+
+    # El dispositivo guarda `hasta` tal cual y lo usa como `desde` del próximo delta:
+    delta2 = await servicio.delta_productos(delta1.hasta)
+    assert semilla["producto"] in [p.id for p in delta2.productos], (
+        "sin el margen, la edición confirmada en la ventana no llega en esta "
+        "respuesta ni en ninguna otra: el catálogo del dispositivo queda stale"
+    )
