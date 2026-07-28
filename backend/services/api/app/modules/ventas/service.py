@@ -50,10 +50,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.catalogo.models import Producto
 from app.modules.catalogo.schemas import ProductoSalida
 from app.modules.fiado.models import Cliente
+from app.modules.fiado.schemas import AbonoSync
 from app.modules.fiado.sync import (
     anular_credito_de_venta,
     comparar_cliente_con_la_aceptada,
     crear_credito_de_venta,
+    registrar_abono_sync,
     registrar_cliente_sync,
 )
 from app.modules.inventario.stock import aplicar_movimiento
@@ -67,7 +69,7 @@ from app.modules.ventas.schemas import (
     VentaAnularSync,
     VentaCrearSync,
 )
-from vendi_core.errors.domain import ConflictError, ValidationError
+from vendi_core.errors.domain import ConflictError, DomainError, ValidationError
 from vendi_core.events.service import DomainEventService
 
 logger = structlog.get_logger()
@@ -96,6 +98,7 @@ class VentasService:
         puede_anular: bool,
         puede_fiar: bool = False,
         puede_gestionar_clientes: bool = False,
+        puede_abonar: bool = False,
     ):
         self._session = session
         self._tenant_id = tenant_id
@@ -110,6 +113,10 @@ class VentasService:
         #: clientes — los fixtures que venden fiado lo declaran.
         self._puede_fiar = puede_fiar
         self._puede_gestionar_clientes = puede_gestionar_clientes
+        #: Ídem para `fiado.abonar` (cierre de D-27): el cobro offline exige
+        #: `fiado:abonar` por operación — la de un almacenista es `rechazada`,
+        #: no un 403 del lote.
+        self._puede_abonar = puede_abonar
         #: El dispositivo del lote en curso (lo fija `procesar_lote` tras
         #: verificar que existe y es del tenant — vía RLS).
         self._dispositivo_id: uuid.UUID | None = None
@@ -200,6 +207,8 @@ class VentasService:
                     return await self._anular_venta(operacion)
                 if operacion.tipo == "cliente.crear":
                     return await self._registrar_cliente(operacion)
+                if operacion.tipo == "fiado.abonar":
+                    return await self._registrar_abono(operacion)
                 return self._rechazada(
                     operacion, "tipo_desconocido", f"Tipo de operación desconocido: {operacion.tipo!r}."
                 )
@@ -207,6 +216,18 @@ class VentasService:
             # La red final: una constraint saltó dentro del savepoint (ya
             # revertido). Se traduce a rechazo de dominio; el lote sigue.
             return await self._traducir_integridad(operacion, exc)
+        except DomainError as exc:
+            if exc.code == "campos_desconocidos":
+                # La defensa estructural de `_validar_datos` NO es un rechazo
+                # por operación: es el request entero el que cae (422), como
+                # antes de que existiera esta traducción.
+                raise
+            # Un rechazo de dominio del servicio del fiado (abono que excede
+            # el saldo, crédito inexistente o no abonable, id divergente): el
+            # savepoint ya se revirtió al propagar; se traduce a `rechazada`
+            # por operación con el `code` como motivo y el lote sigue (cierre
+            # de D-27, mismo criterio que `_traducir_integridad`).
+            return self._rechazada(operacion, exc.code, exc.message, exc.details or None)
 
     async def _registrar_cliente(self, operacion: OperacionSync) -> ResultadoOperacion:
         """`cliente.crear` (módulo 5, decisión 2): el cliente del fiado pudo
@@ -219,6 +240,34 @@ class VentasService:
                 {"permiso": "cliente:gestionar"},
             )
         return await registrar_cliente_sync(self._session, self._tenant_id, operacion)
+
+    async def _registrar_abono(self, operacion: OperacionSync) -> ResultadoOperacion:
+        """`fiado.abonar` (cierre de D-27): cobrar un fiado sin señal es tan
+        normal como vender sin señal — el abono encola como cualquier otra
+        operación. El permiso `fiado:abonar` se exige POR OPERACIÓN (mismo
+        patrón que `puede_anular`): la operación de un almacenista es
+        `rechazada`, no un 403 del lote entero."""
+        if not self._puede_abonar:
+            return self._rechazada(
+                operacion,
+                "permiso_ausente",
+                "Cobrar un abono requiere el permiso fiado:abonar.",
+                {"permiso": "fiado:abonar"},
+            )
+        datos = self._validar_datos(operacion, AbonoSync)
+        if isinstance(datos, ResultadoOperacion):
+            return datos
+        if datos.metodo_pago == "efectivo":
+            # La plata entra a la gaveta de la sesión abierta AL APLICARSE en
+            # el servidor (patrón del abono online, decisión 9 del módulo
+            # fiado): el `sesion_caja_id` no lo manda el cliente. Como en la
+            # venta y la anulación, si no hay sesión abierta se abre la
+            # implícita (ADR-018) — el cobro ocurrió físicamente y el lote no
+            # lo rechaza. Va ANTES del bloqueo del crédito (sesión →
+            # crédito): el orden que rompe el ciclo de espera con la
+            # anulación de la venta fiada.
+            await self._resolver_sesion_caja()
+        return await registrar_abono_sync(self._session, self._tenant_id, self._actor_id, operacion, datos)
 
     @staticmethod
     def _rechazada(

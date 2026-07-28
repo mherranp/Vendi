@@ -8,7 +8,14 @@ import pytest
 from pydantic import ValidationError
 
 from app.modules.catalogo.schemas import TOPE_PRECIO
-from app.modules.fiado.schemas import AbonoCrear, ClienteCrear, ClienteCrearSync, ClienteEditar, CreditoReprogramar
+from app.modules.fiado.schemas import (
+    AbonoCrear,
+    AbonoSync,
+    ClienteCrear,
+    ClienteCrearSync,
+    ClienteEditar,
+    CreditoReprogramar,
+)
 
 
 def _cliente(**cambios) -> dict:
@@ -97,3 +104,43 @@ def test_cliente_sync_es_el_contrato_del_lote():
     assert ok.limite_credito is None
     with pytest.raises(ValidationError):
         ClienteCrearSync.model_validate({"nombre": "X"})
+
+
+def _abono_sync(**cambios) -> dict:
+    base = {
+        "cliente_id": str(uuid.uuid4()),
+        "credito_id": str(uuid.uuid4()),
+        "monto": 13000,
+        "metodo_pago": "efectivo",
+    }
+    base.update(cambios)
+    return base
+
+
+def test_abono_sync_exige_cliente_credito_monto_y_metodo():
+    """El contrato de `fiado.abonar` (cierre de D-27): el `cliente_id` es
+    REQUERIDO como ancla y `sesion_caja_id` no viaja — lo resuelve el
+    servidor (`extra="forbid"`)."""
+    ok = AbonoSync.model_validate(_abono_sync())
+    assert ok.monto == 13000 and ok.metodo_pago == "efectivo" and ok.nota is None
+    for falta in ("cliente_id", "credito_id", "monto", "metodo_pago"):
+        datos = _abono_sync()
+        del datos[falta]
+        with pytest.raises(ValidationError):
+            AbonoSync.model_validate(datos)
+    with pytest.raises(ValidationError):
+        AbonoSync.model_validate(_abono_sync(sesion_caja_id=str(uuid.uuid4())))
+
+
+def test_abono_sync_lleva_las_cotas_del_abono_online():
+    for malo in (0, -1, TOPE_PRECIO + 1):
+        with pytest.raises(ValidationError):
+            AbonoSync.model_validate(_abono_sync(monto=malo))
+    with pytest.raises(ValidationError):
+        AbonoSync.model_validate(_abono_sync(metodo_pago="nequi"))
+    ok = AbonoSync.model_validate(_abono_sync(nota="  dejó   el  destajo  "))
+    assert ok.nota == "dejó el destajo"
+    # El validador `before` de la nota NO asume str (BUG-1 del catálogo): un
+    # tipo erróneo lo rechaza pydantic, no un AttributeError.
+    with pytest.raises(ValidationError):
+        AbonoSync.model_validate(_abono_sync(nota=123))

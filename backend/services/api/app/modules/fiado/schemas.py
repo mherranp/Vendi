@@ -111,6 +111,31 @@ class AbonoCrear(BaseModel):
     _nota_limpia = field_validator("nota", mode="before")(_limpiar_texto)
 
 
+class AbonoSync(BaseModel):
+    """Los datos de una operación `fiado.abonar` del lote (cierre de D-27).
+
+    El id del abono ES el id de la operación (`OperacionSync.id`): la ancla
+    de ADR-022 («un abono registrado sin señal tiene que sincronizar sin
+    duplicarse, y la idempotencia la da el id») ya estaba puesta en el POST
+    online y aquí se reutiliza intacta.
+
+    `cliente_id` es REQUERIDO como ancla de coherencia: el dispositivo cobró
+    contra el crédito que veía en el cuaderno de ESE cliente; si el crédito
+    resulta ser de otro, la operación es `rechazada` y no un descuento a
+    ciegas. `sesion_caja_id` NO viaja: la sesión la resuelve el servidor al
+    aplicar el abono (patrón del abono online, decisión 9 del plan)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    cliente_id: uuid.UUID
+    credito_id: uuid.UUID
+    monto: int = Field(gt=0, le=TOPE_PRECIO)
+    metodo_pago: Literal[*METODOS_DE_PAGO_ABONO]
+    nota: str | None = Field(default=None, max_length=300)
+
+    _nota_limpia = field_validator("nota", mode="before")(_limpiar_texto)
+
+
 class CreditoReprogramar(BaseModel):
     """«Deme hasta el otro viernes»: nueva fecha de vencimiento. El campo es
     REQUERIDO: `null` explícito deja el fiado sin recordatorio, pero ese
@@ -195,6 +220,7 @@ class CreditoDetalleSalida(CreditoResumenSalida):
 __all__ = [
     "AbonoCrear",
     "AbonoSalida",
+    "AbonoSync",
     "ClienteConSaldo",
     "ClienteCrear",
     "ClienteCrearSync",

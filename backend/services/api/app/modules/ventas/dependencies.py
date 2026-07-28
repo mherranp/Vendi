@@ -17,6 +17,7 @@ from vendi_core.auth.context import UserContext
 from vendi_core.auth.dependencies import get_current_user
 from vendi_core.auth.policies import (
     PERM_CLIENTE_GESTIONAR,
+    PERM_FIADO_ABONAR,
     PERM_FIADO_CREAR,
     PERM_PRODUCTO_LEER,
     PERM_VENTA_ANULAR,
@@ -50,6 +51,7 @@ async def servicio_de_ventas(
         puede_anular=has_permission(user, PERM_VENTA_ANULAR),
         puede_fiar=has_permission(user, PERM_FIADO_CREAR),
         puede_gestionar_clientes=has_permission(user, PERM_CLIENTE_GESTIONAR),
+        puede_abonar=has_permission(user, PERM_FIADO_ABONAR),
     )
 
 

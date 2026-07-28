@@ -7,6 +7,11 @@ operación, igual que llama a `inventario.stock.aplicar_movimiento`:
   fiado pudo nacer offline en el mismo dispositivo (ADR-018 permite fiar
   sin red), y su id del dispositivo ES la PK — el cierre de D-10 por
   adopción, mismo patrón que `ventas` y `productos`.
+- `registrar_abono_sync`: la operación `fiado.abonar` (cierre de D-27).
+  Cobrar un fiado sin señal es tan normal como vender sin señal: el abono
+  encola como cualquier otra operación y se aplica por el MISMO camino del
+  abono online (`FiadoService.registrar_abono`), con el id de la operación
+  como ancla de idempotencia (ADR-022).
 - `crear_credito_de_venta`: la venta fiada se convierte en crédito en la
   misma transacción del lote. El cupo se evalúa pero NUNCA se rechaza
   (ADR-018): el exceso se registra en el log y viaja en el resultado.
@@ -25,8 +30,9 @@ from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.fiado.models import ESTADOS_CON_DEUDA, Cliente, FiadoCredito
-from app.modules.fiado.schemas import ClienteCrearSync
+from app.modules.fiado.models import ESTADOS_CON_DEUDA, Cliente, FiadoAbono, FiadoCredito
+from app.modules.fiado.schemas import AbonoCrear, AbonoSync, ClienteCrearSync
+from app.modules.fiado.service import FiadoService
 from app.modules.ventas.models import Venta
 from app.modules.ventas.schemas import OperacionSync, ResultadoOperacion
 from vendi_core.events.service import DomainEventService
@@ -153,6 +159,59 @@ async def registrar_cliente_sync(
     # deja propagar a `_aplicar_operacion` (mismo criterio que la venta).
     await session.flush()
     logger.info("cliente_registrado_sync", cliente_id=str(cliente.id))
+    return ResultadoOperacion(id=operacion.id, tipo=operacion.tipo, resultado="aceptada")
+
+
+async def registrar_abono_sync(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    actor_id: str,
+    operacion: OperacionSync,
+    datos: AbonoSync,
+) -> ResultadoOperacion:
+    """Aplica una operación `fiado.abonar` del lote (cierre de D-27).
+
+    La aplicación vive ENTERA en `FiadoService.registrar_abono` — el mismo
+    camino del abono online: FOR UPDATE sobre el crédito, exceso de saldo
+    `abono_excede_saldo`, idempotencia por el id y divergencia tipada. Aquí
+    esos errores de dominio NO son una respuesta HTTP: suben como excepción
+    fuera del SAVEPOINT de la operación y `_aplicar_operacion` los traduce a
+    `rechazada` con el `code` como motivo — una operación mala no arrastra
+    el lote (mismo criterio que `_traducir_integridad`).
+
+    Dos cosas sí son del lote:
+
+    - El ancla de coherencia: `cliente_id` es REQUERIDO en `AbonoSync` y el
+      crédito tiene que ser DE ese cliente; si no, `rechazada`
+      `abono_cliente_divergente` antes de tocar nada. El crédito invisible
+      (otro tenant, RLS) sigue el camino del online: `credito_no_encontrado`,
+      sin fuga — el motivo es idéntico al de un crédito inexistente.
+    - El veredicto aceptada/duplicada: `registrar_abono` devuelve el abono
+      existente en el reintento idéntico (y revienta con la divergencia),
+      así que la existencia previa de la PK es lo que distingue `duplicada`
+      de `aceptada` — la fila es la prueba (ADR-017), como en toda la cola.
+
+    La sesión de caja del efectivo la garantiza quien llama
+    (`VentasService._registrar_abono` la resuelve —y si hace falta abre la
+    implícita— ANTES de entrar aquí): el abono offline cae en la sesión
+    abierta al APLICARSE en el servidor, igual que el online (decisión 9)."""
+    credito = await session.get(FiadoCredito, datos.credito_id)
+    if credito is not None and credito.cliente_id != datos.cliente_id:
+        return _rechazada(
+            operacion,
+            "abono_cliente_divergente",
+            "El abono apunta a un crédito que no es de ese cliente.",
+            {"cliente_id": str(datos.cliente_id), "credito_id": str(datos.credito_id)},
+        )
+    existente = await session.get(FiadoAbono, operacion.id)
+    servicio = FiadoService(session, tenant_id, actor_id)
+    await servicio.registrar_abono(
+        datos.credito_id,
+        AbonoCrear(id=operacion.id, monto=datos.monto, metodo_pago=datos.metodo_pago, nota=datos.nota),
+    )
+    if existente is not None:
+        return _duplicada(operacion)
+    logger.info("fiado_abono_registrado_sync", abono_id=str(operacion.id), credito_id=str(datos.credito_id))
     return ResultadoOperacion(id=operacion.id, tipo=operacion.tipo, resultado="aceptada")
 
 
