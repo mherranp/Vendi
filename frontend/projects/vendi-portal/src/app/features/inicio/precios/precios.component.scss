@@ -1,0 +1,108 @@
+.precios {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--vd-espacio-6);
+  padding: var(--vd-espacio-12) var(--vd-espacio-4);
+  text-align: center;
+
+  &__titulo {
+    margin: 0;
+    font-size: var(--vd-texto-3xl);
+  }
+
+  &__subtitulo {
+    margin: 0;
+    max-width: 36rem;
+    color: var(--vd-texto-secundario);
+  }
+
+  &__prueba {
+    margin: 0;
+  }
+
+  &__tiers {
+    display: grid;
+    gap: var(--vd-espacio-4);
+    width: 100%;
+    max-width: 60rem;
+
+    @media (min-width: 48rem) {
+      grid-template-columns: repeat(3, 1fr);
+      align-items: stretch;
+    }
+  }
+
+  &__tier {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vd-espacio-3);
+    padding: var(--vd-espacio-6);
+    border: 1px solid var(--vd-borde-normal);
+    border-radius: var(--vd-radio-lg);
+    background: var(--vd-superficie-1);
+    text-align: start;
+
+    h3 {
+      margin: 0;
+      font-size: var(--vd-texto-xl);
+    }
+
+    &--destacado {
+      border-color: var(--vd-marca-500);
+      box-shadow: var(--vd-sombra-md);
+    }
+
+    ul {
+      display: grid;
+      gap: var(--vd-espacio-2);
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      font-size: var(--vd-texto-sm);
+    }
+  }
+
+  &__para {
+    margin: 0;
+    color: var(--vd-texto-secundario);
+    font-size: var(--vd-texto-sm);
+  }
+
+  &__precio {
+    margin: 0;
+    font-size: var(--vd-texto-3xl);
+    font-weight: 700;
+  }
+
+  &__periodo {
+    font-size: var(--vd-texto-sm);
+    font-weight: 400;
+    color: var(--vd-texto-secundario);
+  }
+
+  &__dia {
+    margin: 0;
+    font-size: var(--vd-texto-sm);
+    color: var(--vd-texto-secundario);
+  }
+
+  &__dian {
+    width: 100%;
+    max-width: 60rem;
+    padding: var(--vd-espacio-6);
+    border: 1px dashed var(--vd-borde-normal);
+    border-radius: var(--vd-radio-lg);
+    text-align: start;
+
+    h3 {
+      margin: 0 0 var(--vd-espacio-2);
+      font-size: var(--vd-texto-lg);
+    }
+
+    p {
+      margin: 0;
+      color: var(--vd-texto-secundario);
+    }
+  }
+}

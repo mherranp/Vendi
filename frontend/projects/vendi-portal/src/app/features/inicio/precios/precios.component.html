@@ -1,0 +1,46 @@
+<section class="precios" id="precios" aria-labelledby="precios-titulo">
+  <h2 id="precios-titulo" class="precios__titulo">{{ 'portal.precios.titulo' | translate }}</h2>
+  <p class="precios__subtitulo">{{ 'portal.precios.subtitulo' | translate }}</p>
+  <p class="precios__prueba">
+    <vd-status-badge variante="exito" [etiqueta]="'portal.precios.prueba_badge' | translate" />
+  </p>
+
+  <div class="precios__tiers">
+    @for (tier of tiers; track tier.id; let indice = $index) {
+      <article class="precios__tier" [class.precios__tier--destacado]="tier.destacado">
+        <h3>{{ 'portal.precios.' + tier.id | translate }}</h3>
+        <p class="precios__para">{{ 'portal.precios.' + tier.id + '_para' | translate }}</p>
+        <p class="precios__precio">
+          {{ precioDe(tier) }}
+          <span class="precios__periodo">
+            {{
+              (tier.precioMensualPesos === 0
+                ? 'portal.precios.gratis_precio_nota'
+                : 'portal.precios.por_mes'
+              ) | translate
+            }}
+          </span>
+        </p>
+        @if (porDiaDe(tier); as porDia) {
+          <p class="precios__dia">{{ 'portal.precios.por_dia' | translate: { valor: porDia } }}</p>
+        }
+        <ul>
+          @for (fila of filas; track fila.clave) {
+            <li>
+              <strong>{{ fila.clave | translate }}:</strong>
+              {{ textoDeCelda(fila.valores[indice]) }}
+            </li>
+          }
+        </ul>
+      </article>
+    }
+  </div>
+
+  <article class="precios__dian" aria-labelledby="dian-titulo">
+    <h3 id="dian-titulo">
+      {{ 'portal.precios.dian_titulo' | translate }}
+      <vd-status-badge variante="info" [etiqueta]="'portal.precios.dian_badge' | translate" />
+    </h3>
+    <p>{{ 'portal.precios.dian_descripcion' | translate }}</p>
+  </article>
+</section>

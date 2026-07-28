@@ -71,6 +71,35 @@
       "cta_entrar": "Ya tengo cuenta: entrar a mi negocio",
       "nota_prueba": "Al darte de alta tienes 1 mes de Pro completo. Sin tarjeta, sin letra pequeña.",
       "whatsapp_mensaje": "Hola, quiero probar Vendi en mi tienda"
+    },
+    "precios": {
+      "titulo": "Precios claros, en pesos",
+      "subtitulo": "Empieza gratis y crece cuando lo necesites. Sin contratos ni permanencia.",
+      "por_mes": "al mes",
+      "gratis": "Gratis",
+      "light": "Light",
+      "pro": "Pro",
+      "gratis_para": "Para arrancar",
+      "light_para": "Para la tienda que crece",
+      "pro_para": "Para sacarle todo el jugo",
+      "gratis_precio_nota": "para siempre",
+      "por_dia": "menos de {{valor}} al día",
+      "prueba_badge": "1 mes de Pro gratis al darte de alta, sin tarjeta",
+      "fila_productos": "Productos",
+      "fila_usuarios": "Usuarios",
+      "fila_fiado": "Fiado y clientes",
+      "fila_asistente": "Asistente con IA",
+      "fila_reportes": "Reportes con IA",
+      "ilimitado": "Ilimitado",
+      "si": "Incluido",
+      "no": "No incluido",
+      "asistente_5_mes": "5 consultas al mes",
+      "asistente_30_dia": "30 consultas al día",
+      "reportes_briefing": "Briefing diario",
+      "reportes_completos": "Completos",
+      "dian_titulo": "Facturación electrónica DIAN",
+      "dian_badge": "Próximamente",
+      "dian_descripcion": "Factura electrónica y POS electrónico como add-on. Llega con la Fase 2."
     }
   }
 }
