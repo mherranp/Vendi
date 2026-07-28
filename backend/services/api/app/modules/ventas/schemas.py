@@ -23,7 +23,7 @@ demás al 422 (decisión 6 del plan).
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Literal
 
@@ -116,6 +116,11 @@ class VentaCrearSync(BaseModel):
     medio_pago: Literal["efectivo", "fiado"]
     total_centavos: int = Field(ge=0, le=TOPE_PRECIO)
     cliente_id: uuid.UUID | None = None
+    #: Solo fiado (ADR-022): la pone el tendero por fiado (la app propone el
+    #: default, p. ej. 15 días). NULL = crédito sin recordatorio, declarado
+    #: en pantalla. En una venta que no es fiada es `rechazada`
+    #: `fecha_vencimiento_solo_en_fiado` (regla de negocio por operación).
+    fecha_vencimiento: date | None = None
     creada_en_cliente: datetime
     items: list[VentaItemSync] = Field(min_length=1, max_length=TOPE_ITEMS_POR_VENTA)
 

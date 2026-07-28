@@ -15,7 +15,14 @@ from app.modules.tenants.dependencies import exigir_negocio_activo
 from app.modules.ventas.service import VentasService
 from vendi_core.auth.context import UserContext
 from vendi_core.auth.dependencies import get_current_user
-from vendi_core.auth.policies import PERM_PRODUCTO_LEER, PERM_VENTA_ANULAR, PERM_VENTA_CREAR, has_permission
+from vendi_core.auth.policies import (
+    PERM_CLIENTE_GESTIONAR,
+    PERM_FIADO_CREAR,
+    PERM_PRODUCTO_LEER,
+    PERM_VENTA_ANULAR,
+    PERM_VENTA_CREAR,
+    has_permission,
+)
 from vendi_core.tenant.context import TenantContext
 
 exigir_venta_crear = exigir_permiso(PERM_VENTA_CREAR)
@@ -41,6 +48,8 @@ async def servicio_de_ventas(
         tenant_id=tenant.tenant_id,
         actor_id=user.user_id,
         puede_anular=has_permission(user, PERM_VENTA_ANULAR),
+        puede_fiar=has_permission(user, PERM_FIADO_CREAR),
+        puede_gestionar_clientes=has_permission(user, PERM_CLIENTE_GESTIONAR),
     )
 
 

@@ -49,6 +49,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.catalogo.models import Producto
 from app.modules.catalogo.schemas import ProductoSalida
+from app.modules.fiado.models import Cliente
+from app.modules.fiado.sync import (
+    anular_credito_de_venta,
+    comparar_cliente_con_la_aceptada,
+    crear_credito_de_venta,
+    registrar_cliente_sync,
+)
 from app.modules.inventario.stock import aplicar_movimiento
 from app.modules.ventas.models import CajaSesion, Dispositivo, Venta, VentaItem
 from app.modules.ventas.schemas import (
@@ -81,13 +88,28 @@ _CAMPOS_DEL_HECHO = (
 class VentasService:
     """Operaciones de ventas y sync de UN negocio: el del GUC de la sesión."""
 
-    def __init__(self, session: AsyncSession, tenant_id: uuid.UUID, actor_id: str, puede_anular: bool):
+    def __init__(
+        self,
+        session: AsyncSession,
+        tenant_id: uuid.UUID,
+        actor_id: str,
+        puede_anular: bool,
+        puede_fiar: bool = False,
+        puede_gestionar_clientes: bool = False,
+    ):
         self._session = session
         self._tenant_id = tenant_id
         self._actor_id = actor_id
         #: Lo deriva el router del token (`has_permission(user, "venta:anular")`).
         #: El servicio no lee claims: recibe el veredicto (ADR-015/ADR-023).
         self._puede_anular = puede_anular
+        #: Mismo patrón (módulo 5, decisión 10): la venta fiada exige
+        #: `fiado:crear` y la operación `cliente.crear` exige
+        #: `cliente:gestionar`, ambos por operación. Fail-closed por defecto:
+        #: quien construya el servicio sin los veredictos no fía ni crea
+        #: clientes — los fixtures que venden fiado lo declaran.
+        self._puede_fiar = puede_fiar
+        self._puede_gestionar_clientes = puede_gestionar_clientes
         #: El dispositivo del lote en curso (lo fija `procesar_lote` tras
         #: verificar que existe y es del tenant — vía RLS).
         self._dispositivo_id: uuid.UUID | None = None
@@ -176,6 +198,8 @@ class VentasService:
                     return await self._registrar_venta(operacion)
                 if operacion.tipo == "venta.anular":
                     return await self._anular_venta(operacion)
+                if operacion.tipo == "cliente.crear":
+                    return await self._registrar_cliente(operacion)
                 return self._rechazada(
                     operacion, "tipo_desconocido", f"Tipo de operación desconocido: {operacion.tipo!r}."
                 )
@@ -183,6 +207,18 @@ class VentasService:
             # La red final: una constraint saltó dentro del savepoint (ya
             # revertido). Se traduce a rechazo de dominio; el lote sigue.
             return await self._traducir_integridad(operacion, exc)
+
+    async def _registrar_cliente(self, operacion: OperacionSync) -> ResultadoOperacion:
+        """`cliente.crear` (módulo 5, decisión 2): el cliente del fiado pudo
+        nacer offline; su id del dispositivo ES la PK (cierre de D-10)."""
+        if not self._puede_gestionar_clientes:
+            return self._rechazada(
+                operacion,
+                "permiso_ausente",
+                "Crear clientes requiere el permiso cliente:gestionar.",
+                {"permiso": "cliente:gestionar"},
+            )
+        return await registrar_cliente_sync(self._session, self._tenant_id, operacion)
 
     @staticmethod
     def _rechazada(
@@ -228,6 +264,20 @@ class VentasService:
                 datos = VentaCrearSync.model_validate(operacion.datos)
                 return await self._comparar_con_la_aceptada(operacion, existente, datos)
             return self._rechazada(operacion, "venta_id_divergente", "Ese id de venta ya existe.")
+        if "clientes_pkey" in detalle:
+            # El id choca con una fila ya insertada (misma lógica que
+            # `ventas_pkey`): si es visible, es el MISMO cliente (duplicada o
+            # divergente); si no, es de otro negocio → rechazada tipada.
+            if operacion.tipo == "cliente.crear":
+                existente = await self._session.get(Cliente, operacion.id)
+                if existente is not None:
+                    return await comparar_cliente_con_la_aceptada(operacion, existente)
+            return self._rechazada(operacion, "cliente_id_divergente", "Ese id de cliente ya existe.")
+        if "ux_fiado_creditos_venta" in detalle:
+            # El crédito de esta venta ya existe: la operación se aplicó
+            # antes (carrera de reintentos). Es duplicada, no error — mismo
+            # criterio que `ux_movimientos_origen` (ADR-020).
+            return self._duplicada(operacion)
         raise
 
     # --- venta.crear ------------------------------------------------------------
@@ -244,6 +294,14 @@ class VentasService:
         error = self._reglas_de_negocio(operacion, datos)
         if error is not None:
             return error
+
+        if datos.medio_pago == "fiado" and not self._puede_fiar:
+            return self._rechazada(
+                operacion,
+                "permiso_ausente",
+                "Fiar requiere el permiso fiado:crear.",
+                {"permiso": "fiado:crear"},
+            )
 
         productos: dict[uuid.UUID, Producto] = {}
         cantidad_por_producto: dict[uuid.UUID, Decimal] = {}
@@ -324,6 +382,15 @@ class VentasService:
             for producto_id, producto in productos.items():
                 await self._mover_stock(producto, -cantidad_por_producto[producto_id], referencia_id=venta.id)
 
+        cupo_excedido = False
+        if datos.estado == "completada" and datos.medio_pago == "fiado" and venta.total_centavos > 0:
+            # La venta fiada se convierte en crédito EN LA MISMA TRANSACCIÓN
+            # (módulo 5, decisión 1): confirman o revientan juntas. Un fiado
+            # de total 0 no genera crédito (no hay nada que deber). El cupo
+            # se evalúa pero NUNCA se rechaza (ADR-018): el exceso viaja en
+            # `detalles` para que la app lo muestre al confirmar el sync.
+            cupo_excedido = await crear_credito_de_venta(self._session, self._tenant_id, venta, datos.fecha_vencimiento)
+
         await self._emitir(
             "venta.creada",
             venta,
@@ -347,7 +414,12 @@ class VentasService:
             },
         )
         logger.info("venta_registrada", venta_id=str(venta.id), estado=venta.estado)
-        return ResultadoOperacion(id=operacion.id, tipo=operacion.tipo, resultado="aceptada")
+        return ResultadoOperacion(
+            id=operacion.id,
+            tipo=operacion.tipo,
+            resultado="aceptada",
+            detalles={"cupo_excedido": True} if cupo_excedido else None,
+        )
 
     def _validar_datos(self, operacion: OperacionSync, modelo):
         """`datos` se valida POR OPERACIÓN (decisión 6): una operación mal
@@ -389,6 +461,12 @@ class VentasService:
                 operacion,
                 "cliente_solo_en_fiado",
                 "Solo una venta fiada lleva cliente.",
+            )
+        if datos.medio_pago != "fiado" and datos.fecha_vencimiento is not None:
+            return self._rechazada(
+                operacion,
+                "fecha_vencimiento_solo_en_fiado",
+                "Solo una venta fiada lleva fecha de vencimiento.",
             )
         suma = sum(i.cantidad * i.precio_unitario_centavos for i in datos.items)
         if suma != datos.total_centavos:
@@ -525,6 +603,13 @@ class VentasService:
         # devolución por la ventana `[abierta_en, cerrada_en)` que contiene
         # esta marca, no por la sesión de la venta.
         venta.anulada_en = datetime.now(UTC)
+        if venta.medio_pago == "fiado":
+            # La anulación de la venta fiada anula el crédito en la misma
+            # transacción (módulo 5, decisión 3): los abonos son historia
+            # intocable (ADR-022) y la devolución del dinero es un gesto de
+            # caja MANUAL del tendero — «déjelo ahí a favor» es tan legítimo
+            # como devolverla, y automatizarla decidiría por él.
+            await anular_credito_de_venta(self._session, self._tenant_id, venta.id)
         await self._emitir(
             "venta.anulada",
             venta,
