@@ -67,8 +67,23 @@ export class PosComponent implements OnInit {
     return formatearPesos(totalLineaCentavos(linea.precio_unitario_centavos, linea.cantidad_mili));
   }
 
-  async ngOnInit(): Promise<void> {
+  /**
+   * La promesa del arranque completo. Angular ignora lo que devuelve
+   * `ngOnInit`, así que se guarda aquí: el `catch` la deja siempre observada
+   * y el spec la espera para no cerrar la base de pruebas a mitad del ciclo.
+   */
+  arranque: Promise<void> = Promise.resolve();
+
+  ngOnInit(): void {
     this.sincronizador.escucharConectividad();
+    this.arranque = this.arrancarDatos().catch((error) => {
+      // Sin base local no hay POS offline: se avisa y la pantalla queda viva.
+      console.error('El arranque del POS falló.', error);
+      this.notificador.error(this.traductor.instant('layout.error_inesperado'));
+    });
+  }
+
+  private async arrancarDatos(): Promise<void> {
     await this.sincronizador.recuperarEnviosInterrumpidos();
     await this.refrescarDatos();
   }
@@ -177,12 +192,24 @@ export class PosComponent implements OnInit {
         this.traductor.instant('pos.cobrada', { numero: venta.consecutivo_local }),
       );
       this.sincronizador.notificarVentaCobrada();
+    } catch (error) {
+      // Un fallo de Dexie aquí significa que la venta NO quedó registrada:
+      // hay que decirlo en voz alta, no dejar la promesa sin observar.
+      console.error('El cobro falló antes de escribir la venta local.', error);
+      this.notificador.error(this.traductor.instant('pos.error_cobro'));
     } finally {
       this.cobrando.set(false);
     }
   }
 
   async reintentar(): Promise<void> {
-    await this.sincronizador.reintentar();
+    try {
+      await this.sincronizador.reintentar();
+    } catch (error) {
+      // El backoff del sincronizador lo volverá a intentar solo; el aviso es
+      // para que el tendero sepa que el gesto manual no surtió efecto.
+      console.error('El reintento manual del drenado falló.', error);
+      this.notificador.error(this.traductor.instant('pos.error_reintento'));
+    }
   }
 }

@@ -38,8 +38,8 @@ module.exports = defineConfig([
     // `selectoresExtra` del helper: si se declararan en un bloque aparte, los dos
     // `no-restricted-syntax` se pisarían y solo sobreviviría el último.
     rules: fronteraDeCapa(
-      ['@capacitor/*'],
-      'ADR-011: `native` es el único punto del workspace autorizado a importar @capacitor/*. Usa su fachada (p. ej. `esPlataformaNativa()` de `native`) en vez de @capacitor/core.',
+      ['@capacitor/*', 'dexie'],
+      'ADR-011/ADR-017: `native` es el único punto autorizado a importar @capacitor/* y `data-access` el único autorizado a importar dexie — IndexedDB es la verdad local y la app la consume por los servicios offline de data-access (VendiDb, VentasOfflineService, SincronizadorService, CatalogoLocalService), nunca por el motor a pelo.',
       [
         {
           selector: 'Literal[value=/vendi\\.co\\/(pro|checkout|cuenta)/i]',

@@ -8,8 +8,10 @@ import { AuthService, ConfiguracionAuth } from 'auth';
  * (`browserFlow: browser-passwordless` en `infra/keycloak/realm-vendi-co.json`).
  * Eso es configuración del realm, no del cliente: aquí no hay nada que activar.
  * Lo único que esta app tiene que hacer bien es PKCE —lo pone `AuthService`—
- * y no meter el login en un WebView, cosa que en web no aplica y en móvil
- * resuelve la librería `native` (subproyecto 2).
+ * y no meter el login en un WebView. Este commit ES el subproyecto 2 y su
+ * alcance honesto deja la auth nativa (navegador del sistema vía `native`)
+ * fuera, registrada como deuda D-29: el canal del piloto es la PWA, donde
+ * este flujo web funciona tal cual.
  *
  * ## Por qué `check-sso` y no `login-required`
  *

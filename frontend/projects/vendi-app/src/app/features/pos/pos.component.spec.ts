@@ -8,7 +8,14 @@ import {
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideTranslateService } from '@ngx-translate/core';
-import { DispositivoService, SincronizadorService, VendiDb } from 'data-access';
+import {
+  DispositivoService,
+  Notificador,
+  SincronizadorService,
+  VendiDb,
+  VentasOfflineService,
+} from 'data-access';
+import { expect, vi } from 'vitest';
 import { PosComponent } from './pos.component';
 
 class DispositivoFalso {
@@ -91,6 +98,10 @@ describe('PosComponent (el POS offline)', () => {
     // esperar la estabilidad, o whenStable() espera una respuesta que nadie da.
     await responderArranque(http);
     await fixture.whenStable();
+    // whenStable() no ve las promesas de Dexie (van por fuera de la zona):
+    // el arranque se espera por su propia promesa, o el afterEach podría
+    // borrar la base con el ciclo de ngOnInit todavía en vuelo.
+    await fixture.componentInstance.arranque;
     return fixture.componentInstance;
   }
 
@@ -200,5 +211,35 @@ describe('PosComponent (el POS offline)', () => {
     );
 
     expect(TestBed.inject(SincronizadorService).pendientes()).toBe(1);
+  });
+
+  it('un fallo de la base al cobrar se notifica y la promesa NO queda sin observar', async () => {
+    const componente = await crearComponente();
+    await sembrarProducto();
+    await componente.buscar('arroz');
+    componente.agregar(componente.resultados()[0]);
+
+    vi.spyOn(TestBed.inject(VentasOfflineService), 'cobrar').mockRejectedValueOnce(
+      new Error('Dexie caido'),
+    );
+
+    await componente.cobrar(); // resuelve: el catch la observa
+
+    expect(await db.ventas_locales.count()).toBe(0);
+    expect(componente.lineas().length).toBe(1); // el ticket sigue ahí
+    expect(componente.cobrando()).toBe(false);
+    expect(TestBed.inject(Notificador).ultimo()?.tipo).toBe('error');
+  });
+
+  it('un fallo del reintento manual se notifica y la promesa resuelve', async () => {
+    const componente = await crearComponente();
+
+    vi.spyOn(TestBed.inject(SincronizadorService), 'reintentar').mockRejectedValueOnce(
+      new Error('Dexie caido'),
+    );
+
+    await componente.reintentar(); // resuelve: el catch la observa
+
+    expect(TestBed.inject(Notificador).ultimo()?.tipo).toBe('error');
   });
 });

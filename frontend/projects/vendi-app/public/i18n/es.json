@@ -57,10 +57,6 @@
       "invalido": "Valor inválido"
     }
   },
-  "proximamente": {
-    "titulo": "Muy pronto en tu bolsillo",
-    "descripcion": "Estamos terminando la aplicación para tu tienda. Mientras tanto, puedes administrar tu negocio desde el navegador."
-  },
   "pos": {
     "buscar_placeholder": "Buscar por nombre o código…",
     "ticket": "Ticket",
@@ -77,6 +73,8 @@
     "cliente_nuevo": "Crear cliente con este nombre",
     "cobrar": "Cobrar {{total}}",
     "cobrada": "Venta #{{numero}} registrada",
+    "error_cobro": "No se pudo registrar la venta. Inténtalo de nuevo: nada quedó guardado.",
+    "error_reintento": "No se pudo sincronizar ahora. Se reintentará solo.",
     "ultima_venta": "Última venta: #{{numero}}",
     "pendientes": "{{cantidad}} por sincronizar",
     "sincronizando": "Sincronizando…",
