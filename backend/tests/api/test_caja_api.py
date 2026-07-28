@@ -126,6 +126,36 @@ def test_el_cajero_no_ve_el_esperado_ni_el_historial(app_con_base):
     assert cliente.get("/api/v1/caja/sesiones", headers=dueno).json()["total"] == 1
 
 
+def test_el_retiro_dueno_solo_lo_ve_quien_cierra(app_con_base):
+    """C-3 del QA: el retiro del dueño es tan sensible como el costo (la
+    lección de `ultimo_costo`). El cajero lista los movimientos de su sesión
+    (`caja:leer`) pero el `retiro_dueno` no aparece — ni en la lista ni en
+    el total —; el dueño (`caja:cerrar`) lo ve."""
+    cliente, validador, _ = app_con_base
+    negocio = _crear_negocio(cliente, validador, "Caja 4B")
+    dueno = _cabeceras_de(validador, ROL_DUENO, negocio, "tok-d4b")
+    cajero = _cabeceras_de(validador, ROL_CAJERO, negocio, "tok-c4b")
+    _abrir(cliente, dueno, base=50000)
+    retiro = cliente.post(
+        "/api/v1/caja/movimientos",
+        json=_movimiento(categoria="retiro_dueno", monto=200000, motivo="Retiro del dueño"),
+        headers=dueno,
+    )
+    assert retiro.status_code == 201, retiro.text
+    luz = cliente.post("/api/v1/caja/movimientos", json=_movimiento(), headers=cajero)
+    assert luz.status_code == 201, luz.text
+
+    vista_cajero = cliente.get("/api/v1/caja/movimientos", headers=cajero)
+    assert vista_cajero.status_code == 200
+    cuerpo = vista_cajero.json()
+    assert cuerpo["total"] == 1
+    assert [m["categoria"] for m in cuerpo["items"]] == ["servicios"]
+
+    vista_dueno = cliente.get("/api/v1/caja/movimientos", headers=dueno)
+    assert vista_dueno.json()["total"] == 2
+    assert {m["categoria"] for m in vista_dueno.json()["items"]} == {"servicios", "retiro_dueno"}
+
+
 def test_el_movimiento_valida_cotas_motivo_y_forma(app_con_base):
     cliente, validador, _ = app_con_base
     negocio = _crear_negocio(cliente, validador, "Caja 5")

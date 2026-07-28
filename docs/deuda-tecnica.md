@@ -22,6 +22,7 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 | D-23 | El reintento de un ajuste cuyo producto fue dado de baja después devuelve 422 `producto_no_encontrado` en vez de la respuesta idempotente original | Fase 1 (antes del piloto) | backend |
 | D-24 | Un ajuste con el `id` de otro tenant recibe 409 `ajuste_id_divergente` (efecto de la RLS que oculta la fila; criterio no firmado, espejo de `dispositivo_id_en_conflicto`) | Fase 1 (antes del piloto) | backend |
 | D-25 | Una compra con `costo_unitario = 0` deja `ultimo_costo = 0` y el P&L mostrará margen del 100% hasta la próxima compra con costo real (decisión de producto pendiente) | Fase 1 (antes del piloto) | backend |
+| D-26 | Una sesión puede cerrarse con `efectivo_esperado` NEGATIVO sin error (un egreso mayor que todo el efectivo de la sesión; decisión de producto pendiente: ¿advertencia al cerrar?) | Fase 1 (antes del piloto) | backend |
 
 Cerradas en la Etapa 5, con su evidencia al final de este documento: **D-01**
 (ROPC), **D-04** (Keycloak sin `--optimized`), **D-06** (`alembic_version`
@@ -492,6 +493,12 @@ hacer al respecto.
   sin fuga del dato ajeno.
 - `backend/tests/test_inventario_adversarial.py::test_el_ajuste_con_producto_de_otro_tenant_es_422_sin_fuga`:
   el mismo criterio RLS-decide para el producto del ajuste.
+- `backend/tests/test_caja_adversarial.py::test_el_movimiento_con_id_de_otro_tenant_es_409_sin_tocar_la_fila_ajena`
+  (integration, corre en CI): el C-4 del QA de caja es el MISMO fenómeno
+  sobre `caja_movimientos` — el `id` del vecino choca contra
+  `caja_movimientos_pkey` y sale 409 `movimiento_id_divergente` tipado, con
+  la fila ajena intacta. La firma del criterio de D-24 cubre también este
+  espejo; no se registra como deuda aparte.
 
 ---
 
@@ -525,6 +532,40 @@ en el servicio con su test.
   (integration, corre en CI): el comportamiento actual queda fijado —
   total 0, `ultimo_costo` 0, stock sumado — para que cualquier cambio sea
   una decisión explícita, no un efecto colateral.
+
+---
+
+## D-26 · Una sesión puede cerrarse con `efectivo_esperado` NEGATIVO sin error
+
+**Qué es.** Un egreso manual mayor que todo el efectivo de la sesión (la
+gaveta no da para el retiro, y el sistema no lo impide) deja
+`efectivo_esperado < 0` y el cierre cuadra contra ese número: contado 0,
+diferencia positiva. Ningún CHECK ni validación del cierre prohíbe el
+esperado negativo.
+
+**Por qué se aceptó.** El sobrante/faltante son DATOS del arqueo, no
+errores: prohibir el cierre dejaría la caja abierta para siempre en un caso
+que ya ocurrió físicamente. Pero un esperado negativo no describe una
+realidad posible de la gaveta — indica algo roto upstream (un egreso mal
+registrado, una venta en efectivo que no entró) — y hoy cierra en silencio.
+Decisión de producto pendiente: ¿advertencia al cerrar (el arqueo lo
+declara y exige confirmación) en vez del cierre mudo?
+
+**Riesgo si se olvida.** El tendero cuadra contra un número imposible y el
+arqueo «bien hecho» esconde el desfalco o el error de digitación que lo
+produjo; la señal llega tarde o no llega.
+
+**Vencimiento: Fase 1, antes del piloto.** Tomar la decisión de producto
+(cierre mudo, advertencia con confirmación, o bloqueo) y reflejarla en
+`cerrar_sesion` con su test.
+
+**Candados mientras tanto:**
+
+- `backend/tests/test_caja_adversarial.py::test_el_esperado_negativo_cierra_sin_error`
+  (integration, corre en CI): el comportamiento actual queda fijado —
+  esperado negativo, cierre sin error, diferencia contra el negativo —
+  para que cualquier cambio sea una decisión explícita, no un efecto
+  colateral.
 
 ---
 

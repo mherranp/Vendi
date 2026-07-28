@@ -169,8 +169,10 @@ class CajaService:
         self._actor_id = actor_id
         #: Lo deriva el router del token (`has_permission(user, "caja:cerrar")`).
         #: El servicio no lee claims: recibe el veredicto (ADR-015/ADR-023) y
-        #: lo usa para condicionar el esperado vivo (decisión 4). El GUARD de
-        #: los endpoints de cierre está en el router, como manda ADR-023.
+        #: lo usa para condicionar el esperado vivo (decisión 4) y la
+        #: visibilidad de los `retiro_dueno` en el listado de movimientos
+        #: (C-3 del QA). El GUARD de los endpoints de cierre está en el
+        #: router, como manda ADR-023.
         self._puede_cerrar = puede_cerrar
 
     # --- Apertura -----------------------------------------------------------------
@@ -340,7 +342,13 @@ class CajaService:
     async def listar_movimientos(
         self, sesion_id: uuid.UUID | None, *, skip: int = 0, limit: int = 25
     ) -> tuple[list[CajaMovimiento], int]:
-        """Los movimientos de una sesión (la abierta si no se pide otra)."""
+        """Los movimientos de una sesión (la abierta si no se pide otra).
+
+        El `retiro_dueno` es tan sensible como el costo (C-3 del QA, la
+        lección de la fuga de `ultimo_costo`): sin `caja:cerrar` NO aparece
+        — ni en la lista ni en el total — aunque el cajero conozca el id de
+        la sesión. El flag llega del token vía la dependencia, igual que el
+        del esperado vivo (decisión 4)."""
         if sesion_id is None:
             sesion = await self._sesion_abierta()
             if sesion is None:
@@ -349,11 +357,12 @@ class CajaService:
         elif await self._session.get(CajaSesion, sesion_id) is None:
             # La sesión de otro negocio es invisible por RLS: mismo 404.
             raise NotFoundError("La sesión de caja no existe.", code="caja_sesion_no_encontrada")
-        base = select(CajaMovimiento).where(CajaMovimiento.sesion_caja_id == sesion_id)
+        filtro = [CajaMovimiento.sesion_caja_id == sesion_id]
+        if not self._puede_cerrar:
+            filtro.append(CajaMovimiento.categoria != "retiro_dueno")
+        base = select(CajaMovimiento).where(*filtro)
         total = (
-            await self._session.execute(
-                select(func.count()).select_from(CajaMovimiento).where(CajaMovimiento.sesion_caja_id == sesion_id)
-            )
+            await self._session.execute(select(func.count()).select_from(CajaMovimiento).where(*filtro))
         ).scalar_one()
         filas = (
             (

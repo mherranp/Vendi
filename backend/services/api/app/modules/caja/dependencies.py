@@ -45,9 +45,9 @@ async def servicio_de_caja(
     `exigir_negocio_activo` va primero: un negocio suspendido no opera caja
     (403 `tenant_suspendido`). El veredicto sobre cerrar se deriva AQUÍ del
     token y viaja al servicio como flag — el servicio no lee claims
-    (ADR-015/ADR-023) — y condiciona el esperado vivo (decisión 4). El
-    `actor_id` queda en cada sesión y movimiento: la auditoría del gesto
-    con dinero."""
+    (ADR-015/ADR-023) — y condiciona el esperado vivo (decisión 4) y la
+    visibilidad de los `retiro_dueno` (C-3). El `actor_id` queda en cada
+    sesión y movimiento: la auditoría del gesto con dinero."""
     return CajaService(
         session=session,
         tenant_id=tenant.tenant_id,

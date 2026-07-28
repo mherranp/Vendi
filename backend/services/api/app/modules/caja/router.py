@@ -176,6 +176,10 @@ async def listar_movimientos(
     servicio: CajaService = Depends(servicio_de_caja),
     _actor: UserContext = Depends(exigir_caja_leer),
 ) -> PagedList[MovimientoSalida]:
+    """El listado es del cajero (`caja:leer`) salvo los `retiro_dueno`: el
+    retiro del dueño es tan sensible como el costo y solo aparece — en la
+    lista y en el total — con `caja:cerrar` (C-3 del QA, misma lección que
+    `ultimo_costo`)."""
     filas, total = await servicio.listar_movimientos(sesion_id, skip=skip, limit=limit)
     return PagedList[MovimientoSalida](
         items=[MovimientoSalida.model_validate(f) for f in filas], total=total, skip=skip, limit=limit

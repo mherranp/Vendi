@@ -11,7 +11,9 @@ apertura explícita contra el sync, el id del vecino en apertura y movimiento,
 la frontera de medianoche Bogotá al minuto y el forecast sin un solo dato— y
 deja cada comportamiento FIJO en un test.
 
-Cuatro de estos tests DOCUMENTAN comportamientos discutibles a propósito:
+Tres de estos tests DOCUMENTAN comportamientos discutibles a propósito (el
+del `retiro_dueno` se discutía aquí y quedó RESUELTO con el arreglo del C-3:
+hoy fija la visibilidad por permiso, no la fuga):
 
 - La anulación que cae en el HUECO entre sesiones (venta anulada cuando no
   hay ninguna caja abierta) no entra en NINGÚN arqueo: ni reabre el congelado
@@ -21,9 +23,10 @@ Cuatro de estos tests DOCUMENTAN comportamientos discutibles a propósito:
   `.superpowers/sdd/qa-adversarial-caja-report.md`.
 - El egreso mayor que el efectivo disponible deja el esperado en NEGATIVO y
   la sesión cierra así: el sistema no exige que la gaveta dé para el retiro.
-- El cajero (sin `caja:cerrar`) no ve el historial de ARQUEOS, pero sí puede
-  listar los MOVIMIENTOS de una sesión cerrada cuyo id conoce (su POS lo
-  guarda): los `retiro_dueno` históricos no están detrás del permiso.
+- El cajero (sin `caja:cerrar`) no ve el historial de ARQUEOS, y aunque sí
+  puede listar los MOVIMIENTOS de una sesión cerrada cuyo id conoce (su POS
+  lo guarda), los `retiro_dueno` quedan fuera de su vista — de la lista y
+  del total — desde el arreglo del C-3 (misma lección que `ultimo_costo`).
 - El movimiento con el `id` de OTRO tenant sale 409 `movimiento_id_divergente`
   (la RLS oculta la fila; espejo de D-24, ya comentado en el servicio).
 
@@ -205,11 +208,19 @@ async def _anular(pg_platform_url: str, venta_id: uuid.UUID) -> None:
 
 
 def _movimiento(
-    monto: int, tipo: str = "ingreso", categoria: str = "otro", motivo: str = "Consignación del dueño", **cambios
+    monto: int,
+    /,
+    tipo: str = "ingreso",
+    categoria: str = "otro",
+    motivo: str = "Consignación del dueño",
+    **cambios,
 ) -> MovimientoCrear:
-    return MovimientoCrear.model_validate(
-        {"id": str(uuid.uuid4()), "tipo": tipo, "categoria": categoria, "monto": monto, "motivo": motivo, **cambios}
-    )
+    # `monto` es POSICIONAL-PURO a propósito: los ataques lo pisan por
+    # `**cambios` (`_movimiento(7000, monto=-1)`) y un parámetro nominal
+    # reventaría con "multiple values" antes de llegar al schema.
+    datos = {"id": str(uuid.uuid4()), "tipo": tipo, "categoria": categoria, "monto": monto, "motivo": motivo}
+    datos.update(cambios)
+    return MovimientoCrear.model_validate(datos)
 
 
 def _lote_venta(dispositivo_id: uuid.UUID, producto_id: uuid.UUID, total: int) -> LoteSync:
@@ -526,7 +537,12 @@ async def test_el_movimiento_con_id_de_otro_tenant_es_409_sin_tocar_la_fila_ajen
     movimiento choca con uno que EXISTE — en T2. La RLS lo hace invisible al
     `get`, el INSERT revienta contra la PK y sale 409 `movimiento_id_divergente`
     tipado, nunca el 500 del IntegrityError. La fila del vecino queda intacta y
-    aquí no se mueve nada: ni movimiento, ni evento."""
+    aquí no se mueve nada: ni movimiento, ni evento. Hace falta una sesión
+    abierta en T1: sin ella el servicio se detiene antes, en el 409
+    `caja_sin_sesion_abierta`, y el choque de PK nunca ocurre."""
+    await servicio.abrir_sesion(SesionAbrir.model_validate({"base_inicial": 0}))
+    await servicio._session.commit()
+
     with pytest.raises(ConflictError) as exc:
         await servicio.registrar_movimiento(
             _movimiento(7000, id=str(semilla["movimiento_t2"]), motivo="Consignación del dueño")
@@ -571,20 +587,27 @@ async def test_la_apertura_con_id_de_otro_tenant_es_409_sin_fuga(servicio, semil
 
 
 async def test_el_cajero_lista_movimientos_de_una_sesion_cerrada_cuyo_id_conoce(pg_app_url, servicio, pg_platform_url):
-    """DOCUMENTA la asimetría: el historial de ARQUEOS exige `caja:cerrar`
-    (decisión 4) pero el de MOVIMIENTOS solo `caja:leer` — y el servicio no
-    mira `puede_cerrar`. El POS del cajero conoce los ids de las sesiones que
-    operó (los guarda de la apertura), así que el cajero puede listar los
-    `retiro_dueno` históricos aunque nunca verá el arqueo. Discutido en el
-    reporte."""
+    """El historial de ARQUEOS exige `caja:cerrar` (decisión 4) y el de
+    MOVIMIENTOS solo `caja:leer`: el POS del cajero conoce los ids de las
+    sesiones que operó y puede listar sus movimientos aunque nunca verá el
+    arqueo. Pero el `retiro_dueno` es tan sensible como el costo (C-3 del
+    QA, la lección de `ultimo_costo`): sin `caja:cerrar` NO aparece — ni en
+    la lista ni en el total — aunque el cajero conozca la sesión. El dueño
+    lo ve todo."""
     sesion = await servicio.abrir_sesion(SesionAbrir.model_validate({"base_inicial": 50000}))
     await servicio._session.commit()
     await servicio.registrar_movimiento(
         _movimiento(900000, tipo="egreso", categoria="retiro_dueno", motivo="Retiro del dueño")
     )
+    await servicio.registrar_movimiento(_movimiento(300000, tipo="egreso", categoria="arriendo", motivo="Arriendo"))
     await servicio._session.commit()
     await servicio.cerrar_sesion(sesion.id, SesionCerrar.model_validate({"contado": 0}))
     await servicio._session.commit()
+
+    # El dueño (el fixture tiene puede_cerrar=True) ve los dos movimientos.
+    filas_dueno, total_dueno = await servicio.listar_movimientos(sesion.id)
+    assert total_dueno == 2
+    assert {f.categoria for f in filas_dueno} == {"retiro_dueno", "arriendo"}
 
     engine = create_engine(pg_app_url)
     factory = create_session_factory(engine)
@@ -593,8 +616,9 @@ async def test_el_cajero_lista_movimientos_de_una_sesion_cerrada_cuyo_id_conoce(
         async with factory() as s:
             cajero = CajaService(session=s, tenant_id=T1, actor_id="cajero-prueba", puede_cerrar=False)
             filas, total = await cajero.listar_movimientos(sesion.id)
+            # Ni en la lista ni en el total: para el cajero el retiro no existe.
             assert total == 1
-            assert filas[0].categoria == "retiro_dueno" and filas[0].monto == 900000
+            assert filas[0].categoria == "arriendo" and filas[0].monto == 300000
     finally:
         current_tenant_id.reset(marca)
         await engine.dispose()
