@@ -294,9 +294,12 @@ def test_el_delta_baja_el_catalogo_y_las_tumbas(app_con_base):
     assert cuerpo["eliminados"] == []
     hasta = cuerpo["hasta"]
 
-    # Sin cambios desde el watermark devuelto: nada nuevo.
+    # El watermark lleva el margen de solape de D-18 (`now() - 5s`): lo
+    # confirmado dentro del margen —como este producto, creado hace un
+    # instante— se re-entrega en el siguiente delta, y el cliente lo absorbe
+    # con su upsert por id. Nada MÁS nuevo puede llegar:
     respuesta = cliente.get("/api/v1/sync/delta", params={"desde": hasta}, headers=cabeceras)
-    assert respuesta.json()["productos"] == []
+    assert [p["id"] for p in respuesta.json()["productos"]] == [producto]
 
     # Una baja lógica llega como tumba:
     assert cliente.delete(f"/api/v1/productos/{producto}", headers=cabeceras).status_code == 204
