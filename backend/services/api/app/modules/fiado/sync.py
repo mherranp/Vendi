@@ -93,12 +93,19 @@ async def registrar_cliente_sync(
     PLACEHOLDER `(sin nombre)` del alta mínima —la venta fiada subió antes
     que su `cliente.crear`, ADR-018 permite fiar sin red— la operación NO es
     divergente: es el dato real llegando tarde. El placeholder se MEJORA en
-    el lugar (nombre/telefono/nota/limite_credito adoptan el payload) y la
-    operación sale `aceptada` con `detalles.placeholder_mejorado`. Sin esto
-    el cliente quedaba irrechazablemente `(sin nombre)` para siempre: todo
-    `cliente.crear` posterior chocaba con la divergencia. Un cliente ya
-    nombrado sigue yendo por `comparar_cliente_con_la_aceptada`, donde la
-    divergencia rechaza igual que antes."""
+    el lugar y la operación sale `aceptada` con
+    `detalles.placeholder_mejorado`. Sin esto el cliente quedaba
+    irrechazablemente `(sin nombre)` para siempre: todo `cliente.crear`
+    posterior chocaba con la divergencia. Un cliente ya nombrado sigue yendo
+    por `comparar_cliente_con_la_aceptada`, donde la divergencia rechaza
+    igual que antes.
+
+    El upgrade pisa SOLO lo que el payload trae (C-1 del QA adversarial): el
+    `nombre` siempre —es lo que define el upgrade— y telefono/nota/
+    limite_credito ÚNICAMENTE si vienen con valor no-None. Si entre el alta
+    mínima y el `cliente.crear` tardío alguien editó el cliente por REST
+    (teléfono, nota), un `None` del payload NO borra esa edición: el dato
+    que un humano escribió pesa más que la ausencia de dato en el lote."""
     try:
         datos = ClienteCrearSync.model_validate(operacion.datos)
     except PydanticValidationError as exc:
@@ -111,10 +118,17 @@ async def registrar_cliente_sync(
     existente = await session.get(Cliente, operacion.id)
     if existente is not None:
         if existente.nombre == NOMBRE_PLACEHOLDER:
+            # El nombre siempre: es lo que define el upgrade. El resto solo
+            # si el payload lo TRAE: un `None` no borra lo que alguien haya
+            # editado por REST entre el alta mínima y este `cliente.crear`
+            # tardío (C-1 del QA adversarial).
             existente.nombre = datos.nombre
-            existente.telefono = datos.telefono
-            existente.nota = datos.nota
-            existente.limite_credito = datos.limite_credito
+            if datos.telefono is not None:
+                existente.telefono = datos.telefono
+            if datos.nota is not None:
+                existente.nota = datos.nota
+            if datos.limite_credito is not None:
+                existente.limite_credito = datos.limite_credito
             await session.flush()
             logger.info("cliente_placeholder_mejorado", cliente_id=str(existente.id))
             return ResultadoOperacion(

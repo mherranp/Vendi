@@ -13,21 +13,19 @@ de OTRO tenant, el que vence exactamente hoy, el segundo recordatorio, la
 pasada del trabajo en paralelo, el abono contra el cierre, y el borde de 30
 días del forecast — y deja cada comportamiento FIJO en un test.
 
-Dos de estos tests DOCUMENTAN comportamientos discutibles a propósito (el
-assert es el comportamiento actual; la discusión vive en
-`.superpowers/sdd/qa-adversarial-fiado-report.md`):
+Dos de los ataques SÍ prosperaron y quedaron corregidos (sus tests ahora
+fijan el comportamiento corregido; la discusión vive en
+`.superpowers/sdd/qa-adversarial-fiado-report.md` y el cierre en
+`.superpowers/sdd/final-review-fiado-fixes.md`):
 
-- El upgrade del placeholder `(sin nombre)` PISA la edición REST intermedia:
-  si el tendero le puso nota y teléfono por la API antes de que suba el
-  `cliente.crear` del lote, el upgrade adopta el payload (con `None` y todo)
-  y la edición humana se pierde.
-- La venta fiada cuyo `cliente_id` existe en OTRO tenant sale `rechazada`
-  (el INSERT del placeholder revienta contra la PK invisible): es la única
-  venta que el sistema rechaza por un id ajeno, contra el espíritu de
-  «la venta no se rechaza jamás» de ADR-018.
-
-Si alguno cambia a un comportamiento distinto, el test se reescribe, no se
-borra.
+- C-1: el upgrade del placeholder `(sin nombre)` pisaba la edición REST
+  intermedia — un `None` del payload borraba la nota/teléfono que el
+  tendero había puesto por la API. Hoy el upgrade solo escribe los campos
+  que el payload TRAE (el nombre siempre; el resto, solo no-None).
+- C-2: la venta fiada cuyo `cliente_id` existe en OTRO tenant salía
+  `rechazada` con `cliente_id_divergente`, un motivo que describía mal el
+  caso. Hoy sale `cliente_no_encontrado`: el cliente no existe para este
+  tenant (no es un oráculo: no confirma que el id exista en otro lado).
 """
 
 from __future__ import annotations
@@ -522,12 +520,14 @@ async def test_anular_la_venta_fiada_del_vecino_es_rechazada_y_no_toca_el_credit
 
 
 @pytest.mark.asyncio
-async def test_el_upgrade_del_placeholder_pisa_la_edicion_rest_intermedia(ventas, servicio, semilla, pg_platform_url):
-    """DOCUMENTA UN COMPORTAMIENTO DISCUTIBLE (ver reporte QA): la venta fiada
-    sube primero y deja el placeholder; el tendero le pone nota y teléfono
-    por la API; el `cliente.crear` del lote llega tarde SIN esos datos y el
-    upgrade adopta el payload entero — la edición humana se pierde (`None`
-    incluido). El assert fija el comportamiento actual, no el deseado."""
+async def test_el_upgrade_del_placeholder_conserva_la_edicion_rest_intermedia(
+    ventas, servicio, semilla, pg_platform_url
+):
+    """C-1 corregido: la venta fiada sube primero y deja el placeholder; el
+    tendero le pone nota y teléfono por la API; el `cliente.crear` del lote
+    llega tarde SIN esos datos (`None`) y el upgrade pisa SOLO lo que el
+    payload trae — el nombre se actualiza (es lo que define el upgrade) y la
+    edición humana se conserva."""
     cliente_id, venta_id = uuid.uuid4(), uuid.uuid4()
     await ventas.procesar_lote(_lote(semilla, [_op_venta_fiada(venta_id, semilla, cliente_id, 12000, 1)]))
     await ventas._session.commit()
@@ -542,22 +542,52 @@ async def test_el_upgrade_del_placeholder_pisa_la_edicion_rest_intermedia(ventas
     assert resultados[0].resultado == "aceptada" and resultados[0].detalles == {"placeholder_mejorado": True}
     await ventas._session.commit()
     fila = await _uno(pg_platform_url, "SELECT nombre, telefono, nota FROM clientes WHERE id = :c", c=cliente_id)
-    assert fila == ("Don Carlos real", None, None)  # la nota y el teléfono de la API: borrados
+    assert fila == ("Don Carlos real", "3119876543", "El de la bicicleta")  # la edición REST sobrevive
 
 
 @pytest.mark.asyncio
-async def test_la_venta_fiada_con_cliente_id_de_otro_tenant_es_rechazada(ventas, semilla, pg_platform_url):
-    """DOCUMENTA UN COMPORTAMIENTO DISCUTIBLE (ver reporte QA): el `cliente_id`
-    existe en T2 (invisible por RLS) → el alta mínima del placeholder revienta
-    contra `clientes_pkey` y la VENTA sale `rechazada` — la única venta que el
-    sistema rechaza por un id ajeno, contra el «no se rechaza jamás» de
-    ADR-018. El motivo (`cliente_id_divergente`) además describe mal el caso.
-    No queda venta, ni crédito, ni placeholder: el fiado se pierde."""
-    venta_id = uuid.uuid4()
+async def test_el_upgrade_del_placeholder_si_pisa_lo_que_el_payload_trae(ventas, servicio, semilla, pg_platform_url):
+    """El reverso de C-1: lo que el `cliente.crear` tardío SÍ trae pisa la
+    edición REST intermedia — el lote es el dato del fiado y cuando habla,
+    manda. Aquí el teléfono del payload reemplaza al que el tendero editó."""
+    cliente_id, venta_id = uuid.uuid4(), uuid.uuid4()
+    await ventas.procesar_lote(_lote(semilla, [_op_venta_fiada(venta_id, semilla, cliente_id, 12000, 1)]))
+    await ventas._session.commit()
+    await servicio.editar_cliente(cliente_id, ClienteEditar.model_validate({"telefono": "3119876543"}))
+    await servicio._session.commit()
+
     resultados = await ventas.procesar_lote(
-        _lote(semilla, [_op_venta_fiada(venta_id, semilla, semilla["cliente_t2"], 25000, 1)])
+        _lote(semilla, [_op_cliente(cliente_id, 2, nombre="Don Carlos real", telefono="3001234567")])
     )
-    assert resultados[0].resultado == "rechazada" and resultados[0].motivo == "cliente_id_divergente"
+    assert resultados[0].resultado == "aceptada" and resultados[0].detalles == {"placeholder_mejorado": True}
+    await ventas._session.commit()
+    fila = await _uno(pg_platform_url, "SELECT nombre, telefono FROM clientes WHERE id = :c", c=cliente_id)
+    assert fila == ("Don Carlos real", "3001234567")  # el teléfono del payload sí pisa
+
+
+@pytest.mark.asyncio
+async def test_la_venta_fiada_con_cliente_id_de_otro_tenant_sale_cliente_no_encontrado(
+    ventas, semilla, pg_platform_url
+):
+    """C-2 corregido: el `cliente_id` existe en T2 (invisible por RLS) → el
+    alta mínima del placeholder revienta contra `clientes_pkey` y la venta
+    sale `rechazada` con el motivo HONESTO `cliente_no_encontrado` (el
+    cliente no existe para este tenant; no es un oráculo: el mensaje no
+    confirma que el id exista en otro negocio). Y la rechazada NO arrastra
+    el lote: la operación que la sigue se aplica normal."""
+    venta_id, cliente_propio, venta_buena = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    resultados = await ventas.procesar_lote(
+        _lote(
+            semilla,
+            [
+                _op_venta_fiada(venta_id, semilla, semilla["cliente_t2"], 25000, 1),
+                _op_cliente(cliente_propio, 2),
+                _op_venta_fiada(venta_buena, semilla, cliente_propio, 8000, 3, consecutivo=2),
+            ],
+        )
+    )
+    assert resultados[0].resultado == "rechazada" and resultados[0].motivo == "cliente_no_encontrado"
+    assert [r.resultado for r in resultados[1:]] == ["aceptada", "aceptada"]  # el lote sigue
     await ventas._session.commit()
     fila = await _uno(
         pg_platform_url,
@@ -568,6 +598,9 @@ async def test_la_venta_fiada_con_cliente_id_de_otro_tenant_es_rechazada(ventas,
         c=semilla["cliente_t2"],
     )
     assert (fila.ventas, fila.creditos, fila.clientes) == (0, 0, 1)  # la única fila es la del vecino
+    # Y la operación posterior no quedó arrastrada: su venta y su crédito sí existen.
+    buena = await _uno(pg_platform_url, "SELECT count(*) FROM fiado_creditos WHERE venta_id = :v", v=venta_buena)
+    assert buena == (1,)
 
 
 @pytest.mark.asyncio

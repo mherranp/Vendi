@@ -99,7 +99,11 @@ viajan en `ResultadoOperacion.motivo` cuando el resultado es `rechazada`. Los
 motivos estables son `tipo_desconocido`, `datos_invalidos`,
 `venta_id_divergente`, `producto_no_encontrado`, `consecutivo_duplicado`,
 `fiado_requiere_cliente`, `cliente_solo_en_fiado`, `total_incoherente`,
-`venta_no_encontrada`, `permiso_ausente`.
+`venta_no_encontrada`, `permiso_ausente`, `cliente_id_divergente`,
+`fecha_vencimiento_solo_en_fiado`, `cliente_no_encontrado` (la venta fiada
+cuyo `cliente_id` no existe en tu negocio: la auto-alta del placeholder
+choca contra la PK invisible por RLS; no es un oráculo — no confirma que el
+id exista en otro negocio).
 
 Eventos nuevos del outbox en este contrato: `compra.registrada` e
 `inventario.alerta_stock` — este último se emite solo al cruzar un umbral de

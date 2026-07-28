@@ -272,7 +272,21 @@ class VentasService:
                 existente = await self._session.get(Cliente, operacion.id)
                 if existente is not None:
                     return await comparar_cliente_con_la_aceptada(operacion, existente)
-            return self._rechazada(operacion, "cliente_id_divergente", "Ese id de cliente ya existe.")
+                return self._rechazada(operacion, "cliente_id_divergente", "Ese id de cliente ya existe.")
+            # La única otra operación que inserta en `clientes` es la auto-alta
+            # del placeholder de la venta fiada (`crear_credito_de_venta`): el
+            # choque contra la PK invisible por RLS significa que el
+            # `cliente_id` de la venta NO existe para este tenant. El motivo
+            # honesto es `cliente_no_encontrado` (C-2 del QA adversarial): no
+            # es un oráculo — no confirma que el id exista en otro negocio,
+            # solo que no es usable aquí — y describe lo que pasó, a
+            # diferencia del `cliente_id_divergente` anterior.
+            return self._rechazada(
+                operacion,
+                "cliente_no_encontrado",
+                "El cliente de la venta fiada no existe en tu negocio.",
+                {"cliente_id": operacion.datos.get("cliente_id")},
+            )
         if "ux_fiado_creditos_venta" in detalle:
             # El crédito de esta venta ya existe: la operación se aplicó
             # antes (carrera de reintentos). Es duplicada, no error — mismo
