@@ -252,7 +252,8 @@ async def test_el_cupo_no_rechaza_pero_el_exceso_viaja_en_el_resultado(servicio,
     )
     assert [r.resultado for r in resultados] == ["aceptada", "aceptada"]
     assert resultados[1].detalles == {"cupo_excedido": True}
-    # Y una venta dentro del cupo viaja sin la señal.
+    # La señal es del saldo ACUMULADO, no de la venta: una venta chica que
+    # llega después también viaja con ella porque el cliente sigue excedido.
     dentro = await servicio.procesar_lote(
         _lote(semilla, [_op_venta_fiada(uuid.uuid4(), semilla, cliente_id, 1000, 3, consecutivo=2)])
     )
@@ -327,3 +328,102 @@ async def test_el_lote_reenviado_no_duplica_cliente_credito_ni_eventos(servicio,
     filas = await _uno(pg_platform_url, "SELECT count(*) FROM fiado_creditos WHERE venta_id = :v", v=venta_id)
     assert filas == (1,)
     assert len(await _eventos(pg_platform_url, "fiado.credito_creado")) == 1
+
+
+@pytest.mark.asyncio
+async def test_crear_y_anular_la_misma_venta_fiada_en_el_mismo_lote(servicio, semilla, pg_platform_url):
+    """Pregunta b de la revisión: `venta.crear` fiada y `venta.anular` de la
+    MISMA venta en el MISMO lote. La venta queda `anulada` y su crédito
+    `anulado` con saldo 0 — no queda deuda huérfana de una venta que el
+    dispositivo anuló antes de subir."""
+    cliente_id, venta_id = uuid.uuid4(), uuid.uuid4()
+    resultados = await servicio.procesar_lote(
+        _lote(
+            semilla,
+            [
+                _op_cliente(cliente_id, 1),
+                _op_venta_fiada(venta_id, semilla, cliente_id, 25000, 2),
+                _op_anular(uuid.uuid4(), venta_id, 3),
+            ],
+        )
+    )
+    assert [r.resultado for r in resultados] == ["aceptada", "aceptada", "aceptada"]
+    await servicio._session.commit()
+    venta = await _uno(pg_platform_url, "SELECT estado FROM ventas WHERE id = :v", v=venta_id)
+    assert venta == ("anulada",)
+    credito = await _uno(
+        pg_platform_url, "SELECT estado, saldo_pendiente FROM fiado_creditos WHERE venta_id = :v", v=venta_id
+    )
+    assert credito == ("anulado", 0)
+
+
+@pytest.mark.asyncio
+async def test_el_cliente_crear_tardio_mejora_el_placeholder(servicio, semilla, pg_platform_url):
+    """El lote fuera de orden (fix post-review): la venta fiada sube ANTES
+    que su `cliente.crear` y deja el placeholder `(sin nombre)`. El
+    `cliente.crear` posterior con los datos reales NO es divergente: es el
+    upgrade — el placeholder adopta nombre/telefono/nota/limite_credito y la
+    operación sale `aceptada` con `placeholder_mejorado`."""
+    cliente_id, venta_id = uuid.uuid4(), uuid.uuid4()
+    resultados = await servicio.procesar_lote(
+        _lote(
+            semilla,
+            [
+                _op_venta_fiada(venta_id, semilla, cliente_id, 12000, 1),
+                _op_cliente(cliente_id, 2, nota="Vecino del 4", limite_credito=100000),
+            ],
+        )
+    )
+    assert [r.resultado for r in resultados] == ["aceptada", "aceptada"]
+    assert resultados[1].detalles == {"placeholder_mejorado": True}
+    await servicio._session.commit()
+    fila = await _uno(
+        pg_platform_url,
+        "SELECT nombre, telefono, nota, limite_credito FROM clientes WHERE id = :c",
+        c=cliente_id,
+    )
+    assert fila == ("Don Carlos", "3001234567", "Vecino del 4", 100000)
+    # Y el crédito del placeholder sigue ahí, ahora con dueño nombrado.
+    credito = await _uno(
+        pg_platform_url, "SELECT saldo_pendiente, estado FROM fiado_creditos WHERE venta_id = :v", v=venta_id
+    )
+    assert credito == (12000, "vigente")
+
+
+@pytest.mark.asyncio
+async def test_la_divergencia_sobre_un_cliente_real_sigue_rechazando(servicio, semilla, pg_platform_url):
+    """El upgrade es SOLO para el placeholder: un cliente ya nombrado que
+    recibe un `cliente.crear` divergente sale `rechazada
+    cliente_id_divergente` como siempre y conserva sus datos."""
+    cliente_id = uuid.uuid4()
+    await servicio.procesar_lote(_lote(semilla, [_op_cliente(cliente_id, 1)]))
+    divergente = await servicio.procesar_lote(
+        _lote(semilla, [_op_cliente(cliente_id, 2, nombre="Otro nombre", limite_credito=100000)])
+    )
+    assert divergente[0].resultado == "rechazada" and divergente[0].motivo == "cliente_id_divergente"
+    await servicio._session.commit()
+    fila = await _uno(pg_platform_url, "SELECT nombre, limite_credito FROM clientes WHERE id = :c", c=cliente_id)
+    assert fila == ("Don Carlos", None)
+
+
+@pytest.mark.asyncio
+async def test_el_reintento_del_upgrade_es_duplicada_sin_reescribir(servicio, semilla, pg_platform_url):
+    """El reenvío del `cliente.crear` que ya mejoró el placeholder es el
+    reintento legítimo: el cliente ya tiene esos mismos datos, así que sale
+    `duplicada` y nada cambia — el upgrade no vuelve a aplicarse."""
+    cliente_id, venta_id = uuid.uuid4(), uuid.uuid4()
+    lote = _lote(
+        semilla,
+        [
+            _op_venta_fiada(venta_id, semilla, cliente_id, 12000, 1),
+            _op_cliente(cliente_id, 2, limite_credito=100000),
+        ],
+    )
+    await servicio.procesar_lote(lote)
+    de_nuevo = await servicio.procesar_lote(lote)
+    assert [r.resultado for r in de_nuevo] == ["duplicada", "duplicada"]
+    await servicio._session.commit()
+    fila = await _uno(
+        pg_platform_url, "SELECT nombre, telefono, limite_credito FROM clientes WHERE id = :c", c=cliente_id
+    )
+    assert fila == ("Don Carlos", "3001234567", 100000)
