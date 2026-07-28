@@ -13,6 +13,104 @@
  */
 
 export interface paths {
+    "/api/v1/caja/movimientos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Movimientos de una sesión (la abierta, por defecto) */
+        get: operations["listar_movimientos_api_v1_caja_movimientos_get"];
+        put?: never;
+        /**
+         * Registrar un ingreso o egreso manual de caja
+         * @description Con `motivo` obligatorio e `id` del cliente requerido (es dinero: la
+         *     ancla hace seguro el reintento). Las ventas en efectivo y los abonos NO
+         *     son movimientos: el arqueo los suma desde su tabla de origen (ADR-021).
+         */
+        post: operations["registrar_movimiento_api_v1_caja_movimientos_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/caja/sesiones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Historial de sesiones con su arqueo congelado
+         * @description Faltantes y sobrantes históricos son un reporte: exige `caja:cerrar`
+         *     (decisión 4). Las columnas congeladas son la única fuente: jamás se
+         *     recalculan.
+         */
+        get: operations["listar_sesiones_api_v1_caja_sesiones_get"];
+        put?: never;
+        /**
+         * Abrir la caja del día
+         * @description UNA sesión abierta por tienda (ADR-021): la regla la hace cumplir el
+         *     índice único parcial, no el código. Acepta el `id` del cliente
+         *     (ADR-017): reenviar la misma apertura devuelve la sesión existente.
+         */
+        post: operations["abrir_caja_api_v1_caja_sesiones_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/caja/sesiones/actual": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * La sesión abierta, con el esperado vivo solo para quien cierra
+         * @description `efectivo_esperado` viaja en `null` sin `caja:cerrar` (decisión 4):
+         *     el esperado vivo es la cifra con la que se cuadra un faltante, y el
+         *     cajero no cierra ni ve reportes (ADR-023).
+         */
+        get: operations["sesion_actual_api_v1_caja_sesiones_actual_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/caja/sesiones/{sesion_id}/cerrar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cerrar la caja con arqueo (conteo físico)
+         * @description El arqueo (ADR-021): el servidor calcula `esperado = base + ventas en
+         *     efectivo + abonos (0 hasta el módulo 5) + ingresos − egresos −
+         *     devoluciones` sumando desde las tablas de origen, y lo CONGELA con el
+         *     `contado` y la `diferencia` en la sesión. Desde entonces nada lo reabre:
+         *     ni una venta que sincroniza tarde, ni una anulación posterior. El
+         *     reintento con el mismo conteo devuelve el arqueo firmado.
+         */
+        post: operations["cerrar_caja_api_v1_caja_sesiones__sesion_id__cerrar_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/compras": {
         parameters: {
             query?: never;
@@ -258,6 +356,52 @@ export interface paths {
          *     movimientos de inventario y el costo las compras (ADR-020).
          */
         patch: operations["actualizar_producto_api_v1_productos__producto_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/reportes/forecast": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Forecast de flujo de caja a 30 días
+         * @description Proyección explicada, no promesa (ADR-006): saldo vivo + promedio de
+         *     ventas en efectivo 30d + cobros de fiado (0 hasta el módulo 5,
+         *     declarado) − promedio de egresos de caja 30d. Cada número declara su
+         *     fuente.
+         */
+        get: operations["forecast_api_v1_reportes_forecast_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reportes/pyl": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * P&L simple del período (día/semana/mes en America/Bogota)
+         * @description Se calcula de lo que ya se registra (ADR-006): ventas por
+         *     `recibida_en`, costo con el `ultimo_costo` actual (declarado), compras
+         *     por fecha de factura y movimientos de caja. Cada número declara su
+         *     fuente en `fuentes`.
+         */
+        get: operations["pyl_api_v1_reportes_pyl_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/sync/delta": {
@@ -524,6 +668,75 @@ export interface components {
             tipo: string;
         };
         /**
+         * ArqueoConDesglose
+         * @description La respuesta del cierre: el arqueo congelado más la cuenta que lo
+         *     produjo. En el REINTENTO del cierre (mismo conteo) el desglose es null:
+         *     no se recalcula — el arqueo está congelado (Global Constraints).
+         */
+        ArqueoConDesglose: {
+            /**
+             * Abierta En
+             * Format: date-time
+             */
+            abierta_en: string;
+            /** Abierta Por */
+            abierta_por: string;
+            /** Base Inicial */
+            base_inicial: number;
+            /** Cerrada En */
+            cerrada_en?: string | null;
+            /** Cerrada Por */
+            cerrada_por?: string | null;
+            desglose?: components["schemas"]["DesgloseSalida"] | null;
+            /** Diferencia */
+            diferencia?: number | null;
+            /** Efectivo Contado */
+            efectivo_contado?: number | null;
+            /** Efectivo Esperado */
+            efectivo_esperado?: number | null;
+            /** Estado */
+            estado: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
+         * ArqueoSalida
+         * @description Una sesión con su arqueo congelado (o abierta, con los campos del
+         *     cierre en null). Las columnas congeladas son la única fuente para una
+         *     sesión cerrada: jamás se recalculan.
+         */
+        ArqueoSalida: {
+            /**
+             * Abierta En
+             * Format: date-time
+             */
+            abierta_en: string;
+            /** Abierta Por */
+            abierta_por: string;
+            /** Base Inicial */
+            base_inicial: number;
+            /** Cerrada En */
+            cerrada_en?: string | null;
+            /** Cerrada Por */
+            cerrada_por?: string | null;
+            /** Diferencia */
+            diferencia?: number | null;
+            /** Efectivo Contado */
+            efectivo_contado?: number | null;
+            /** Efectivo Esperado */
+            efectivo_esperado?: number | null;
+            /** Estado */
+            estado: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
          * CompraCrear
          * @description Una compra a proveedor. `proveedor_nombre` es texto libre (ADR-020:
          *     la factura es un papel; no hay tabla de proveedores). El `id` del
@@ -633,6 +846,30 @@ export interface components {
             /** Productos */
             productos: components["schemas"]["ProductoSalida"][];
         };
+        /**
+         * DesgloseSalida
+         * @description La cuenta del arqueo (ADR-021: «una cuenta, no una pantalla mágica»).
+         *
+         *     `esperado = base + ventas_efectivo + abonos_efectivo + ingresos
+         *     − egresos − devoluciones`. `abonos_efectivo` es 0 hasta el módulo 5
+         *     (fiado, ADR-022) — declarado en `docs/api/README.md`.
+         */
+        DesgloseSalida: {
+            /** Abonos Efectivo */
+            abonos_efectivo: number;
+            /** Base Inicial */
+            base_inicial: number;
+            /** Devoluciones */
+            devoluciones: number;
+            /** Egresos */
+            egresos: number;
+            /** Esperado */
+            esperado: number;
+            /** Ingresos */
+            ingresos: number;
+            /** Ventas Efectivo */
+            ventas_efectivo: number;
+        };
         /** DispositivoRegistrar */
         DispositivoRegistrar: {
             /** Id */
@@ -679,6 +916,32 @@ export interface components {
          * @enum {string}
          */
         EstadoTenant: "activo" | "suspendido" | "eliminado";
+        /**
+         * ForecastSalida
+         * @description El forecast a 30 días: una proyección explicada, no una promesa
+         *     (ADR-006). Cada número declara su fuente; lo que no tiene fuente todavía
+         *     (cobros de fiado) viaja en 0 y lo dice.
+         */
+        ForecastSalida: {
+            /** Cobros Fiado Proyectados Centavos */
+            cobros_fiado_proyectados_centavos: number;
+            /** Dias */
+            dias: number;
+            /** Dias Con Datos */
+            dias_con_datos: number;
+            /** Egresos Proyectados Centavos */
+            egresos_proyectados_centavos: number;
+            /** Fuentes */
+            fuentes: {
+                [key: string]: string;
+            };
+            /** Saldo Actual Centavos */
+            saldo_actual_centavos: number;
+            /** Saldo Proyectado Centavos */
+            saldo_proyectado_centavos: number;
+            /** Ventas Proyectadas Centavos */
+            ventas_proyectadas_centavos: number;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -693,6 +956,60 @@ export interface components {
             dispositivo_id: string;
             /** Operaciones */
             operaciones: components["schemas"]["OperacionSync"][];
+        };
+        /**
+         * MovimientoCrear
+         * @description Un ingreso o egreso manual de la gaveta.
+         *
+         *     `id` es REQUERIDO (decisión 6): es dinero, y solo la ancla hace seguro
+         *     el reintento tras un timeout. El `motivo` es obligatorio: un movimiento
+         *     de caja sin justificación es un desfalco con buenos modales.
+         */
+        MovimientoCrear: {
+            /**
+             * Categoria
+             * @enum {string}
+             */
+            categoria: "arriendo" | "servicios" | "retiro_dueno" | "otro";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Monto */
+            monto: number;
+            /** Motivo */
+            motivo: string;
+            /**
+             * Tipo
+             * @enum {string}
+             */
+            tipo: "ingreso" | "egreso";
+        };
+        /** MovimientoSalida */
+        MovimientoSalida: {
+            /** Categoria */
+            categoria: string;
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Monto */
+            monto: number;
+            /** Motivo */
+            motivo: string;
+            /** Registrado Por */
+            registrado_por: string;
+            /**
+             * Sesion Caja Id
+             * Format: uuid
+             */
+            sesion_caja_id: string;
+            /** Tipo */
+            tipo: string;
         };
         /**
          * OperacionSync
@@ -730,10 +1047,32 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** PagedList[ArqueoSalida] */
+        PagedList_ArqueoSalida_: {
+            /** Items */
+            items: components["schemas"]["ArqueoSalida"][];
+            /** Limit */
+            limit: number;
+            /** Skip */
+            skip: number;
+            /** Total */
+            total: number;
+        };
         /** PagedList[CompraSalida] */
         PagedList_CompraSalida_: {
             /** Items */
             items: components["schemas"]["CompraSalida"][];
+            /** Limit */
+            limit: number;
+            /** Skip */
+            skip: number;
+            /** Total */
+            total: number;
+        };
+        /** PagedList[MovimientoSalida] */
+        PagedList_MovimientoSalida_: {
+            /** Items */
+            items: components["schemas"]["MovimientoSalida"][];
             /** Limit */
             limit: number;
             /** Skip */
@@ -862,6 +1201,49 @@ export interface components {
             unidad_medida: string;
         };
         /**
+         * PyLSalida
+         * @description El P&L simple del período. Cada número declara su fuente en `fuentes`
+         *     (ADR-006: la pantalla dice de qué datos sale — condición firmada).
+         */
+        PyLSalida: {
+            /** Compras Proveedores Centavos */
+            compras_proveedores_centavos: number;
+            /** Costo De Lo Vendido Centavos */
+            costo_de_lo_vendido_centavos: number;
+            /**
+             * Desde
+             * Format: date-time
+             */
+            desde: string;
+            /** Egresos Caja Centavos */
+            egresos_caja_centavos: number;
+            /** Fuentes */
+            fuentes: {
+                [key: string]: string;
+            };
+            /**
+             * Hasta
+             * Format: date-time
+             */
+            hasta: string;
+            /** Ingresos Caja Centavos */
+            ingresos_caja_centavos: number;
+            /** Margen Bruto Centavos */
+            margen_bruto_centavos: number;
+            /** Periodo */
+            periodo: string;
+            /** Resultado Operativo Centavos */
+            resultado_operativo_centavos: number;
+            /** Ventas Anuladas Centavos */
+            ventas_anuladas_centavos: number;
+            /** Ventas Efectivo Centavos */
+            ventas_efectivo_centavos: number;
+            /** Ventas Fiado Centavos */
+            ventas_fiado_centavos: number;
+            /** Ventas Netas Centavos */
+            ventas_netas_centavos: number;
+        };
+        /**
          * RespuestaLote
          * @description Un resultado por operación, en el MISMO orden del lote.
          */
@@ -898,6 +1280,78 @@ export interface components {
             resultado: "aceptada" | "duplicada" | "rechazada";
             /** Tipo */
             tipo: string;
+        };
+        /**
+         * SesionAbrir
+         * @description Apertura explícita de la caja del día. `id` es el UUID del cliente
+         *     (ADR-017): reenviar la misma apertura devuelve la sesión existente.
+         */
+        SesionAbrir: {
+            /**
+             * Base Inicial
+             * @default 0
+             */
+            base_inicial: number;
+            /** Id */
+            id?: string | null;
+        };
+        /**
+         * SesionActualSalida
+         * @description La sesión abierta con su esperado VIVO — solo para quien cierra caja.
+         *
+         *     `efectivo_esperado` viaja en `null` sin `caja:cerrar` (decisión 4, mismo
+         *     patrón que `ultimo_costo` sin `compra:crear`): el esperado en vivo es la
+         *     cifra con la que se cuadra un faltante antes de que el dueño arquee, y
+         *     ADR-023 firma que el cajero no cierra ni ve reportes. El campo sigue en
+         *     el esquema; lo que cambia con el permiso es su valor, no la forma.
+         */
+        SesionActualSalida: {
+            /**
+             * Abierta En
+             * Format: date-time
+             */
+            abierta_en: string;
+            /** Abierta Por */
+            abierta_por: string;
+            /** Base Inicial */
+            base_inicial: number;
+            /** Efectivo Esperado */
+            efectivo_esperado?: number | null;
+            /** Estado */
+            estado: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
+         * SesionCerrar
+         * @description El arqueo: el conteo físico de la gaveta. El servidor calcula el
+         *     esperado y la diferencia y los CONGELA en la sesión (ADR-021).
+         */
+        SesionCerrar: {
+            /** Contado */
+            contado: number;
+        };
+        /** SesionSalida */
+        SesionSalida: {
+            /**
+             * Abierta En
+             * Format: date-time
+             */
+            abierta_en: string;
+            /** Abierta Por */
+            abierta_por: string;
+            /** Base Inicial */
+            base_inicial: number;
+            /** Estado */
+            estado: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
         };
         /**
          * StockSalida
@@ -974,6 +1428,363 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listar_movimientos_api_v1_caja_movimientos_get: {
+        parameters: {
+            query?: {
+                sesion_id?: string | null;
+                skip?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PagedList_MovimientoSalida_"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description La sesión no existe (o no hay abierta) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    registrar_movimiento_api_v1_caja_movimientos_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MovimientoCrear"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MovimientoSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No hay caja abierta, o el id del movimiento ya existe con datos distintos */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listar_sesiones_api_v1_caja_sesiones_get: {
+        parameters: {
+            query?: {
+                skip?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PagedList_ArqueoSalida_"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    abrir_caja_api_v1_caja_sesiones_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SesionAbrir"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SesionSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Ya hay una caja abierta (o el id de sesión está en uso) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    sesion_actual_api_v1_caja_sesiones_actual_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SesionActualSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No hay caja abierta */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cerrar_caja_api_v1_caja_sesiones__sesion_id__cerrar_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sesion_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SesionCerrar"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArqueoConDesglose"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description La sesión no existe */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description La sesión ya fue cerrada con otro conteo */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listar_compras_api_v1_compras_get: {
         parameters: {
             query?: {
@@ -2012,6 +2823,104 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    forecast_api_v1_reportes_forecast_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForecastSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    pyl_api_v1_reportes_pyl_get: {
+        parameters: {
+            query?: {
+                periodo?: "dia" | "semana" | "mes";
+                /** @description Ancla Bogotá (YYYY-MM-DD); por defecto, hoy */
+                fecha?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PyLSalida"];
+                };
+            };
+            /** @description Falta el token o no es válido */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Falta el permiso o el negocio está suspendido */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request malformado (validación de estructura o de dominio) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

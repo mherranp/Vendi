@@ -56,6 +56,14 @@ qué cambió en el contrato.
 | `POST /api/v1/inventario/ajustes` | `inventario:ajustar` | ajuste por conteo o merma; ONLINE (no viaja por el sync, ADR-020); `motivo` e `id` obligatorios; reintento idéntico = no-op, divergente = 409 |
 | `GET /api/v1/inventario/ajustes` | `inventario:ajustar` | listado paginado con motivo y `aplicado_por` |
 | `GET /api/v1/inventario/stock` | `producto:leer` | stock con nivel derivado (`agotado`/`critico`/`bajo`/`ok`); `solo_alertas=true` filtra |
+| `POST /api/v1/caja/sesiones` | `caja:abrir` | abre la caja del día con `base_inicial`; UNA abierta por tienda (índice único parcial, ADR-021); acepta `id` del cliente (idempotente); 409 `caja_ya_abierta` si ya hay |
+| `GET /api/v1/caja/sesiones/actual` | `caja:leer` | la sesión abierta; `efectivo_esperado` viaja en `null` sin `caja:cerrar` (mismo patrón que `ultimo_costo`); 404 `caja_sin_sesion_abierta` |
+| `GET /api/v1/caja/sesiones` | `caja:cerrar` | historial paginado con el arqueo congelado (faltantes/sobrantes son del dueño) |
+| `POST /api/v1/caja/sesiones/{id}/cerrar` | `caja:cerrar` | el arqueo: calcula `esperado = base + ventas efectivo completadas + abonos (0 hasta el módulo 5) + ingresos − egresos − devoluciones` desde las tablas de origen y lo CONGELA; reintento con el mismo `contado` devuelve lo firmado, con otro es 409 `caja_ya_cerrada` |
+| `POST /api/v1/caja/movimientos` | `caja:movimiento` | ingreso/egreso manual con `categoria` cerrada y `motivo` obligatorio; `id` del cliente requerido; reintento idéntico = no-op, divergente = 409; 409 `caja_sin_sesion_abierta` |
+| `GET /api/v1/caja/movimientos` | `caja:leer` | listado paginado de una sesión (la abierta por defecto) |
+| `GET /api/v1/reportes/pyl` | `reporte:leer` | P&L simple del período (`dia`/`semana`/`mes` en America/Bogota, `fecha` opcional); cada número declara su fuente en `fuentes`; el costo es `ultimo_costo` ACTUAL (declarado) |
+| `GET /api/v1/reportes/forecast` | `reporte:leer` | forecast a 30 días: saldo vivo + promedio ventas efectivo 30d + cobros fiado (0, declarado) − promedio egresos 30d |
 
 Todos los errores usan el mismo sobre: `{"success": false, "message": "...",
 "code": "..."}`. El `code` es estable y es el que debe consumir el frontend para
@@ -66,7 +74,9 @@ decidir qué mensaje mostrar — `tenant_suspendido`, `requiere_platform_admin`,
 `limite_de_productos_alcanzado`, `permiso_ausente`, `dispositivo_no_encontrado`,
 `dispositivo_id_en_conflicto`,
 `fecha_sin_zona`, `campos_desconocidos`, `compra_no_encontrada`,
-`compra_id_duplicado`, `ajuste_id_divergente`, `total_fuera_de_rango`.
+`compra_id_duplicado`, `ajuste_id_divergente`, `total_fuera_de_rango`,
+`caja_ya_abierta`, `caja_sin_sesion_abierta`, `caja_sesion_no_encontrada`,
+`caja_ya_cerrada`, `sesion_id_duplicado`, `movimiento_id_divergente`.
 
 En las respuestas de productos, `ultimo_costo` viaja en `null` para quien no
 tiene `compra:crear` (el cajero): los costos son el margen del negocio y viven
@@ -84,3 +94,21 @@ Eventos nuevos del outbox en este contrato: `compra.registrada` e
 `inventario.alerta_stock` — este último se emite solo al cruzar un umbral de
 stock hacia abajo, con payload `{producto_id, nivel, stock_actual,
 stock_minimo}`, sin PII.
+
+En `GET /api/v1/caja/sesiones/actual`, `efectivo_esperado` viaja en `null`
+para quien no tiene `caja:cerrar` (el cajero): el esperado vivo es la cifra
+con la que se cuadra un faltante antes del arqueo, y ADR-023 firma que el
+cajero no cierra ni ve reportes. El campo sigue presente en el esquema
+(anulable); lo que cambia con el permiso es su valor, no la forma.
+
+El arqueo cerrado no se recalcula jamás: las columnas congeladas de la
+sesión son la única fuente. Las ventas en efectivo y los abonos de fiado NO
+se duplican como movimientos (ADR-021): el arqueo los suma desde su tabla de
+origen — los abonos son 0 hasta el módulo 5 (ADR-022), declarado en el
+desglose y en el forecast. La devolución de una venta anulada tras el cierre
+cae en la sesión abierta en ese momento (vía `ventas.anulada_en`).
+
+Eventos nuevos del outbox en este contrato: `caja.sesion_abierta`,
+`caja.movimiento_registrado` y `caja.sesion_cerrada` — esta última con el
+resumen completo del arqueo (desglose, esperado, contado, diferencia), que
+es el insumo del briefing matutino de IA y de la telemetría.

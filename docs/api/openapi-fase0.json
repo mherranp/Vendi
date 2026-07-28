@@ -245,6 +245,200 @@
         "title": "AjusteSalida",
         "type": "object"
       },
+      "ArqueoConDesglose": {
+        "description": "La respuesta del cierre: el arqueo congelado más la cuenta que lo\nprodujo. En el REINTENTO del cierre (mismo conteo) el desglose es null:\nno se recalcula — el arqueo está congelado (Global Constraints).",
+        "properties": {
+          "abierta_en": {
+            "format": "date-time",
+            "title": "Abierta En",
+            "type": "string"
+          },
+          "abierta_por": {
+            "title": "Abierta Por",
+            "type": "string"
+          },
+          "base_inicial": {
+            "title": "Base Inicial",
+            "type": "integer"
+          },
+          "cerrada_en": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cerrada En"
+          },
+          "cerrada_por": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cerrada Por"
+          },
+          "desglose": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DesgloseSalida"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "diferencia": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diferencia"
+          },
+          "efectivo_contado": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Efectivo Contado"
+          },
+          "efectivo_esperado": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Efectivo Esperado"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "abierta_por",
+          "abierta_en",
+          "base_inicial",
+          "estado"
+        ],
+        "title": "ArqueoConDesglose",
+        "type": "object"
+      },
+      "ArqueoSalida": {
+        "description": "Una sesión con su arqueo congelado (o abierta, con los campos del\ncierre en null). Las columnas congeladas son la única fuente para una\nsesión cerrada: jamás se recalculan.",
+        "properties": {
+          "abierta_en": {
+            "format": "date-time",
+            "title": "Abierta En",
+            "type": "string"
+          },
+          "abierta_por": {
+            "title": "Abierta Por",
+            "type": "string"
+          },
+          "base_inicial": {
+            "title": "Base Inicial",
+            "type": "integer"
+          },
+          "cerrada_en": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cerrada En"
+          },
+          "cerrada_por": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cerrada Por"
+          },
+          "diferencia": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diferencia"
+          },
+          "efectivo_contado": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Efectivo Contado"
+          },
+          "efectivo_esperado": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Efectivo Esperado"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "abierta_por",
+          "abierta_en",
+          "base_inicial",
+          "estado"
+        ],
+        "title": "ArqueoSalida",
+        "type": "object"
+      },
       "CompraCrear": {
         "additionalProperties": false,
         "description": "Una compra a proveedor. `proveedor_nombre` es texto libre (ADR-020:\nla factura es un papel; no hay tabla de proveedores). El `id` del\ncliente se acepta como PK (ADR-017): reenviar la misma compra es un\nno-op. El total NO viaja: lo calcula el servidor (decisión 7).",
@@ -517,6 +711,50 @@
         "title": "DeltaSalida",
         "type": "object"
       },
+      "DesgloseSalida": {
+        "description": "La cuenta del arqueo (ADR-021: «una cuenta, no una pantalla mágica»).\n\n`esperado = base + ventas_efectivo + abonos_efectivo + ingresos\n− egresos − devoluciones`. `abonos_efectivo` es 0 hasta el módulo 5\n(fiado, ADR-022) — declarado en `docs/api/README.md`.",
+        "properties": {
+          "abonos_efectivo": {
+            "title": "Abonos Efectivo",
+            "type": "integer"
+          },
+          "base_inicial": {
+            "title": "Base Inicial",
+            "type": "integer"
+          },
+          "devoluciones": {
+            "title": "Devoluciones",
+            "type": "integer"
+          },
+          "egresos": {
+            "title": "Egresos",
+            "type": "integer"
+          },
+          "esperado": {
+            "title": "Esperado",
+            "type": "integer"
+          },
+          "ingresos": {
+            "title": "Ingresos",
+            "type": "integer"
+          },
+          "ventas_efectivo": {
+            "title": "Ventas Efectivo",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "base_inicial",
+          "ventas_efectivo",
+          "abonos_efectivo",
+          "ingresos",
+          "egresos",
+          "devoluciones",
+          "esperado"
+        ],
+        "title": "DesgloseSalida",
+        "type": "object"
+      },
       "DispositivoRegistrar": {
         "additionalProperties": false,
         "properties": {
@@ -626,6 +864,58 @@
         "title": "EstadoTenant",
         "type": "string"
       },
+      "ForecastSalida": {
+        "description": "El forecast a 30 días: una proyección explicada, no una promesa\n(ADR-006). Cada número declara su fuente; lo que no tiene fuente todavía\n(cobros de fiado) viaja en 0 y lo dice.",
+        "properties": {
+          "cobros_fiado_proyectados_centavos": {
+            "title": "Cobros Fiado Proyectados Centavos",
+            "type": "integer"
+          },
+          "dias": {
+            "title": "Dias",
+            "type": "integer"
+          },
+          "dias_con_datos": {
+            "title": "Dias Con Datos",
+            "type": "integer"
+          },
+          "egresos_proyectados_centavos": {
+            "title": "Egresos Proyectados Centavos",
+            "type": "integer"
+          },
+          "fuentes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Fuentes",
+            "type": "object"
+          },
+          "saldo_actual_centavos": {
+            "title": "Saldo Actual Centavos",
+            "type": "integer"
+          },
+          "saldo_proyectado_centavos": {
+            "title": "Saldo Proyectado Centavos",
+            "type": "integer"
+          },
+          "ventas_proyectadas_centavos": {
+            "title": "Ventas Proyectadas Centavos",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dias",
+          "saldo_actual_centavos",
+          "ventas_proyectadas_centavos",
+          "cobros_fiado_proyectados_centavos",
+          "egresos_proyectados_centavos",
+          "saldo_proyectado_centavos",
+          "dias_con_datos",
+          "fuentes"
+        ],
+        "title": "ForecastSalida",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -662,6 +952,113 @@
           "operaciones"
         ],
         "title": "LoteSync",
+        "type": "object"
+      },
+      "MovimientoCrear": {
+        "additionalProperties": false,
+        "description": "Un ingreso o egreso manual de la gaveta.\n\n`id` es REQUERIDO (decisión 6): es dinero, y solo la ancla hace seguro\nel reintento tras un timeout. El `motivo` es obligatorio: un movimiento\nde caja sin justificación es un desfalco con buenos modales.",
+        "properties": {
+          "categoria": {
+            "enum": [
+              "arriendo",
+              "servicios",
+              "retiro_dueno",
+              "otro"
+            ],
+            "title": "Categoria",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "monto": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 2147483647.0,
+            "title": "Monto",
+            "type": "integer"
+          },
+          "motivo": {
+            "maxLength": 300,
+            "minLength": 3,
+            "title": "Motivo",
+            "type": "string"
+          },
+          "tipo": {
+            "enum": [
+              "ingreso",
+              "egreso"
+            ],
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tipo",
+          "categoria",
+          "monto",
+          "motivo"
+        ],
+        "title": "MovimientoCrear",
+        "type": "object"
+      },
+      "MovimientoSalida": {
+        "properties": {
+          "categoria": {
+            "title": "Categoria",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "monto": {
+            "title": "Monto",
+            "type": "integer"
+          },
+          "motivo": {
+            "title": "Motivo",
+            "type": "string"
+          },
+          "registrado_por": {
+            "title": "Registrado Por",
+            "type": "string"
+          },
+          "sesion_caja_id": {
+            "format": "uuid",
+            "title": "Sesion Caja Id",
+            "type": "string"
+          },
+          "tipo": {
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sesion_caja_id",
+          "tipo",
+          "categoria",
+          "monto",
+          "motivo",
+          "registrado_por"
+        ],
+        "title": "MovimientoSalida",
         "type": "object"
       },
       "OperacionSync": {
@@ -731,6 +1128,37 @@
         "title": "PagedList[AjusteSalida]",
         "type": "object"
       },
+      "PagedList_ArqueoSalida_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ArqueoSalida"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "PagedList[ArqueoSalida]",
+        "type": "object"
+      },
       "PagedList_CompraSalida_": {
         "properties": {
           "items": {
@@ -760,6 +1188,37 @@
           "limit"
         ],
         "title": "PagedList[CompraSalida]",
+        "type": "object"
+      },
+      "PagedList_MovimientoSalida_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MovimientoSalida"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "PagedList[MovimientoSalida]",
         "type": "object"
       },
       "PagedList_ProductoSalida_": {
@@ -1174,6 +1633,90 @@
         "title": "ProductoSalida",
         "type": "object"
       },
+      "PyLSalida": {
+        "description": "El P&L simple del período. Cada número declara su fuente en `fuentes`\n(ADR-006: la pantalla dice de qué datos sale — condición firmada).",
+        "properties": {
+          "compras_proveedores_centavos": {
+            "title": "Compras Proveedores Centavos",
+            "type": "integer"
+          },
+          "costo_de_lo_vendido_centavos": {
+            "title": "Costo De Lo Vendido Centavos",
+            "type": "integer"
+          },
+          "desde": {
+            "format": "date-time",
+            "title": "Desde",
+            "type": "string"
+          },
+          "egresos_caja_centavos": {
+            "title": "Egresos Caja Centavos",
+            "type": "integer"
+          },
+          "fuentes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Fuentes",
+            "type": "object"
+          },
+          "hasta": {
+            "format": "date-time",
+            "title": "Hasta",
+            "type": "string"
+          },
+          "ingresos_caja_centavos": {
+            "title": "Ingresos Caja Centavos",
+            "type": "integer"
+          },
+          "margen_bruto_centavos": {
+            "title": "Margen Bruto Centavos",
+            "type": "integer"
+          },
+          "periodo": {
+            "title": "Periodo",
+            "type": "string"
+          },
+          "resultado_operativo_centavos": {
+            "title": "Resultado Operativo Centavos",
+            "type": "integer"
+          },
+          "ventas_anuladas_centavos": {
+            "title": "Ventas Anuladas Centavos",
+            "type": "integer"
+          },
+          "ventas_efectivo_centavos": {
+            "title": "Ventas Efectivo Centavos",
+            "type": "integer"
+          },
+          "ventas_fiado_centavos": {
+            "title": "Ventas Fiado Centavos",
+            "type": "integer"
+          },
+          "ventas_netas_centavos": {
+            "title": "Ventas Netas Centavos",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "periodo",
+          "desde",
+          "hasta",
+          "ventas_netas_centavos",
+          "ventas_efectivo_centavos",
+          "ventas_fiado_centavos",
+          "ventas_anuladas_centavos",
+          "costo_de_lo_vendido_centavos",
+          "margen_bruto_centavos",
+          "ingresos_caja_centavos",
+          "egresos_caja_centavos",
+          "compras_proveedores_centavos",
+          "resultado_operativo_centavos",
+          "fuentes"
+        ],
+        "title": "PyLSalida",
+        "type": "object"
+      },
       "RespuestaLote": {
         "description": "Un resultado por operación, en el MISMO orden del lote.",
         "properties": {
@@ -1242,6 +1785,132 @@
           "resultado"
         ],
         "title": "ResultadoOperacion",
+        "type": "object"
+      },
+      "SesionAbrir": {
+        "additionalProperties": false,
+        "description": "Apertura explícita de la caja del día. `id` es el UUID del cliente\n(ADR-017): reenviar la misma apertura devuelve la sesión existente.",
+        "properties": {
+          "base_inicial": {
+            "default": 0,
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Base Inicial",
+            "type": "integer"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          }
+        },
+        "title": "SesionAbrir",
+        "type": "object"
+      },
+      "SesionActualSalida": {
+        "description": "La sesión abierta con su esperado VIVO — solo para quien cierra caja.\n\n`efectivo_esperado` viaja en `null` sin `caja:cerrar` (decisión 4, mismo\npatrón que `ultimo_costo` sin `compra:crear`): el esperado en vivo es la\ncifra con la que se cuadra un faltante antes de que el dueño arquee, y\nADR-023 firma que el cajero no cierra ni ve reportes. El campo sigue en\nel esquema; lo que cambia con el permiso es su valor, no la forma.",
+        "properties": {
+          "abierta_en": {
+            "format": "date-time",
+            "title": "Abierta En",
+            "type": "string"
+          },
+          "abierta_por": {
+            "title": "Abierta Por",
+            "type": "string"
+          },
+          "base_inicial": {
+            "title": "Base Inicial",
+            "type": "integer"
+          },
+          "efectivo_esperado": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Efectivo Esperado"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "abierta_por",
+          "abierta_en",
+          "base_inicial",
+          "estado"
+        ],
+        "title": "SesionActualSalida",
+        "type": "object"
+      },
+      "SesionCerrar": {
+        "additionalProperties": false,
+        "description": "El arqueo: el conteo físico de la gaveta. El servidor calcula el\nesperado y la diferencia y los CONGELA en la sesión (ADR-021).",
+        "properties": {
+          "contado": {
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Contado",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "contado"
+        ],
+        "title": "SesionCerrar",
+        "type": "object"
+      },
+      "SesionSalida": {
+        "properties": {
+          "abierta_en": {
+            "format": "date-time",
+            "title": "Abierta En",
+            "type": "string"
+          },
+          "abierta_por": {
+            "title": "Abierta Por",
+            "type": "string"
+          },
+          "base_inicial": {
+            "title": "Base Inicial",
+            "type": "integer"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "abierta_por",
+          "abierta_en",
+          "base_inicial",
+          "estado"
+        ],
+        "title": "SesionSalida",
         "type": "object"
       },
       "StockSalida": {
@@ -1427,6 +2096,512 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/caja/movimientos": {
+      "get": {
+        "operationId": "listar_movimientos_api_v1_caja_movimientos_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sesion_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sesion Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedList_MovimientoSalida_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "La sesión no existe (o no hay abierta)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Movimientos de una sesión (la abierta, por defecto)",
+        "tags": [
+          "caja"
+        ]
+      },
+      "post": {
+        "description": "Con `motivo` obligatorio e `id` del cliente requerido (es dinero: la\nancla hace seguro el reintento). Las ventas en efectivo y los abonos NO\nson movimientos: el arqueo los suma desde su tabla de origen (ADR-021).",
+        "operationId": "registrar_movimiento_api_v1_caja_movimientos_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MovimientoCrear"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MovimientoSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No hay caja abierta, o el id del movimiento ya existe con datos distintos"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Registrar un ingreso o egreso manual de caja",
+        "tags": [
+          "caja"
+        ]
+      }
+    },
+    "/api/v1/caja/sesiones": {
+      "get": {
+        "description": "Faltantes y sobrantes históricos son un reporte: exige `caja:cerrar`\n(decisión 4). Las columnas congeladas son la única fuente: jamás se\nrecalculan.",
+        "operationId": "listar_sesiones_api_v1_caja_sesiones_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedList_ArqueoSalida_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Historial de sesiones con su arqueo congelado",
+        "tags": [
+          "caja"
+        ]
+      },
+      "post": {
+        "description": "UNA sesión abierta por tienda (ADR-021): la regla la hace cumplir el\níndice único parcial, no el código. Acepta el `id` del cliente\n(ADR-017): reenviar la misma apertura devuelve la sesión existente.",
+        "operationId": "abrir_caja_api_v1_caja_sesiones_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SesionAbrir"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SesionSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Ya hay una caja abierta (o el id de sesión está en uso)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Abrir la caja del día",
+        "tags": [
+          "caja"
+        ]
+      }
+    },
+    "/api/v1/caja/sesiones/actual": {
+      "get": {
+        "description": "`efectivo_esperado` viaja en `null` sin `caja:cerrar` (decisión 4):\nel esperado vivo es la cifra con la que se cuadra un faltante, y el\ncajero no cierra ni ve reportes (ADR-023).",
+        "operationId": "sesion_actual_api_v1_caja_sesiones_actual_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SesionActualSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "No hay caja abierta"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "La sesión abierta, con el esperado vivo solo para quien cierra",
+        "tags": [
+          "caja"
+        ]
+      }
+    },
+    "/api/v1/caja/sesiones/{sesion_id}/cerrar": {
+      "post": {
+        "description": "El arqueo (ADR-021): el servidor calcula `esperado = base + ventas en\nefectivo + abonos (0 hasta el módulo 5) + ingresos − egresos −\ndevoluciones` sumando desde las tablas de origen, y lo CONGELA con el\n`contado` y la `diferencia` en la sesión. Desde entonces nada lo reabre:\nni una venta que sincroniza tarde, ni una anulación posterior. El\nreintento con el mismo conteo devuelve el arqueo firmado.",
+        "operationId": "cerrar_caja_api_v1_caja_sesiones__sesion_id__cerrar_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sesion_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Sesion Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SesionCerrar"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArqueoConDesglose"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "La sesión no existe"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "La sesión ya fue cerrada con otro conteo"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cerrar la caja con arqueo (conteo físico)",
+        "tags": [
+          "caja"
+        ]
+      }
+    },
     "/api/v1/compras": {
       "get": {
         "operationId": "listar_compras_api_v1_compras_get",
@@ -2910,6 +4085,156 @@
         "summary": "Actualizar un producto",
         "tags": [
           "catalogo"
+        ]
+      }
+    },
+    "/api/v1/reportes/forecast": {
+      "get": {
+        "description": "Proyección explicada, no promesa (ADR-006): saldo vivo + promedio de\nventas en efectivo 30d + cobros de fiado (0 hasta el módulo 5,\ndeclarado) − promedio de egresos de caja 30d. Cada número declara su\nfuente.",
+        "operationId": "forecast_api_v1_reportes_forecast_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForecastSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Forecast de flujo de caja a 30 días",
+        "tags": [
+          "caja"
+        ]
+      }
+    },
+    "/api/v1/reportes/pyl": {
+      "get": {
+        "description": "Se calcula de lo que ya se registra (ADR-006): ventas por\n`recibida_en`, costo con el `ultimo_costo` actual (declarado), compras\npor fecha de factura y movimientos de caja. Cada número declara su\nfuente en `fuentes`.",
+        "operationId": "pyl_api_v1_reportes_pyl_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "periodo",
+            "required": false,
+            "schema": {
+              "default": "dia",
+              "enum": [
+                "dia",
+                "semana",
+                "mes"
+              ],
+              "title": "Periodo",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Ancla Bogotá (YYYY-MM-DD); por defecto, hoy",
+            "in": "query",
+            "name": "fecha",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Ancla Bogotá (YYYY-MM-DD); por defecto, hoy",
+              "title": "Fecha"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PyLSalida"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el token o no es válido"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Falta el permiso o el negocio está suspendido"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request malformado (validación de estructura o de dominio)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "P&L simple del período (día/semana/mes en America/Bogota)",
+        "tags": [
+          "caja"
         ]
       }
     },
