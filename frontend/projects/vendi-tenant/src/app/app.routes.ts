@@ -30,6 +30,11 @@ export const routes: Routes = [
             (m) => m.ElegirNegocioComponent,
           ),
       },
+      {
+        path: 'sin-permiso',
+        loadComponent: () =>
+          import('./features/sin-permiso/sin-permiso.component').then((m) => m.SinPermisoComponent),
+      },
       { path: '**', component: NotFoundComponent },
     ],
   },

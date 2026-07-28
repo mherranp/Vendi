@@ -11,10 +11,6 @@ import { AvisosComponent, ElementoDeNavegacion, FullLayoutComponent } from 'ui-k
  * cierre de sesión. Los avisos se pintan con el `vd-avisos` de `ui-kit`,
  * al que se le pasa el `Notificador` por input — el kit no puede conocer
  * `data-access` (ADR-011), así que el puente vive aquí.
- *
- * La navegación de Fase 0 tiene una sola entrada. No es un descuido: el alcance
- * de esta fase es demostrar la cadena identidad → tenant → dato, no construir
- * el POS (subproyectos 2-5).
  */
 @Component({
   selector: 'vd-shell',
@@ -29,9 +25,35 @@ export class ShellComponent {
 
   readonly nombreUsuario = this.auth.displayName;
 
-  readonly navegacion = computed<ElementoDeNavegacion[]>(() => [
-    { etiqueta: 'negocio.titulo', icono: 'storefront', ruta: '/mi-negocio' },
-  ]);
+  /**
+   * Navegación de la consola, filtrada por los permisos del token (ADR-023).
+   *
+   * `FullLayoutComponent` no conoce la sesión (ADR-011): el filtro es aquí.
+   * Las secciones sin permiso se OCULTAN, no se deshabilitan — un botón gris
+   * invita a preguntar «¿por qué no puedo?»; la sección ausente, no. La
+   * defensa real es el guard de la ruta y, detrás, el backend.
+   */
+  readonly navegacion = computed<ElementoDeNavegacion[]>(() => {
+    const elementos: ElementoDeNavegacion[] = [
+      { etiqueta: 'negocio.titulo', icono: 'storefront', ruta: '/mi-negocio' },
+    ];
+    if (this.auth.hasPermission('caja:leer')) {
+      elementos.push({ etiqueta: 'menu.caja', icono: 'point_of_sale', ruta: '/caja' });
+    }
+    if (this.auth.hasPermission('producto:leer')) {
+      elementos.push(
+        { etiqueta: 'menu.catalogo', icono: 'inventory_2', ruta: '/catalogo' },
+        { etiqueta: 'menu.inventario', icono: 'warehouse', ruta: '/inventario' },
+      );
+    }
+    if (this.auth.hasPermission('cliente:gestionar')) {
+      elementos.push({ etiqueta: 'menu.cuaderno', icono: 'menu_book', ruta: '/cuaderno' });
+    }
+    if (this.auth.hasPermission('reporte:leer')) {
+      elementos.push({ etiqueta: 'menu.numeros', icono: 'monitoring', ruta: '/numeros' });
+    }
+    return elementos;
+  });
 
   cerrarSesion(): void {
     this.auth.logout();

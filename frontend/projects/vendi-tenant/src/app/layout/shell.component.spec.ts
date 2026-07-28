@@ -34,7 +34,7 @@ class SnackBarFalso {
  * `_user` → `displayName`. Con el servicio real, si `cargarPerfil()` deja de
  * poblar el usuario, este spec se cae.
  */
-async function preparar(barra?: SnackBarFalso): Promise<{ auth: AuthService }> {
+async function preparar(barra?: SnackBarFalso, roles?: string[]): Promise<{ auth: AuthService }> {
   TestBed.resetTestingModule();
   KeycloakFake.reiniciar();
   TestBed.configureTestingModule({
@@ -50,10 +50,18 @@ async function preparar(barra?: SnackBarFalso): Promise<{ auth: AuthService }> {
     negocio: { titulo: 'Mi negocio' },
     layout: { menu: 'Menú', cerrar_sesion: 'Cerrar sesión', cuenta: 'Mi cuenta' },
     comun: { cerrar: 'Cerrar' },
+    menu: {
+      caja: 'Mi caja',
+      catalogo: 'Catálogo',
+      inventario: 'Inventario',
+      cuaderno: 'Mi cuaderno',
+      numeros: 'Mis números',
+    },
   });
 
   const auth = TestBed.runInInjectionContext(() => TestBed.inject(AuthService));
   await arrancarSesionFalsa(auth, {
+    roles,
     perfil: { username: 'dueno', firstName: 'Ana', lastName: 'Gómez' },
   });
   return { auth };
@@ -91,6 +99,62 @@ describe('ShellComponent de vendi-tenant', () => {
     // una segunda llamada no debe abrir otra redirección.
     auth.logout();
     expect(KeycloakFake.ultimaInstancia?.logoutCalls).toBe(1);
+  });
+
+  it('el dueño ve las cinco secciones de la consola', async () => {
+    // La semilla de Keycloak asigna a `dueno` los 14 permisos del catálogo
+    // (ADR-023); el token lleva los roles efectivos, así que el filtro los
+    // encuentra tal cual. Aquí basta con los cuatro permisos de lectura que
+    // la navegación consulta.
+    await preparar(undefined, [
+      'dueno',
+      'caja:leer',
+      'producto:leer',
+      'cliente:gestionar',
+      'reporte:leer',
+    ]);
+    const fixture = TestBed.createComponent(ShellComponent);
+    fixture.detectChanges();
+    const visible = texto(fixture);
+    expect(visible).toContain('Mi caja');
+    expect(visible).toContain('Catálogo');
+    expect(visible).toContain('Inventario');
+    expect(visible).toContain('Mi cuaderno');
+    expect(visible).toContain('Mis números');
+  });
+
+  it('el cajero ve caja, catálogo, inventario y cuaderno; «Mis números» no existe para él', async () => {
+    // ADR-023, decisión 4 del plan: lo que el token no permite se OCULTA
+    // entero, no se deshabilita. La defensa real es el guard y el backend.
+    await preparar(undefined, [
+      'cajero',
+      'caja:leer',
+      'caja:abrir',
+      'caja:movimiento',
+      'producto:leer',
+      'cliente:gestionar',
+      'fiado:abonar',
+    ]);
+    const fixture = TestBed.createComponent(ShellComponent);
+    fixture.detectChanges();
+    const visible = texto(fixture);
+    expect(visible).toContain('Mi caja');
+    expect(visible).toContain('Catálogo');
+    expect(visible).toContain('Inventario');
+    expect(visible).toContain('Mi cuaderno');
+    expect(visible).not.toContain('Mis números');
+  });
+
+  it('el almacenista solo ve catálogo e inventario: ni caja, ni cuaderno, ni números', async () => {
+    await preparar(undefined, ['almacenista', 'producto:leer', 'inventario:ajustar']);
+    const fixture = TestBed.createComponent(ShellComponent);
+    fixture.detectChanges();
+    const visible = texto(fixture);
+    expect(visible).toContain('Catálogo');
+    expect(visible).toContain('Inventario');
+    expect(visible).not.toContain('Mi caja');
+    expect(visible).not.toContain('Mi cuaderno');
+    expect(visible).not.toContain('Mis números');
   });
 });
 

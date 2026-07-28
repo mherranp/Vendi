@@ -37,6 +37,7 @@ const ORG_B = '2c9f1e5f-9a4b-4d3c-8e6f-3a7b8c9d0e1f';
 async function preparar(opciones: {
   autenticado: boolean;
   organizaciones: string[];
+  roles?: string[];
 }): Promise<AuthService> {
   TestBed.resetTestingModule();
   KeycloakFake.reiniciar();
@@ -54,12 +55,14 @@ async function preparar(opciones: {
     negocio: { titulo: 'Mi negocio' },
     elegir: { titulo: '¿Con cuál de tus negocios quieres trabajar?' },
     layout: { cerrar_sesion: 'Cerrar sesión', menu: 'Menú' },
+    sin_permiso: { titulo: 'No tienes acceso a esta sección' },
   });
 
   const auth = TestBed.runInInjectionContext(() => TestBed.inject(AuthService));
   if (opciones.autenticado) {
     await arrancarSesionFalsa(auth, {
       organizaciones: opciones.organizaciones,
+      roles: opciones.roles,
       perfil: { username: 'dueno', firstName: 'Ana', lastName: 'Gómez' },
     });
   } else {
@@ -140,5 +143,50 @@ describe('rutas de la consola del negocio', () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/elegir-negocio');
     expect(TestBed.inject(Router).url).toBe('/elegir-negocio');
+  });
+});
+
+describe('mapa de la consola (Etapa 1.3, pista web)', () => {
+  beforeEach(() => {
+    KeycloakFake.reiniciar();
+  });
+
+  it('/elegir-negocio NO lleva tenantGuard (sería un bucle de redirección)', () => {
+    const shell = routes[0];
+    const elegir = shell.children?.find((r) => r.path === 'elegir-negocio');
+    expect(elegir?.canActivate ?? []).toEqual([]);
+  });
+
+  it('/sin-permiso no lleva guard de permiso (sería el mismo bucle)', () => {
+    const shell = routes[0];
+    const sinPermiso = shell.children?.find((r) => r.path === 'sin-permiso');
+    expect(sinPermiso).toBeTruthy();
+    expect(sinPermiso?.canActivate ?? []).toEqual([]);
+  });
+
+  it('cada ruta de feature exige tenant; la matriz completa está en la decisión 4 del plan', () => {
+    const shell = routes[0];
+    const conPermiso = ['caja', 'catalogo', 'inventario', 'cuaderno', 'numeros'];
+    for (const camino of conPermiso) {
+      const ruta = shell.children?.find((r) => r.path === camino);
+      // Las rutas llegan con sus features (Tareas 5-9): este aserto crece con
+      // ellas. Si la ruta existe, su guard debe ser [tenantGuard, <uno más>].
+      if (ruta) {
+        expect(ruta.canActivate?.length).toBe(2);
+      }
+    }
+  });
+
+  it('quien no tiene el permiso cae en /sin-permiso y ve por qué', async () => {
+    // Cajero: caja sí, reportes no (ADR-023).
+    await preparar({
+      autenticado: true,
+      organizaciones: [ORG_A],
+      roles: ['cajero', 'caja:leer', 'caja:abrir', 'caja:movimiento'],
+    });
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/sin-permiso');
+    expect(TestBed.inject(Router).url).toBe('/sin-permiso');
+    expect(harness.routeNativeElement?.textContent).toContain('No tienes acceso a esta sección');
   });
 });

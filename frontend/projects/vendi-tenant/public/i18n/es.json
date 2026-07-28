@@ -81,5 +81,17 @@
     "titulo": "¿Con cuál de tus negocios quieres trabajar?",
     "descripcion": "Tu cuenta administra más de un negocio. Elige uno para continuar; puedes cambiar cuando quieras.",
     "sin_negocios": "Tu cuenta todavía no está asociada a ningún negocio. Pídele al administrador que te agregue."
+  },
+  "menu": {
+    "caja": "Mi caja",
+    "catalogo": "Catálogo",
+    "inventario": "Inventario",
+    "cuaderno": "Mi cuaderno",
+    "numeros": "Mis números"
+  },
+  "sin_permiso": {
+    "titulo": "No tienes acceso a esta sección",
+    "descripcion": "Esta parte de la consola es para otro rol del negocio. Si crees que deberías verla, habla con el dueño.",
+    "volver": "Volver a mi negocio"
   }
 }
