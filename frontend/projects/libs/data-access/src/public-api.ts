@@ -44,6 +44,13 @@ export { VendiDb } from './lib/offline/vendi.db';
 export { VentasOfflineService } from './lib/offline/ventas-offline.service';
 export type { EntradaCobro } from './lib/offline/ventas-offline.service';
 export { DispositivoService } from './lib/offline/dispositivo.service';
+export {
+  ESPERA_BASE_MS,
+  ESPERA_MAXIMA_MS,
+  LOTE_MAXIMO,
+  SincronizadorService,
+  esperaDeReintento,
+} from './lib/offline/sincronizador.service';
 export type {
   ClaveMeta,
   ClienteLocal,
