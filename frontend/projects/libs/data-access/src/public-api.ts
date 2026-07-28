@@ -51,6 +51,7 @@ export {
   SincronizadorService,
   esperaDeReintento,
 } from './lib/offline/sincronizador.service';
+export { CatalogoLocalService } from './lib/offline/catalogo-local.service';
 export type {
   ClaveMeta,
   ClienteLocal,
