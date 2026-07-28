@@ -15,3 +15,12 @@ export type { UserProfile } from './lib/models/user.model';
 export type { EstadoTenant, Tenant, TenantDeApi } from './lib/models/tenant.model';
 export { ESTADOS_TENANT, esEstadoTenant } from './lib/models/tenant.model';
 export { esEstadoVisible, esIdDeTenant, esTenantOperativo } from './lib/reglas/tenant.reglas';
+export type { LineaTicket } from './lib/reglas/dinero';
+export {
+  MILI_POR_UNIDAD,
+  formatearPesos,
+  miliDeCantidad,
+  textoDeCantidad,
+  totalLineaCentavos,
+  totalTicketCentavos,
+} from './lib/reglas/dinero';
