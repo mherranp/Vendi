@@ -487,6 +487,19 @@ con el gate de la Etapa 1.2 del plan maestro. Plan:
 (11 tareas TDD, commits `d7e4eb7`…`9510891`, cada una con revisión
 independiente registrada en `.superpowers/sdd/`).
 
+> **Post-cierre (mismo día).** Tras el gate, la revisión de rama destapó el
+> último camino del dinero sin sincronizar: la anulación del sync no
+> resolvía sesión de caja, así que una devolución entre cierre y apertura
+> desaparecía de todo arqueo — `_anular_venta` ahora resuelve la sesión con
+> FOR UPDATE antes de estampar `anulada_en` (`9e2a017`, con 2 tests de
+> carrera/hueco). El QA adversarial añadió 31 tests (`1d2de96`, 0 bugs
+> contra lo firmado) y confirmó una fuga menor: los retiros del dueño eran
+> visibles para el cajero — ahora solo los ve quien cierra caja (`c49c4c0`).
+> Deuda registrada: D-26 (esperado negativo cierra sin error; decisión de
+> producto antes del piloto). HEAD de código de cierre real: `c49c4c0` —
+> run ci 30321339245 en verde: **385 integration + 412 unitarios,
+> 0 SKIPPED**.
+
 Los comandos del gate que exigen el stack (migrar, tests de integración,
 `verify-setup.sh`) se citan desde el CI, que los ejecuta contra PostgreSQL,
 RabbitMQ y Keycloak reales en cada push: el run de corte es el `ci`
