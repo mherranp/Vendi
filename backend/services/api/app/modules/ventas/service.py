@@ -475,11 +475,6 @@ class VentasService:
             return self._duplicada(operacion)
 
         venta.estado = "anulada"
-        # La marca de CUÁNDO se anuló (módulo 4, decisión 7 del plan de
-        # caja): con ella, la devolución de efectivo de una venta anulada
-        # tras el cierre cae en la sesión abierta en ese momento (ADR-021)
-        # sin duplicar la venta como movimiento de caja.
-        venta.anulada_en = datetime.now(UTC)
         # La reposición se consolida por producto, igual que el descuento del
         # alta (BUG-1): dos líneas del mismo producto son UN movimiento con la
         # cantidad sumada, no dos que chocarían en `ux_movimientos_origen`.
@@ -502,6 +497,34 @@ class VentasService:
                 # El índice sigue deduplicando el reintento por (tipo,
                 # referencia_id=operacion.id, producto_id).
                 await self._mover_stock(producto, cantidad, tipo="anulacion", referencia_id=operacion.id)
+        # La sesión de caja se resuelve (FOR UPDATE) ANTES de estampar
+        # `anulada_en` — el mismo candado que `_registrar_venta` (decisión 5
+        # del plan de caja), aquí por los dos huecos que dejaba estampar a
+        # ciegas (I-1/I-2 de la revisión final de caja):
+        # - Sin sesión abierta (entre el cierre de la noche y la apertura de
+        #   mañana), la marca caía en el hueco: fuera de la ventana de la
+        #   sesión cerrada y de la siguiente, y la devolución de efectivo
+        #   desaparecía de TODO arqueo. El resolvedor abre la implícita y
+        #   `abierta_en <= anulada_en` queda garantizado.
+        # - La carrera con el cierre se serializa sobre la fila: si el cierre
+        #   ganó, la consulta (que filtra `abierta`) ya no lo ve y la
+        #   anulación cae en la implícita nueva; si ganó la anulación, el
+        #   `calcular_desglose` del cierre la ve `anulada` y entra al SUM
+        #   congelado. Nunca `anulada_en < cerrada_en` sin haber entrado.
+        # Va DESPUÉS de los bloqueos de productos (mismo orden que
+        # `_registrar_venta`: productos → sesión; el cierre solo toma la
+        # sesión): la sesión es siempre el último bloqueo del lote y no hay
+        # ciclo de espera nuevo. Y corre dentro del savepoint de la operación,
+        # como en el alta: un rechazo posterior revierte también la implícita.
+        await self._resolver_sesion_caja()
+        # La marca de CUÁNDO se anuló (módulo 4, decisión 7 del plan de
+        # caja): con ella, la devolución de efectivo de una venta anulada
+        # tras el cierre cae en la sesión abierta en ese momento (ADR-021)
+        # sin duplicar la venta como movimiento de caja. La venta CONSERVA
+        # su `sesion_caja_id` original: `calcular_desglose` ubica la
+        # devolución por la ventana `[abierta_en, cerrada_en)` que contiene
+        # esta marca, no por la sesión de la venta.
+        venta.anulada_en = datetime.now(UTC)
         await self._emitir(
             "venta.anulada",
             venta,
@@ -527,8 +550,10 @@ class VentasService:
         venta inserta contra una sesión ya `cerrada`, huérfana de todo
         arqueo. Con el bloqueo, cierre y sync se serializan sobre la fila:
         quien llega segundo la ve `cerrada` (la consulta filtra `abierta`) y
-        abre una implícita nueva. No hay inversión de orden de bloqueo: este
-        camino es sesión → productos; el del cierre es solo sesión.
+        abre una implícita nueva. No hay inversión de orden de bloqueo: los
+        dos caminos que lo llaman (`_registrar_venta` y `_anular_venta`)
+        toman la sesión DESPUÉS de los productos, y el cierre solo toma la
+        sesión — la fila de sesión es siempre el último bloqueo del lote.
 
         La carrera de dos aperturas implícitas concurrentes la decide el
         índice único parcial `ux_caja_sesion_abierta` (ADR-021): quien pierde
@@ -540,10 +565,12 @@ class VentasService:
         # `cerrada` — huérfana de todo arqueo. Con él, cierre y sync se
         # serializan sobre la fila: quien llega segundo la ve `cerrada` (la
         # consulta filtra `abierta`) y abre una implícita nueva. No hay
-        # inversión de orden de bloqueo: este camino es sesión → productos;
-        # el del cierre es solo sesión. El costo (lotes concurrentes del
-        # mismo tenant serializados en la fila) es despreciable a la escala
-        # de una tienda.
+        # inversión de orden de bloqueo: quien llama toma la sesión DESPUÉS
+        # de los productos (tanto `_registrar_venta` como `_anular_venta`) y
+        # el cierre solo toma la sesión — la fila de sesión es siempre el
+        # último bloqueo del lote. El costo (lotes concurrentes del mismo
+        # tenant serializados en la fila) es despreciable a la escala de una
+        # tienda.
         consulta = select(CajaSesion).where(CajaSesion.estado == "abierta").with_for_update()
         sesion = (await self._session.execute(consulta)).scalar_one_or_none()
         if sesion is not None:
