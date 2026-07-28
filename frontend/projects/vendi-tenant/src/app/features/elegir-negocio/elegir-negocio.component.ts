@@ -1,27 +1,21 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatListModule } from '@angular/material/list';
 import { Router } from '@angular/router';
 import { TranslateModule } from '@ngx-translate/core';
 import { AuthService } from 'auth';
+import { ElegirNegocioService, TenantMioSalida } from './elegir-negocio.service';
 
 /**
  * Selector de negocio para el dueño que tiene más de uno.
  *
- * Existe porque `AuthService.tenantId` devuelve `null` a propósito cuando hay
- * varias organizaciones en el token y ninguna elegida: adivinar "la primera"
- * sería decidir por el usuario **qué datos ve**, y eso no se adivina. Aquí es
- * donde elige.
- *
- * La lista sale del token y solo del token: `selectTenant()` rechaza cualquier
- * alias que no venga en él. Es decir, esta pantalla no puede usarse para pedir
- * un negocio ajeno, ni escribiendo a mano en la consola del navegador.
- *
- * Fase 0 no tiene endpoint para traducir un `tenant_id` a su nombre comercial
- * sin haberlo seleccionado antes (`GET /tenants/me` devuelve el activo), así
- * que la lista muestra los identificadores. Es feo y es honesto; el nombre
- * llegará cuando exista `GET /tenants/mios` o equivalente.
+ * Desde la Etapa 1.3 la lista muestra NOMBRES: `/tenants/mios` traduce los
+ * alias del token a negocios vivos. El token sigue mandando — un alias que el
+ * endpoint no devuelve (negocio eliminado entre el login y ahora) no se
+ * ofrece, y `selectTenant` rechaza cualquier id que no venga en el token.
+ * Si el endpoint falla, se degrada a la lista de alias como en Fase 0: feo,
+ * honesto y funcional.
  */
 @Component({
   selector: 'vd-elegir-negocio',
@@ -31,21 +25,29 @@ import { AuthService } from 'auth';
 })
 export class ElegirNegocioComponent {
   private readonly auth = inject(AuthService);
+  private readonly servicio = inject(ElegirNegocioService);
   private readonly router = inject(Router);
 
   readonly organizaciones = this.auth.organizaciones;
 
+  /** null mientras carga; lista vacía si el endpoint falló (→ degradación). */
+  readonly negocios = signal<TenantMioSalida[] | null>(null);
+
+  constructor() {
+    this.servicio.mios().subscribe({
+      next: (mios) => {
+        // Defensa en profundidad: solo se ofrecen ids que están en el token.
+        const elegibles = new Set(this.organizaciones());
+        this.negocios.set(mios.filter((negocio) => elegibles.has(negocio.id)));
+      },
+      error: () => this.negocios.set([]),
+    });
+  }
+
   elegir(alias: string): void {
     if (!this.auth.selectTenant(alias)) {
-      // `selectTenant` ya dejó constancia en consola. Se corta aquí: navegar de
-      // todos modos llevaría a "Mi negocio" a pedir datos con el tenant
-      // anterior, que es peor que quedarse en el selector.
       return;
     }
-    // El `catch` no es ceremonia: si alguien reorganiza las rutas y
-    // `/mi-negocio` deja de existir, `navigate()` devuelve una promesa
-    // rechazada que nadie observa y el error aparece como "unhandled
-    // rejection" sin decir dónde.
     this.router.navigate(['/mi-negocio']).catch((error: unknown) => {
       console.error('No se pudo abrir «Mi negocio» tras elegir el negocio.', error);
     });

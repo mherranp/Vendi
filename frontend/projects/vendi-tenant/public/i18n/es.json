@@ -81,6 +81,7 @@
   "elegir": {
     "titulo": "¿Con cuál de tus negocios quieres trabajar?",
     "descripcion": "Tu cuenta administra más de un negocio. Elige uno para continuar; puedes cambiar cuando quieras.",
+    "cargando": "Buscando tus negocios…",
     "sin_negocios": "Tu cuenta todavía no está asociada a ningún negocio. Pídele al administrador que te agregue."
   },
   "caja": {

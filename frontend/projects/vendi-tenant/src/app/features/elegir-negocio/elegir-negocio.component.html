@@ -14,6 +14,9 @@
     </button>
   } @else {
     <p>{{ 'elegir.descripcion' | translate }}</p>
+    @if (negocios() === null) {
+      <p>{{ 'elegir.cargando' | translate }}</p>
+    }
     <!--
       `mat-action-list` + `button`, no `mat-nav-list` + `a`: elegir un negocio
       no navega a ninguna URL, es una acción. Con un `<a>` sin `href` el
@@ -22,13 +25,29 @@
       tienda.
     -->
     <mat-action-list>
-      @for (alias of organizaciones(); track alias) {
-        <button mat-list-item type="button" (click)="elegir(alias)">
-          <mat-icon matListItemIcon aria-hidden="true">storefront</mat-icon>
-          <span matListItemTitle
-            ><code>{{ alias }}</code></span
-          >
-        </button>
+      @if ((negocios() ?? []).length > 0) {
+        @for (negocio of negocios(); track negocio.id) {
+          <button mat-list-item type="button" (click)="elegir(negocio.id)">
+            <mat-icon matListItemIcon aria-hidden="true">storefront</mat-icon>
+            <span matListItemTitle>{{ negocio.nombre }}</span>
+            <span matListItemLine
+              ><code>{{ negocio.id }}</code></span
+            >
+          </button>
+        }
+      } @else if (negocios() !== null) {
+        <!--
+          Degradación: /tenants/mios falló. La lista de alias de Fase 0 — fea,
+          honesta y funcional; elegir sigue siendo posible.
+        -->
+        @for (alias of organizaciones(); track alias) {
+          <button mat-list-item type="button" (click)="elegir(alias)">
+            <mat-icon matListItemIcon aria-hidden="true">storefront</mat-icon>
+            <span matListItemTitle
+              ><code>{{ alias }}</code></span
+            >
+          </button>
+        }
       }
     </mat-action-list>
   }
