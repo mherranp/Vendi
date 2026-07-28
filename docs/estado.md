@@ -317,6 +317,12 @@ fuera del CI).
 > **D-14** quedaron **cerradas** — el punto único de movimientos emite
 > `inventario.alerta_stock` y `OperacionSync.datos` es requerido. Evidencia
 > en la sección siguiente y en el registro de deuda.)*
+>
+> *(Actualización del pago de deuda de concurrencia, 2026-07-28: **D-13**
+> quedó **cerrada** — `pg_advisory_xact_lock` por tenant serializa conteo e
+> INSERT en `_exigir_cupo`; la carrera 101/100 que documentaba el QA
+> adversarial ahora deja 100/100 con la segunda alta rechazada. Evidencia en
+> el registro de deuda.)*
 
 ---
 
@@ -474,6 +480,13 @@ enforced), **D-21** (el sync de ventas bloquea los productos en el orden del
 ticket: deadlock teórico multi-producto, heredado) y **D-22** (falta el test
 literal `inventario.ajustar` → `tipo_desconocido`; lo cubre el genérico).
 Cerradas en este módulo: **D-12** y **D-14**.
+
+> *(Actualización del pago de deuda de concurrencia, 2026-07-28: **D-21**
+> quedó **cerrada** — `_registrar_venta` toma los `FOR UPDATE` ordenados por
+> `producto_id`, la misma receta de la compra (decisión 9); el deadlock de
+> orden inverso, reproducido en test, ya no ocurre y los movimientos se
+> insertan en el orden del ticket, como antes. Evidencia en el registro de
+> deuda.)*
 
 ---
 

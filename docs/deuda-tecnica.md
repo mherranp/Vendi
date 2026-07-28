@@ -11,13 +11,11 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 |---|---|---|---|
 | D-03 | El realm es semilla, no estado deseado continuo (mitigado en la Etapa 5: se aplica el subconjunto seguro) | Fase 1 | backend |
 | D-09 | El tier del negocio se resuelve como `pro` para todos (módulo catálogo, decisión 2 del plan) | Fase 1 (módulo de suscripciones) | backend |
-| D-13 | Carrera TOCTOU del cupo de tier del catálogo: dos altas concurrentes dejan 101/100 (QA adversarial) | Fase 1 (antes del piloto) | backend |
 | D-16 | El check 23 de `verify-setup.sh` no tiene prueba negativa ejecutada (nadie lo ha visto fallar) | Fase 1 (Etapa 1.5) | backend |
 | D-17 | `alembic check` (deriva metadata↔DDL) no corre en CI | Fase 1 | backend |
 | D-18 | El watermark del delta se fija con `now()` antes de leer: una edición confirmada en la ventana se pierde para ese dispositivo | Fase 1 (antes del piloto) | backend |
 | D-19 | El reenvío de una compra con el mismo `id` y payload distinto devuelve la existente en silencio (asimetría con ajustes y ventas) | Fase 1 (antes del piloto) | backend |
 | D-20 | El `FOR UPDATE` del producto que exige `aplicar_movimiento` es convención documentada, no enforced | Fase 1 (antes del piloto o al primer llamante nuevo) | backend |
-| D-21 | El sync de ventas bloquea los productos en el orden del ticket: deadlock teórico multi-producto (heredado del módulo ventas) | Fase 1 (antes del piloto) | backend |
 | D-23 | El reintento de un ajuste cuyo producto fue dado de baja después devuelve 422 `producto_no_encontrado` en vez de la respuesta idempotente original | Fase 1 (antes del piloto) | backend |
 | D-24 | Un ajuste con el `id` de otro tenant recibe 409 `ajuste_id_divergente` (efecto de la RLS que oculta la fila; criterio no firmado, espejo de `dispositivo_id_en_conflicto`) | Fase 1 (antes del piloto) | backend |
 | D-25 | Una compra con `costo_unitario = 0` deja `ultimo_costo = 0` y el P&L mostrará margen del 100% hasta la próxima compra con costo real (decisión de producto pendiente) | Fase 1 (antes del piloto) | backend |
@@ -59,6 +57,13 @@ Cerrada en la Tarea 12 del módulo fiado y clientes (Fase 1, Etapa 1.2): **D-10*
 dispositivo como PK de `clientes` (operación `cliente.crear` del lote), como
 mandaba su vencimiento; la columna `ventas.cliente_id` se queda sin FK a
 propósito.
+
+Cerradas en el pago de deuda de concurrencia (Fase 1, antes del piloto — el
+vencimiento de ambas): **D-13** (la carrera TOCTOU del cupo del catálogo:
+`pg_advisory_xact_lock` por tenant serializa conteo e INSERT en
+`_exigir_cupo`) y **D-21** (el sync de ventas bloquea los productos ordenados
+por `producto_id`, la receta de la compra: el deadlock de orden inverso,
+reproducido, ya no ocurre).
 
 > Runbooks operativos relacionados: el procedimiento completo de respaldo y
 > restauración (qué se vuelca, qué NO, y cómo se promueve una copia a base
@@ -162,40 +167,6 @@ fuente real del tier). El único punto de cambio es la dependencia
 - `backend/tests/api/test_catalogo_productos.py::test_el_limite_del_tier_da_403`
 - `backend/tests/test_catalogo_servicio.py::test_el_limite_del_tier_se_verifica_contra_las_filas_vivas`
 - `backend/tests/test_catalogo_servicio.py::test_el_limite_del_tier_light_se_detiene_en_500`
-
----
-
-## D-13 · Carrera TOCTOU del cupo de tier del catálogo
-
-**Qué es.** `_exigir_cupo` cuenta las filas vivas y luego inserta: con 99
-productos y dos sesiones intercaladas (A hace flush sin commit, B cuenta 99
-y pasa, ambas confirman) quedan **101 productos con límite 100**. Lo
-documentó el QA adversarial del catálogo con test commiteado
-(`.superpowers/sdd/qa-adversarial-report.md`).
-
-**Por qué se aceptó.** El límite por tier vive en aplicación por diseño
-firmado (ADR-019); sin `SERIALIZABLE` ni bloqueo, toda verificación
-cuenta-luego-inserta tiene esta ventana. Impacto real bajo: la ingesta del
-catálogo es síncrona y por un solo negocio a la vez; superar el cupo por uno
-no rompe nada más que la letra del límite.
-
-**Riesgo si se olvida.** Con ingesta masiva concurrente (importaciones del
-módulo 3, o varios dispositivos sincronizando altas) el sobre-paso deja de
-ser anecdótico y el límite del tier —que es un límite comercial, ADR-010— se
-vuelve poroso.
-
-**Vencimiento: Fase 1, antes del piloto.** Arreglo propuesto por el propio
-QA: `SELECT pg_advisory_xact_lock(hashtext(tenant_id::text))` al entrar en
-`_exigir_cupo` — serializa las altas del negocio sin tocar el esquema.
-
-**Candados mientras tanto:**
-
-- `backend/tests/test_catalogo_adversarial.py::test_la_carrera_del_cupo_supera_el_limite_aunque_el_check_pase`
-  (documenta el 101/100; si alguien cierra la ventana, este test es el que
-  hay que invertir).
-- D-09 sigue viva: hoy el tier es `pro` (ilimitado) para todos, así que la
-  carrera no tiene efecto observable hasta que exista una fuente real del
-  tier.
 
 ---
 
@@ -354,44 +325,6 @@ mismo estándar.
   docstring del punto único), no cinco copias.
 - Los tests de carrera verdes en CI mueren si alguien quita el bloqueo de
   los caminos actuales.
-
----
-
-## D-21 · El sync de ventas bloquea los productos en el orden del ticket
-
-**Qué es.** `VentasService` adquiere el `FOR UPDATE` de cada producto en el
-orden en que los ítems vienen en el ticket del cliente (`for item in
-datos.items`). Dos ventas multi-producto concurrentes con los mismos
-productos en orden inverso adquieren los bloqueos en orden opuesto:
-deadlock teórico (un `DeadlockDetected` de Postgres, no una corrupción). Las
-compras de este módulo sí ordenan por `producto_id` (decisión 9); la venta
-hereda el riesgo del módulo ventas y este plan lo anotó como superficie de
-QA, no como arreglo.
-
-**Por qué se aceptó.** El ticket offline es un hecho que hay que aceptar tal
-cual (su orden es del cliente), y corregirlo es tocar el camino crítico del
-sync — fuera del alcance de este módulo, que solo refactorizó
-`_mover_stock` para delegar en el punto único. Los deltas ya se consolidan
-por producto antes de mover (fix del BUG-1 del QA), así que ordenar por
-`producto_id` antes de bloquear no cambiaría el resultado, solo el orden de
-adquisición.
-
-**Riesgo si se olvida.** Dos cajas sincronizando a la vez tickets con el
-mismo surtido en orden distinto: un deadlock ocasional → la operación falla
-y el lote se reintenta. La idempotencia absorbe el reintento; el daño es
-latencia y un error ruidoso, no corrupción — pero es un 500 esperando la
-hora pico del piloto.
-
-**Vencimiento: Fase 1, antes del piloto.** Arreglo: ordenar los productos
-por `producto_id` antes de bloquear, la misma receta de la compra.
-
-**Candados mientras tanto:**
-
-- La idempotencia del sync hace el reintento seguro: un lote abortado por
-  deadlock se reenvía y termina `aceptada`/`duplicada` sin doble efecto
-  (probado en `test_sync_idempotente.py`).
-- Requiere dos cajas activas con surtido solapado en el mismo instante:
-  plausible en el piloto, de ahí el vencimiento.
 
 ---
 
@@ -1025,6 +958,134 @@ $ uv run pytest -q -m integration   # run ci 30331195290
   declaraba, vigentes): fiado sin cliente es `rechazada`
   `fiado_requiere_cliente`; cliente en venta no fiada,
   `cliente_solo_en_fiado`.
+
+---
+
+### D-13 · Carrera TOCTOU del cupo de tier del catálogo
+
+**Qué era.** `_exigir_cupo` contaba las filas vivas y luego insertaba: con
+99 productos y dos sesiones intercaladas (A hace flush sin commit, B cuenta
+99 y pasa, ambas confirman) el negocio quedaba con **101 productos sobre un
+límite de 100** — documentado con test por el QA adversarial del catálogo.
+
+**Cómo se cerró** (pago de deuda de concurrencia, Fase 1 — su vencimiento:
+antes del piloto). Con la receta que la propia entrada proponía:
+`SELECT pg_advisory_xact_lock(hashtext(:tenant))` al entrar en
+`_exigir_cupo` (`backend/services/api/app/modules/catalogo/service.py`),
+antes del conteo. El bloqueo es de transacción: la segunda alta espera al
+commit de la primera y su conteo ya ve la fila nueva — 100 >= 100 y sale el
+403 tipado `limite_de_productos_alcanzado`. Se eligió el advisory lock sobre
+un `FOR UPDATE` a una fila del negocio porque no hay fila local que bloquear
+(el negocio vive en Keycloak, en Organizations) y no toca el esquema; una
+colisión de `hashtext` entre tenants solo serializa de más, nunca de menos.
+El costo —altas del MISMO negocio serializadas, y solo en tiers con límite—
+es despreciable. El test que documentaba el 101/100 se invirtió (como la
+entrada mandaba): ahora fija el rechazo de la segunda alta y el 100/100
+final.
+
+**Evidencia** (run ci 30339144864 sobre `61d67fc`, 2026-07-28; los tests son
+integration y corren contra el PostgreSQL real del CI; la corrida local de
+desarrollo usó un PostgreSQL 17 desechable con los init scripts del repo y
+las migraciones al head):
+
+```
+$ cd backend && uv run pytest -q tests/test_catalogo_adversarial.py
+9 passed        # incluye test_la_carrera_del_cupo_rechaza_la_segunda_alta:
+                # el intercalado que antes dejaba 101/100 ahora rechaza la
+                # segunda alta con limite_de_productos_alcanzado (100/100)
+
+# ROJO previo (mismo test, código sin el arreglo): fallaba porque la
+# segunda alta PASABA — el cupo seguía siendo poroso.
+
+$ uv run pytest -q tests/test_catalogo_adversarial.py tests/test_catalogo_servicio.py \
+    tests/test_ventas_adversarial.py tests/test_ventas_servicio.py tests/test_ventas_fixes_qa.py \
+    tests/test_sync_idempotente.py tests/test_inventario_servicio.py tests/test_inventario_adversarial.py
+108 passed      # PG desechable local; los tests del cupo (gratis 100, light
+                # 500, filas vivas) siguen verdes con el bloqueo
+
+$ uv run pytest -q -m 'not integration'
+430 passed
+$ uv run ruff check .
+All checks passed!
+
+$ uv run pytest -q -rs -m integration     # run ci 30339144864 sobre 61d67fc
+475 passed, 430 deselected                # 0 SKIPPED (el grep del job lo exige)
+```
+
+**Candados:**
+
+- `backend/tests/test_catalogo_adversarial.py::test_la_carrera_del_cupo_rechaza_la_segunda_alta`:
+  la carrera intercalada exige el rechazo de la segunda alta y el 100/100;
+  muere si alguien quita el advisory lock.
+- Los tres tests del cupo que la entrada ya citaba, vigentes:
+  `tests/api/test_catalogo_productos.py::test_el_limite_del_tier_da_403`,
+  `test_catalogo_servicio.py::test_el_limite_del_tier_se_verifica_contra_las_filas_vivas`
+  y `::test_el_limite_del_tier_light_se_detiene_en_500`.
+- D-09 sigue viva y ahora importa más: cuando el tier deje de ser `pro` para
+  todos, el cupo ya es exacto bajo concurrencia.
+
+---
+
+### D-21 · El sync de ventas bloqueaba los productos en el orden del ticket
+
+**Qué era.** `_registrar_venta` tomaba el `FOR UPDATE` de cada producto en
+el orden en que los ítems venían en el ticket del cliente: dos lotes
+concurrentes con el mismo surtido en orden inverso adquirían los bloqueos en
+orden opuesto y Postgres los interbloqueaba (`DeadlockDetected` → 500; la
+idempotencia absorbía el reintento, pero era un error ruidoso esperando la
+hora pico del piloto).
+
+**Cómo se cerró** (pago de deuda de concurrencia, Fase 1 — su vencimiento:
+antes del piloto). La receta firmada en la entrada, que es la de la compra
+(decisión 9): la consolidación por producto (BUG-1 del QA) va primero y en
+el orden del ticket, y los `FOR UPDATE` se toman después, ordenados por
+`producto_id` (`backend/services/api/app/modules/ventas/service.py`). Lo
+único que cambia es el orden de ADQUISICIÓN de los bloqueos: los movimientos
+del libro se insertan en el orden del ticket, como antes — se verificó que
+ningún índice ni la lógica imponen un orden (`ux_movimientos_origen` es
+único por (tenant, tipo, referencia, producto), no por posición)— y se
+conserva por no permutar lo que el cliente ve. El test nuevo corre los dos
+lotes con el surtido invertido en `asyncio.gather`: antes del arreglo
+reventaba con `DeadlockDetectedError` (reproducido en el ROJO del TDD);
+ahora el perdedor espera el commit del ganador sobre la MISMA primera fila y
+ambos lotes aplican una sola vez.
+
+**Evidencia** (run ci 30339144864 sobre `61d67fc`, 2026-07-28; la corrida
+local de desarrollo usó un PostgreSQL 17 desechable con los init scripts del
+repo y las migraciones al head):
+
+```
+# ROJO previo (test nuevo, código sin el arreglo):
+asyncpg.exceptions.DeadlockDetectedError: deadlock detected
+DETAIL:  Process 173 waits for ShareLock on transaction 882; blocked by process 172.
+         Process 172 waits for ShareLock on transaction 880; blocked by process 173.
+[SQL: SELECT ... FROM productos WHERE productos.id = $1::UUID FOR UPDATE]
+
+$ cd backend && uv run pytest -q tests/test_ventas_adversarial.py
+16 passed       # incluye
+                # test_lotes_con_el_mismo_surtido_en_orden_inverso_no_se_interbloquean:
+                # dos cajas, [arroz, huevo] y [huevo, arroz] en gather, ambas
+                # aceptada, stock exacto (10−2 y 3−2) y 4 movimientos
+
+$ uv run pytest -q tests/test_caja_servicio.py tests/test_caja_adversarial.py \
+    tests/test_caja_anulacion_sync.py tests/test_fiado_servicio.py \
+    tests/test_fiado_adversarial.py tests/test_aislamiento_ventas.py \
+    tests/test_aislamiento_inventario.py tests/test_outbox_transaccional.py
+123 passed      # idempotencia, anulaciones y carreras de caja intactas:
+                # solo cambió el orden de adquisición de los bloqueos
+
+$ uv run pytest -q -rs -m integration     # run ci 30339144864 sobre 61d67fc
+475 passed, 430 deselected                # 0 SKIPPED (el grep del job lo exige)
+```
+
+**Candados:**
+
+- `backend/tests/test_ventas_adversarial.py::test_lotes_con_el_mismo_surtido_en_orden_inverso_no_se_interbloquean`:
+  dos lotes con orden inverso en `gather`; muere (por deadlock o por stock
+  erróneo) si alguien vuelve a bloquear en el orden del ticket.
+- `backend/tests/test_inventario_adversarial.py` (la compra con 200
+  productos ordenados) y `test_sync_idempotente.py`, vigentes: la receta de
+  la compra y la idempotencia del sync no se tocaron.
 
 ---
 
