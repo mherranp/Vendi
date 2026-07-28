@@ -272,11 +272,14 @@ async def test_el_forecast_suma_saldo_mas_promedios_menos_egresos(servicio, semi
 
     forecast = await servicio.forecast()
 
-    assert forecast.saldo_actual_centavos == 50000 + 10000  # base + la venta en efectivo
+    # El saldo es el esperado VIVO (decisión 3): base + ventas en efectivo
+    # + movimientos − devoluciones. El egreso de 8000 es de ESTA sesión, así
+    # que también entra en la cuenta: 50000 + 10000 − 8000.
+    assert forecast.saldo_actual_centavos == 50000 + 10000 - 8000
     assert forecast.ventas_proyectadas_centavos == 10000  # promedio diario × 30 con días en 0
     assert forecast.cobros_fiado_proyectados_centavos == 0  # sin fuente hasta el módulo 5: declarado
     assert forecast.egresos_proyectados_centavos == 8000
-    assert forecast.saldo_proyectado_centavos == 60000 + 10000 + 0 - 8000
+    assert forecast.saldo_proyectado_centavos == 52000 + 10000 + 0 - 8000
     assert forecast.dias_con_datos == 1
     assert "módulo 5" in forecast.fuentes["cobros_fiado"]
     assert "egresos de caja de los últimos 30" in forecast.fuentes["egresos_proyectados"]
