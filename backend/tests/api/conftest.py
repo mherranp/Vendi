@@ -53,6 +53,8 @@ async def limpiar_tenants_de_prueba(pg_platform_url: str):
                 # dispositivo y sesión de caja. Borrar en otro orden rompe la
                 # re-entrada de la suite con una violación de FK.
                 for tabla in (
+                    "fiado_abonos",
+                    "fiado_creditos",
                     "caja_movimientos",
                     "movimientos_inventario",
                     "compra_items",
@@ -62,6 +64,7 @@ async def limpiar_tenants_de_prueba(pg_platform_url: str):
                     "ventas",
                     "caja_sesiones",
                     "dispositivos",
+                    "clientes",
                 ):
                     await conn.execute(
                         text(f"DELETE FROM {tabla} WHERE tenant_id = ANY(:ids)"),
