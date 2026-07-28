@@ -9,6 +9,8 @@
 export { AuthService, SCOPE_ORGANIZACIONES } from './lib/auth.service';
 export type { ConfiguracionAuth } from './lib/auth.service';
 export { authGuard, roleGuard, tenantGuard } from './lib/auth.guard';
+export { permisoGuard } from './lib/permiso.guard';
+export { proveerSesion } from './lib/sesion.provider';
 export { authInterceptor } from './lib/auth.interceptor';
 export { HasPermissionDirective } from './lib/has-permission.directive';
 export { aliasDeOrganizaciones, rolesDeRealm } from './lib/token';

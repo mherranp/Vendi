@@ -2,7 +2,7 @@ import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { provideRouter } from '@angular/router';
 
-import { authInterceptor } from 'auth';
+import { authInterceptor, proveerSesion } from 'auth';
 import {
   API_BASE_URL,
   correlationIdInterceptor,
@@ -12,7 +12,6 @@ import {
 
 import { environment } from '../environments/environment';
 import { routes } from './app.routes';
-import { proveerSesion } from './nucleo/sesion';
 
 /** Configuración de arranque de la consola web del negocio. */
 export const appConfig: ApplicationConfig = {

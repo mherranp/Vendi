@@ -3,7 +3,7 @@ import { provideRouter } from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { provideServiceWorker } from '@angular/service-worker';
 
-import { authInterceptor } from 'auth';
+import { authInterceptor, proveerSesion } from 'auth';
 import {
   API_BASE_URL,
   correlationIdInterceptor,
@@ -17,7 +17,6 @@ import { esPlataformaNativa } from 'native';
 
 import { routes } from './app.routes';
 import { environment } from '../environments/environment';
-import { proveerSesion } from './nucleo/sesion';
 
 export const appConfig: ApplicationConfig = {
   providers: [
