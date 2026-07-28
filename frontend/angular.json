@@ -440,7 +440,8 @@
         "test": {
           "builder": "@angular/build:unit-test",
           "options": {
-            "tsConfig": "projects/libs/data-access/tsconfig.spec.json"
+            "tsConfig": "projects/libs/data-access/tsconfig.spec.json",
+            "setupFiles": ["projects/libs/data-access/src/indexeddb.setup.ts"]
           }
         },
         "lint": {
