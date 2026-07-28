@@ -884,11 +884,22 @@ dos muerde de verdad, se registra con su vencimiento.
 
 Fecha de corte: **2026-07-28**. La pista móvil de la Etapa 1.3 —el POS
 offline-first del MVP: la venta NUNCA depende del internet—, cerrada con su
-gate. Plan: el brief de la pista en `.superpowers/sdd/pos-task-10-brief.md`
+gate. Plan:
+[`docs/superpowers/plans/2026-07-29-pos-offline-vendi-app-plan.md`](superpowers/plans/2026-07-29-pos-offline-vendi-app-plan.md)
 (10 tareas TDD, commits `84060a4`…`a70c08c`, cada una con revisión
 independiente registrada en `.superpowers/sdd/`). Es el cierre del
 subproyecto 2 del plan maestro en su alcance honesto: **el POS offline está
 entregado; las features web de `vendi-tenant`, el `vendi-portal` comercial y
+
+> **Post-cierre (mismo día).** El QA adversarial de la cola offline
+> (`a3e682b`, tests de estrés y concurrencia) encontró 5 bugs reales, todos
+> corregidos (`b6feb91` backend, `1b810ef` frontend): el granel con fracción
+> de centavo moría en la cola para siempre —el servidor ahora redondea cada
+> línea ROUND_HALF_UP como el cliente—, la cantidad que cuantiza a cero se
+> rechaza en el POS, el backoff huérfano tras drenado parcial, el bucle
+> caliente del registro sin red y el tope de 160 del nombre de cliente.
+> HEAD de código de cierre real: `1b810ef` — runs ci/e2e/android
+> (30356390355/30356390327/30356390356) en verde.
 la auth nativa por navegador del sistema siguen abiertos** (esta última
 registrada como **D-29**).
 
