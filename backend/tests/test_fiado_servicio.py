@@ -389,5 +389,8 @@ async def test_el_detalle_arma_el_wa_me_y_lo_omite_sin_telefono(servicio, pg_pla
     assert detalle.whatsapp_url.startswith("https://wa.me/573001234567?text=")
     assert "%2443.000" in detalle.whatsapp_url  # «$43.000» codificado
     sin_telefono = await servicio.crear_cliente(ClienteCrear.model_validate({"nombre": "Sin número"}))
+    # El servicio hace flush pero NUNCA commit: sin esta línea el cliente no
+    # existe para la conexión de plataforma y el crédito revienta la FK.
+    await servicio._session.commit()
     credito_sin = await _credito(pg_platform_url, semilla, 10000, 10000, cliente_id=sin_telefono.id)
     assert (await servicio.obtener_credito(credito_sin)).whatsapp_url is None
