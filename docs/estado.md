@@ -496,6 +496,12 @@ Cerradas en este módulo: **D-12** y **D-14**.
 > insertan en el orden del ticket, como antes. Evidencia en el registro de
 > deuda.)*
 
+> *(Actualización del pago de deuda, 2026-07-28: **D-19** quedó **cerrada** —
+> el reenvío de una compra con el mismo `id` y payload distinto ya no es un
+> no-op silencioso: payload idéntico devuelve la existente; divergente, 409
+> `compra_id_divergente` con `details.campos`, el patrón de los ajustes.
+> Evidencia en el registro de deuda.)*
+
 ---
 
 ## Módulo caja y finanzas (Fase 1, Etapa 1.2)

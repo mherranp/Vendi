@@ -12,7 +12,6 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 | D-03 | El realm es semilla, no estado deseado continuo (mitigado en la Etapa 5: se aplica el subconjunto seguro) | Fase 1 | backend |
 | D-09 | El tier del negocio se resuelve como `pro` para todos (módulo catálogo, decisión 2 del plan) | Fase 1 (módulo de suscripciones) | backend |
 | D-16 | El check 23 de `verify-setup.sh` no tiene prueba negativa ejecutada (nadie lo ha visto fallar) | Fase 1 (Etapa 1.5) | backend |
-| D-19 | El reenvío de una compra con el mismo `id` y payload distinto devuelve la existente en silencio (asimetría con ajustes y ventas) | Fase 1 (antes del piloto) | backend |
 | D-20 | El `FOR UPDATE` del producto que exige `aplicar_movimiento` es convención documentada, no enforced | Fase 1 (antes del piloto o al primer llamante nuevo) | backend |
 | D-23 | El reintento de un ajuste cuyo producto fue dado de baja después devuelve 422 `producto_no_encontrado` en vez de la respuesta idempotente original | Fase 1 (antes del piloto) | backend |
 | D-24 | Un ajuste con el `id` de otro tenant recibe 409 `ajuste_id_divergente` (efecto de la RLS que oculta la fila; criterio no firmado, espejo de `dispositivo_id_en_conflicto`) | Fase 1 (antes del piloto) | backend |
@@ -71,6 +70,12 @@ borrar sus tablas) y **D-18** (el watermark del delta es
 `now() - interval '5 seconds'`: la edición confirmada en la ventana se
 re-entrega en el siguiente delta y el solape es inocuo porque el cliente
 hace upsert por id).
+
+Cerrada en el pago de deuda de la divergencia de compras (Fase 1 — su
+vencimiento: antes del piloto): **D-19** (el reenvío de una compra con el
+mismo `id` y payload distinto devolvía la existente en silencio): el
+servicio compara el payload como `_reintento_de_ajuste` y el divergente es
+409 `compra_id_divergente` con `details.campos`.
 
 > Runbooks operativos relacionados: el procedimiento completo de respaldo y
 > restauración (qué se vuelca, qué NO, y cómo se promueve una copia a base
@@ -203,41 +208,6 @@ local y pegar la salida del fallo en este registro al cerrarla.
   integration»): `[OK] aud=vendi-backend, rol de negocio y permisos de
   catálogo y ventas en el token del dueño` — si la siembra deja de incluir
   un permiso, el CI se pone rojo en el siguiente push.
-
----
-
-## D-19 · El reenvío de una compra con otro payload no detecta la divergencia
-
-**Qué es.** `InventarioService.registrar_compra`: si llega una compra con un
-`id` ya registrado, devuelve la existente **sin comparar** `proveedor_nombre`,
-`fecha` ni los ítems. Es una asimetría con los ajustes (mismo `id` + payload
-distinto = 409 `ajuste_id_divergente`) y con las ventas del sync (mismo `id`
-divergente = `rechazada` con motivo y `detalles`).
-
-**Por qué se aceptó.** Detectada en la revisión de cierre del módulo
-inventario (Tarea 11). La compra siguió el patrón del catálogo
-(`ProductoCrear`: el reenvío devuelve la existente), y el plan solo firmó la
-divergencia explícida donde hay delta relativo o stock offline de por medio
-(ajustes y ventas). La compra es un gesto síncrono del dueño o almacenista
-cuyo reenvío legítimo es idéntico (retry de red).
-
-**Riesgo si se olvida.** Una app que reintenta con el mismo `id` pero datos
-corregidos (el usuario editó la factura tras el timeout) recibe un 201 con la
-compra VIEJA y cree que la corrección quedó grabada: el stock y
-`ultimo_costo` reflejan el primer envío y nadie se entera.
-
-**Vencimiento: Fase 1, antes del piloto.** Arreglo: comparar el payload como
-`_reintento_de_ajuste` y devolver un 409 tipado (p. ej.
-`compra_id_divergente`).
-
-**Candados mientras tanto:**
-
-- La idempotencia sí está probada para el reenvío idéntico:
-  `test_inventario_servicio.py::test_registrar_compra_es_idempotente_por_el_id_del_cliente`
-  y `tests/api/test_inventario_api.py::test_la_compra_es_idempotente_por_el_id_del_cliente`
-  (sin doble fila, stock ni evento).
-- El libro es inmutable y la corrección manual ya existe: un ajuste con
-  motivo, camino probado de punta a punta.
 
 ---
 
@@ -1155,6 +1125,69 @@ $ uv run pytest -q -rs -m integration     # run ci 30342293905 sobre d919b1a
 - `backend/tests/api/test_ventas_sync.py::test_el_delta_baja_el_catalogo_y_las_tumbas`
   fija el solape a nivel de endpoint: desde el `hasta` devuelto llega de
   nuevo lo confirmado dentro del margen, y nada más.
+
+---
+
+### D-19 · El reenvío de una compra con otro payload no detectaba la divergencia
+
+**Qué era.** `InventarioService.registrar_compra`: si llegaba una compra con
+un `id` ya registrado, devolvía la existente **sin comparar**
+`proveedor_nombre`, `fecha` ni los ítems — un no-op silencioso ante la
+divergencia, asimétrico con ajustes (409 `ajuste_id_divergente`) y ventas
+(`rechazada` con motivo). El riesgo firmado: una app que reintenta con datos
+corregidos recibía el 201 de la compra VIEJA y creía grabada la corrección.
+
+**Cómo se cerró** (pago de deuda, Fase 1 — su vencimiento: antes del
+piloto). Con la receta que la propia entrada proponía: `_reintento_de_compra`
+(`backend/services/api/app/modules/inventario/service.py`), espejo de
+`_reintento_de_ajuste`. Payload idéntico → se devuelve la existente (el
+reintento legítimo, sin duplicar stock ni evento). Divergente → 409
+`compra_id_divergente` con `details={"campos": [...]}`: `proveedor_nombre`,
+`observaciones`, `items` (comparación normalizada como en ventas: la cantidad
+guardada `10.000` de NUMERIC(14,3) iguala a la enviada `10` vía `Decimal`, en
+conjunto sin orden — el schema prohíbe producto repetido) y `fecha` solo
+cuando el cliente la envía (si vino en NULL la puso el servidor y el
+reintento no puede reproducirla). La carrera de dos PRIMEROS envíos con el
+mismo `id` sigue cayendo en `compras_pkey` y sale 409 tipado
+(`compra_id_duplicado`), nunca 500 — fijado en test.
+
+**Evidencia** (run ci 30344948097 sobre `91060d1`, que contiene el fix
+`0a1354f`, 2026-07-28; la corrida local usó un PostgreSQL 17 desechable con
+los init scripts del repo y las migraciones al head):
+
+```
+# ROJO previo (los dos tests de divergencia, código sin el arreglo):
+$ cd backend && uv run pytest tests/test_inventario_servicio.py \
+    -k 'otro_proveedor or otros_items'
+FAILED tests/test_inventario_servicio.py::test_el_mismo_id_de_compra_con_otro_proveedor_es_409
+FAILED tests/test_inventario_servicio.py::test_el_mismo_id_de_compra_con_otros_items_es_409
+2 failed          # el reenvío divergente devolvía la existente EN SILENCIO
+
+$ uv run pytest -q tests/test_inventario_servicio.py tests/test_inventario_adversarial.py
+40 passed         # PG desechable local; incluye los dos de divergencia y
+                  # test_dos_primeros_envios_concurrentes_de_la_misma_compra_dejan_una
+                  # (la carrera cae en la pkey → 409 compra_id_duplicado:
+                  # UNA fila, UN evento, el stock sumado UNA vez)
+
+$ uv run pytest -q -m 'not integration'
+430 passed
+$ uv run ruff check . && uv run ruff format --check .
+All checks passed! · 236 files already formatted
+
+$ uv run pytest -q -m integration    # run ci 30344948097 sobre 91060d1 (contiene 0a1354f)
+480 passed, 430 deselected           # 0 SKIPPED (el grep del job lo exige)
+```
+
+**Candados:**
+
+- `backend/tests/test_inventario_servicio.py::test_el_mismo_id_de_compra_con_otro_proveedor_es_409`
+  y `::test_el_mismo_id_de_compra_con_otros_items_es_409`: la divergencia es
+  409 con los campos que difieren y la compra original queda intacta; mueren
+  si el no-op silencioso vuelve.
+- `backend/tests/test_inventario_servicio.py::test_registrar_compra_es_idempotente_por_el_id_del_cliente`:
+  el reenvío idéntico sigue siendo un no-op (ni doble fila, stock ni evento).
+- `backend/tests/test_inventario_adversarial.py::test_dos_primeros_envios_concurrentes_de_la_misma_compra_dejan_una`:
+  la carrera de dos primeros envíos se resuelve por la pkey con 409 tipado.
 
 ---
 
