@@ -362,7 +362,11 @@ async def test_dos_ventas_concurrentes_que_cruzan_juntas_emiten_una_alerta_por_c
             raise resultado
 
     assert await _stock(pg_platform_url, semilla["producto"]) == Decimal("-4")  # 10 - 7 - 7, ni una perdida
-    assert await _alertas(pg_platform_url) == ["bajo", "agotado"]
+    # D-30: el orden entre los dos eventos NO está garantizado — `created_at`
+    # del outbox es `now()` (inicio de cada transacción) y las dos ventas
+    # corrieron concurrentes; lo que sí es determinista es el CONJUNTO de
+    # alertas (un cruce a bajo y uno a agotado, exactamente uno por cruce).
+    assert sorted(await _alertas(pg_platform_url)) == ["agotado", "bajo"]
 
 
 # --- Compras: la regresión del deadlock, el tope y la atomicidad ---------------------

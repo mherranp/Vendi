@@ -19,7 +19,6 @@ arreglo funciona (comando + salida), no marcándola como "hecha".
 | D-26 | Una sesión puede cerrarse con `efectivo_esperado` NEGATIVO sin error (un egreso mayor que todo el efectivo de la sesión; decisión de producto pendiente: ¿advertencia al cerrar?) | Fase 1 (antes del piloto) | backend |
 | D-28 | No hay delta de clientes hacia dispositivos: un cliente creado en una caja llega a la otra solo online (GET /clientes) | Fase 1 (antes del piloto) | backend |
 | D-29 | La auth nativa de vendi-app (login por navegador del sistema: @capacitor/browser + esquema co.vendi.app:// + asset links para passkeys) no existe: la app autentica con el flujo WEB y el canal del piloto es la PWA instalada; el AAB nativo sigue siendo artefacto de CI | Fase 1 (antes del piloto nativo) | frontend |
-| D-30 | Flake: la ordenación del outbox por `created_at` (= inicio de la transacción) puede invertir niveles de alerta entre eventos de la misma transacción; el test adversarial de inventario falla intermitente | Fase 1 (antes del piloto) | backend |
 
 Cerradas en la Etapa 5, con su evidencia al final de este documento: **D-01**
 (ROPC), **D-04** (Keycloak sin `--optimized`), **D-06** (`alembic_version`
@@ -44,6 +43,12 @@ del plan daba por fijado y solo cubría el genérico).
 Cerrada en la Tarea 9 del módulo caja y finanzas (Fase 1, Etapa 1.2): **D-15**
 (`exigir_venta_anular` definido y exportado sin consumidor): el módulo 4 no le
 dio uso y su propio vencimiento («si nada lo usa, se borra») mandaba retirarlo.
+
+Cerrada en la pista web de la Etapa 1.3 (2026-07-28): **D-30** (flake del
+outbox): el test adversarial de inventario dejó de asumir orden estricto entre
+eventos de transacciones concurrentes y ahora aserta el conjunto de alertas
+(`test_inventario_adversarial.py`, `sorted(...)`). El CI había fallado dos
+veces por este flake antes del cierre.
 
 Cerrada en la Tarea 11 del módulo caja y finanzas (Fase 1, Etapa 1.2): **D-11**
 (`caja_sesiones` existía y se poblaba sin endpoints propios): el módulo 4
