@@ -95,6 +95,14 @@ PERM_CAJA_CERRAR = "caja:cerrar"
 PERM_CAJA_MOVIMIENTO = "caja:movimiento"
 PERM_REPORTE_LEER = "reporte:leer"
 
+# Fiado y clientes (ADR-022/ADR-023): el cuaderno. El cajero fía y cobra
+# abonos — el fiado es el modo normal de vender y cobrar en la tienda — y
+# gestiona los clientes (necesita el saldo para fiar y para cobrar). El
+# almacenista no toca fiado: su trabajo es el estante.
+PERM_CLIENTE_GESTIONAR = "cliente:gestionar"
+PERM_FIADO_CREAR = "fiado:crear"
+PERM_FIADO_ABONAR = "fiado:abonar"
+
 # Comodín para superadministradores de plataforma.
 PERM_WILDCARD = "*"
 
@@ -117,6 +125,9 @@ PERMISSION_CATALOG: tuple[tuple[str, str], ...] = (
     (PERM_CAJA_CERRAR, "caja"),
     (PERM_CAJA_MOVIMIENTO, "caja"),
     (PERM_REPORTE_LEER, "reporte"),
+    (PERM_CLIENTE_GESTIONAR, "cliente"),
+    (PERM_FIADO_CREAR, "fiado"),
+    (PERM_FIADO_ABONAR, "fiado"),
 )
 
 
@@ -147,18 +158,30 @@ _PERMISOS_DUENO = frozenset(
         PERM_CAJA_CERRAR,
         PERM_CAJA_MOVIMIENTO,
         PERM_REPORTE_LEER,
+        PERM_CLIENTE_GESTIONAR,
+        PERM_FIADO_CREAR,
+        PERM_FIADO_ABONAR,
     }
 )
 
-# ADR-023: el cajero consulta el catálogo, vende, abre su caja y registra
-# movimientos, pero NO edita el catálogo, NO anula ventas, NO ajusta
-# inventario, NO registra compras, NO cierra la caja y NO ve reportes
-# (anular y arquear son los gestos con los que se desfalca una tienda; son
-# del dueño en el MVP). El almacenista mantiene el catálogo, ajusta el
-# inventario y registra las compras; no vende ni toca caja ni fiado. Los
-# permisos de fiado/cliente llegan con el módulo 5 (ADR-022).
+# ADR-023: el cajero consulta el catálogo, vende, fía, cobra abonos, gestiona
+# los clientes, abre su caja y registra movimientos, pero NO edita el
+# catálogo, NO anula ventas, NO ajusta inventario, NO registra compras, NO
+# cierra la caja y NO ve reportes (anular y arquear son los gestos con los
+# que se desfalca una tienda; son del dueño en el MVP). El almacenista
+# mantiene el catálogo, ajusta el inventario y registra las compras; no
+# vende ni toca caja ni fiado.
 _PERMISOS_CAJERO: frozenset[str] = frozenset(
-    {PERM_PRODUCTO_LEER, PERM_VENTA_CREAR, PERM_CAJA_LEER, PERM_CAJA_ABRIR, PERM_CAJA_MOVIMIENTO}
+    {
+        PERM_PRODUCTO_LEER,
+        PERM_VENTA_CREAR,
+        PERM_CAJA_LEER,
+        PERM_CAJA_ABRIR,
+        PERM_CAJA_MOVIMIENTO,
+        PERM_CLIENTE_GESTIONAR,
+        PERM_FIADO_CREAR,
+        PERM_FIADO_ABONAR,
+    }
 )
 _PERMISOS_ALMACENISTA: frozenset[str] = frozenset(
     {PERM_PRODUCTO_LEER, PERM_PRODUCTO_EDITAR, PERM_INVENTARIO_AJUSTAR, PERM_COMPRA_CREAR}

@@ -24,7 +24,10 @@ from vendi_core.auth.policies import (
     PERM_CAJA_CERRAR,
     PERM_CAJA_LEER,
     PERM_CAJA_MOVIMIENTO,
+    PERM_CLIENTE_GESTIONAR,
     PERM_COMPRA_CREAR,
+    PERM_FIADO_ABONAR,
+    PERM_FIADO_CREAR,
     PERM_INVENTARIO_AJUSTAR,
     PERM_PLATFORM_ADMIN,
     PERM_PRODUCTO_EDITAR,
@@ -74,6 +77,9 @@ def test_el_catalogo_declara_los_permisos():
         PERM_CAJA_CERRAR,
         PERM_CAJA_MOVIMIENTO,
         PERM_REPORTE_LEER,
+        PERM_CLIENTE_GESTIONAR,
+        PERM_FIADO_CREAR,
+        PERM_FIADO_ABONAR,
     }
 
 
@@ -108,13 +114,23 @@ def test_ningun_rol_de_negocio_alcanza_la_consola_de_plataforma():
 
 
 def test_el_reparto_de_permisos_es_el_de_adr_023():
-    """El cajero ABRE su caja y registra movimientos, pero NO la cierra y NO
-    ve reportes: anular y arquear son los dos gestos con los que se desfalca
-    una tienda y quedan en manos del dueño en el MVP (ADR-023). El
-    almacenista no toca caja: su trabajo es que el estante y el sistema
-    digan lo mismo."""
+    """El cajero ABRE su caja y registra movimientos, fía y cobra abonos, y
+    gestiona los clientes (necesita el saldo para fiar y para cobrar), pero
+    NO cierra la caja y NO ve reportes: anular y arquear son los dos gestos
+    con los que se desfalca una tienda y quedan en manos del dueño en el
+    MVP (ADR-023). El almacenista no toca caja ni fiado: su trabajo es que
+    el estante y el sistema digan lo mismo."""
     assert PERMISOS_POR_ROL[ROL_CAJERO] == frozenset(
-        {PERM_PRODUCTO_LEER, PERM_VENTA_CREAR, PERM_CAJA_LEER, PERM_CAJA_ABRIR, PERM_CAJA_MOVIMIENTO}
+        {
+            PERM_PRODUCTO_LEER,
+            PERM_VENTA_CREAR,
+            PERM_CAJA_LEER,
+            PERM_CAJA_ABRIR,
+            PERM_CAJA_MOVIMIENTO,
+            PERM_CLIENTE_GESTIONAR,
+            PERM_FIADO_CREAR,
+            PERM_FIADO_ABONAR,
+        }
     )
     assert PERM_CAJA_CERRAR not in PERMISOS_POR_ROL[ROL_CAJERO]
     assert PERM_REPORTE_LEER not in PERMISOS_POR_ROL[ROL_CAJERO]
@@ -133,6 +149,9 @@ def test_el_reparto_de_permisos_es_el_de_adr_023():
         PERM_CAJA_CERRAR,
         PERM_CAJA_MOVIMIENTO,
         PERM_REPORTE_LEER,
+        PERM_CLIENTE_GESTIONAR,
+        PERM_FIADO_CREAR,
+        PERM_FIADO_ABONAR,
     } <= PERMISOS_POR_ROL[ROL_DUENO]
 
 
@@ -187,8 +206,47 @@ def test_el_grupo_de_un_rol_mapea_el_rol_y_sus_permisos():
     assert PERM_TENANT_READ in mapeo
     assert mapeo == sorted(mapeo), "el orden tiene que ser estable: la siembra hace diff contra él"
 
-    # El cajero ya vende y opera su caja (ADR-023): el grupo mapea el rol Y
-    # sus cinco permisos (sin `caja:cerrar` ni `reporte:leer`).
+    # El cajero ya vende, opera su caja, fía y cobra (ADR-023): el grupo mapea
+    # el rol Y sus ocho permisos (sin `caja:cerrar` ni `reporte:leer`).
     assert roles_de_realm_del_grupo(ROL_CAJERO) == sorted(
-        {ROL_CAJERO, PERM_PRODUCTO_LEER, PERM_VENTA_CREAR, PERM_CAJA_LEER, PERM_CAJA_ABRIR, PERM_CAJA_MOVIMIENTO}
+        {
+            ROL_CAJERO,
+            PERM_PRODUCTO_LEER,
+            PERM_VENTA_CREAR,
+            PERM_CAJA_LEER,
+            PERM_CAJA_ABRIR,
+            PERM_CAJA_MOVIMIENTO,
+            PERM_CLIENTE_GESTIONAR,
+            PERM_FIADO_CREAR,
+            PERM_FIADO_ABONAR,
+        }
     )
+
+
+def test_el_catalogo_de_14_se_completa_con_fiado_y_clientes():
+    """ADR-023: `cliente:gestionar`, `fiado:crear` y `fiado:abonar` son los
+    tres últimos del catálogo cerrado de 14. Ampliarlo exige ADR nuevo."""
+    from vendi_core.auth.policies import PERM_CLIENTE_GESTIONAR, PERM_FIADO_ABONAR, PERM_FIADO_CREAR
+
+    catalogo = {nombre for nombre, _modulo in PERMISSION_CATALOG}
+    assert {PERM_CLIENTE_GESTIONAR, PERM_FIADO_CREAR, PERM_FIADO_ABONAR} <= catalogo
+    dominio = {n for n, m in PERMISSION_CATALOG if m not in ("tenant", "platform", "audit")}
+    assert len(dominio) == 14  # el catálogo de dominio de ADR-023, completo
+
+
+def test_el_reparto_de_fiado_es_el_de_adr_023():
+    """El cajero fía y cobra abonos (y gestiona clientes: los necesita para
+    fiar); el almacenista no toca fiado; el dueño lo tiene todo."""
+    from vendi_core.auth.policies import (
+        PERM_CLIENTE_GESTIONAR,
+        PERM_FIADO_ABONAR,
+        PERM_FIADO_CREAR,
+        ROL_ALMACENISTA,
+        ROL_CAJERO,
+        ROL_DUENO,
+    )
+
+    los_tres = {PERM_CLIENTE_GESTIONAR, PERM_FIADO_CREAR, PERM_FIADO_ABONAR}
+    assert los_tres <= PERMISOS_POR_ROL[ROL_DUENO]
+    assert los_tres <= PERMISOS_POR_ROL[ROL_CAJERO]
+    assert not (los_tres & PERMISOS_POR_ROL[ROL_ALMACENISTA])
