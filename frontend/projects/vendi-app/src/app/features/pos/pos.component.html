@@ -1,0 +1,140 @@
+<main class="pos">
+  <header class="pos__barra">
+    <h1 class="pos__titulo">{{ 'app.titulo' | translate }}</h1>
+    <span class="pos__cola" [class.pos__cola--sucia]="pendientes() > 0">
+      @if (sincronizando()) {
+        {{ 'pos.sincronizando' | translate }}
+      } @else {
+        {{ 'pos.pendientes' | translate: { cantidad: pendientes() } }}
+      }
+    </span>
+    @if (enError() > 0) {
+      <span class="pos__errores">
+        {{ 'pos.operaciones_en_error' | translate: { cantidad: enError() } }}
+      </span>
+    }
+    <button mat-stroked-button type="button" (click)="reintentar()">
+      {{ 'comun.reintentar' | translate }}
+    </button>
+  </header>
+
+  @if (catalogoVacio()) {
+    <p class="pos__aviso">{{ 'pos.catalogo_vacio' | translate }}</p>
+  }
+
+  <section class="pos__busqueda" aria-labelledby="buscar-producto">
+    <label id="buscar-producto" for="consulta">{{ 'comun.buscar' | translate }}</label>
+    <input
+      id="consulta"
+      type="search"
+      [ngModel]="consulta()"
+      (ngModelChange)="buscar($event)"
+      [placeholder]="'pos.buscar_placeholder' | translate"
+    />
+    <ul class="pos__resultados">
+      @for (producto of resultados(); track producto.id) {
+        <li>
+          <button type="button" class="pos__producto" (click)="agregar(producto)">
+            <span>{{ producto.nombre }}</span>
+            <span>{{ formatear(producto.precio_venta) }} / {{ producto.unidad_medida }}</span>
+          </button>
+        </li>
+      }
+    </ul>
+  </section>
+
+  <section class="pos__ticket" aria-labelledby="ticket-titulo">
+    <h2 id="ticket-titulo">{{ 'pos.ticket' | translate }}</h2>
+    @if (lineas().length === 0) {
+      <p>{{ 'pos.ticket_vacio' | translate }}</p>
+    }
+    <ul>
+      @for (linea of lineas(); track linea.producto_id) {
+        <li class="pos__linea">
+          <span class="pos__linea-nombre">{{ linea.nombre }}</span>
+          <input
+            type="text"
+            inputmode="decimal"
+            class="pos__linea-cantidad"
+            [ngModel]="linea.cantidad_mili / 1000"
+            (ngModelChange)="fijarCantidad(linea.producto_id, $event)"
+            [attr.aria-label]="'pos.cantidad' | translate"
+          />
+          <span class="pos__linea-total">{{ totalDeLinea(linea) }}</span>
+          <button
+            mat-icon-button
+            type="button"
+            (click)="quitar(linea.producto_id)"
+            [attr.aria-label]="'comun.eliminar' | translate"
+          >
+            <mat-icon>delete</mat-icon>
+          </button>
+        </li>
+      }
+    </ul>
+    <p class="pos__total">{{ 'pos.total' | translate }}: {{ formatear(total()) }}</p>
+  </section>
+
+  <section class="pos__cobro" aria-labelledby="cobro-titulo">
+    <h2 id="cobro-titulo">{{ 'pos.cobro' | translate }}</h2>
+    <div class="pos__medios" role="group" [attr.aria-label]="'pos.medio_pago' | translate">
+      <button
+        mat-stroked-button
+        type="button"
+        [class.pos__medio--activo]="medioPago() === 'efectivo'"
+        (click)="elegirMedioPago('efectivo')"
+      >
+        {{ 'pos.efectivo' | translate }}
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        [class.pos__medio--activo]="medioPago() === 'fiado'"
+        (click)="elegirMedioPago('fiado')"
+      >
+        {{ 'pos.fiado' | translate }}
+      </button>
+    </div>
+
+    @if (medioPago() === 'fiado') {
+      <div class="pos__cliente">
+        @if (cliente(); as elegido) {
+          <p>{{ 'pos.fiado_a' | translate: { nombre: elegido.nombre } }}</p>
+        } @else {
+          <input
+            type="search"
+            [ngModel]="consultaCliente()"
+            (ngModelChange)="buscarCliente($event)"
+            [placeholder]="'pos.cliente_placeholder' | translate"
+          />
+          <ul>
+            @for (opcion of clientes(); track opcion.id) {
+              <li>
+                <button type="button" (click)="elegirCliente(opcion)">{{ opcion.nombre }}</button>
+              </li>
+            }
+          </ul>
+          <button mat-stroked-button type="button" (click)="crearCliente()">
+            {{ 'pos.cliente_nuevo' | translate }}
+          </button>
+        }
+      </div>
+    }
+
+    <button
+      mat-flat-button
+      type="button"
+      class="pos__cobrar"
+      [disabled]="lineas().length === 0 || cobrando()"
+      (click)="cobrar()"
+    >
+      {{ 'pos.cobrar' | translate: { total: formatear(total()) } }}
+    </button>
+  </section>
+
+  @if (ultimaVenta(); as venta) {
+    <p class="pos__ultima">
+      {{ 'pos.ultima_venta' | translate: { numero: venta.consecutivo_local } }}
+    </p>
+  }
+</main>

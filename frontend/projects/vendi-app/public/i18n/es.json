@@ -60,5 +60,32 @@
   "proximamente": {
     "titulo": "Muy pronto en tu bolsillo",
     "descripcion": "Estamos terminando la aplicación para tu tienda. Mientras tanto, puedes administrar tu negocio desde el navegador."
+  },
+  "pos": {
+    "buscar_placeholder": "Buscar por nombre o código…",
+    "ticket": "Ticket",
+    "ticket_vacio": "Toca un producto para empezar la venta",
+    "cantidad": "Cantidad",
+    "total": "Total",
+    "cobro": "Cobro",
+    "medio_pago": "Medio de pago",
+    "efectivo": "Efectivo",
+    "fiado": "Fiado",
+    "fiado_a": "Fiado a {{nombre}}",
+    "fiado_sin_cliente": "Para fiar, elige o crea primero el cliente",
+    "cliente_placeholder": "Buscar o escribir el nombre del cliente…",
+    "cliente_nuevo": "Crear cliente con este nombre",
+    "cobrar": "Cobrar {{total}}",
+    "cobrada": "Venta #{{numero}} registrada",
+    "ultima_venta": "Última venta: #{{numero}}",
+    "pendientes": "{{cantidad}} por sincronizar",
+    "sincronizando": "Sincronizando…",
+    "operaciones_en_error": "{{cantidad}} con error (requieren revisión)",
+    "catalogo_vacio": "El catálogo está vacío. Conéctate una vez para descargarlo."
+  },
+  "elegir": {
+    "titulo": "¿Con qué negocio trabajas?",
+    "descripcion": "Tu cuenta administra más de un negocio. Elige uno para continuar; puedes cambiar cuando quieras.",
+    "sin_negocios": "Tu cuenta todavía no está asociada a ningún negocio. Pídele al administrador que te agregue."
   }
 }

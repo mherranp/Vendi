@@ -1,0 +1,18 @@
+.vd-elegir {
+  max-width: 36rem;
+  margin: var(--vd-espacio-12) auto;
+  padding: 0 var(--vd-espacio-4);
+
+  code {
+    font-family: var(--vd-fuente-mono);
+    font-size: var(--vd-texto-sm);
+  }
+
+  button[mat-list-item] {
+    width: 100%;
+    cursor: pointer;
+    // Vendi se usa con el dedo: 48px es el mínimo de objetivo táctil.
+    min-height: var(--vd-objetivo-tactil);
+    text-align: start;
+  }
+}

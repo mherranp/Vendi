@@ -81,7 +81,12 @@
           }
         },
         "test": {
-          "builder": "@angular/build:unit-test"
+          "builder": "@angular/build:unit-test",
+          "options": {
+            // IndexedDB falsa en el global que Dexie lee (jsdom no la
+            // implementa): mismo setup que los specs offline de data-access.
+            "setupFiles": ["projects/libs/data-access/src/indexeddb.setup.ts"]
+          }
         },
         "lint": {
           "builder": "@angular-eslint/builder:lint",
