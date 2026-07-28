@@ -1,0 +1,158 @@
+<vd-page-header titulo="caja.titulo" subtitulo="caja.subtitulo" />
+
+@if (cargando()) {
+  <vd-loading-spinner />
+} @else if (fallo()) {
+  <div role="alert">
+    <span>{{ 'caja.fallo' | translate }}</span>
+    <button matButton type="button" (click)="cargar()">{{ 'comun.reintentar' | translate }}</button>
+  </div>
+} @else {
+  @if (arqueo(); as cierre) {
+    <mat-card>
+      <mat-card-header>
+        <mat-card-title>{{ 'caja.arqueo.titulo' | translate }}</mat-card-title>
+      </mat-card-header>
+      <mat-card-content>
+        <dl>
+          @if (cierre.desglose; as desglose) {
+            <dt>{{ 'caja.arqueo.base' | translate }}</dt>
+            <dd>{{ formatear(desglose.base_inicial) }}</dd>
+            <dt>{{ 'caja.arqueo.ventas' | translate }}</dt>
+            <dd>{{ formatear(desglose.ventas_efectivo) }}</dd>
+            <dt>{{ 'caja.arqueo.abonos' | translate }}</dt>
+            <dd>{{ formatear(desglose.abonos_efectivo) }}</dd>
+            <dt>{{ 'caja.arqueo.ingresos' | translate }}</dt>
+            <dd>{{ formatear(desglose.ingresos) }}</dd>
+            <dt>{{ 'caja.arqueo.egresos' | translate }}</dt>
+            <dd>{{ formatear(desglose.egresos) }}</dd>
+          }
+          <dt>{{ 'caja.historial.esperado' | translate }}</dt>
+          <dd>{{ formatear(cierre.efectivo_esperado ?? 0) }}</dd>
+          <dt>{{ 'caja.historial.contado' | translate }}</dt>
+          <dd>{{ formatear(cierre.efectivo_contado ?? 0) }}</dd>
+          <dt>{{ 'caja.historial.diferencia' | translate }}</dt>
+          <dd>
+            <vd-status-badge
+              [etiqueta]="textoDiferencia(cierre.diferencia)"
+              [variante]="varianteDiferencia(cierre.diferencia)"
+            />
+          </dd>
+        </dl>
+      </mat-card-content>
+    </mat-card>
+  }
+
+  @if (sesion(); as sesion) {
+    <mat-card>
+      <mat-card-header>
+        <mat-card-title>{{ 'caja.sesion.abierta' | translate }}</mat-card-title>
+      </mat-card-header>
+      <mat-card-content>
+        <p>{{ 'caja.sesion.base' | translate: { monto: formatear(sesion.base_inicial) } }}</p>
+        @if (sesion.efectivo_esperado !== null && sesion.efectivo_esperado !== undefined) {
+          <p>
+            {{ 'caja.sesion.esperado' | translate: { monto: formatear(sesion.efectivo_esperado) } }}
+          </p>
+        }
+      </mat-card-content>
+      <mat-card-actions>
+        <button
+          matButton="outlined"
+          type="button"
+          *vdHasPermission="'caja:movimiento'"
+          (click)="registrarMovimiento()"
+        >
+          {{ 'caja.movimiento.nuevo' | translate }}
+        </button>
+        <button
+          matButton="filled"
+          type="button"
+          *vdHasPermission="'caja:cerrar'"
+          (click)="cerrarCaja()"
+        >
+          {{ 'caja.cerrar.accion' | translate }}
+        </button>
+      </mat-card-actions>
+    </mat-card>
+
+    <h2>{{ 'caja.movimientos.titulo' | translate }}</h2>
+    <vd-data-table
+      [columnas]="columnasMovimientos()"
+      [filas]="movimientos()"
+      [total]="totalMovimientos()"
+      [cargando]="cargandoMovimientos()"
+      [indicePagina]="indiceMovimientos()"
+      [tamanoPagina]="10"
+      iconoVacio="payments"
+      tituloVacio="caja.movimientos.vacio"
+      (paginaCambia)="alPaginarMovimientos($event)"
+    />
+    <!-- El monto viaja en centavos: al usuario se le muestra en pesos. -->
+    <ng-template #celdaMonto let-fila>{{ textoMonto(fila) }}</ng-template>
+  } @else {
+    <!--
+      Tras cerrar queda el arqueo en pantalla Y se puede abrir la caja del
+      turno siguiente sin recargar: el resultado no tapa la operación.
+    -->
+    <mat-card *vdHasPermission="'caja:abrir'">
+      <mat-card-header>
+        <mat-card-title>{{ 'caja.abrir.titulo' | translate }}</mat-card-title>
+      </mat-card-header>
+      <mat-card-content>
+        <p>{{ 'caja.abrir.descripcion' | translate }}</p>
+        <mat-form-field>
+          <mat-label>{{ 'caja.abrir.base' | translate }}</mat-label>
+          <input
+            matInput
+            type="number"
+            min="0"
+            [ngModel]="basePesos()"
+            (ngModelChange)="basePesos.set($event)"
+          />
+        </mat-form-field>
+      </mat-card-content>
+      <mat-card-actions>
+        <button
+          matButton="filled"
+          type="button"
+          [disabled]="abriendo() || basePesos() === null"
+          (click)="abrirCaja()"
+        >
+          {{ 'caja.abrir.accion' | translate }}
+        </button>
+      </mat-card-actions>
+    </mat-card>
+  }
+
+  <section *vdHasPermission="'caja:cerrar'">
+    <h2>{{ 'caja.historial.titulo' | translate }}</h2>
+    <vd-data-table
+      [columnas]="columnasHistorial()"
+      [filas]="historial()"
+      [total]="totalHistorial()"
+      [cargando]="cargandoHistorial()"
+      [indicePagina]="indiceHistorial()"
+      [tamanoPagina]="10"
+      iconoVacio="receipt_long"
+      tituloVacio="caja.historial.vacio"
+      (paginaCambia)="alPaginarHistorial($event)"
+    />
+    <ng-template #celdaEsperado let-fila>{{
+      fila.efectivo_esperado === null || fila.efectivo_esperado === undefined
+        ? '—'
+        : formatear(fila.efectivo_esperado)
+    }}</ng-template>
+    <ng-template #celdaContado let-fila>{{
+      fila.efectivo_contado === null || fila.efectivo_contado === undefined
+        ? '—'
+        : formatear(fila.efectivo_contado)
+    }}</ng-template>
+    <ng-template #celdaDiferencia let-fila>
+      <vd-status-badge
+        [etiqueta]="textoDiferencia(fila.diferencia)"
+        [variante]="varianteDiferencia(fila.diferencia)"
+      />
+    </ng-template>
+  </section>
+}

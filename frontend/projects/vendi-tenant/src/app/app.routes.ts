@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { authGuard, tenantGuard } from 'auth';
+import { authGuard, permisoGuard, tenantGuard } from 'auth';
 import { NotFoundComponent } from 'ui-kit';
 import { ShellComponent } from './layout/shell.component';
 
@@ -22,6 +22,12 @@ export const routes: Routes = [
         canActivate: [tenantGuard],
         loadComponent: () =>
           import('./features/mi-negocio/mi-negocio.component').then((m) => m.MiNegocioComponent),
+      },
+      {
+        path: 'caja',
+        canActivate: [tenantGuard, permisoGuard('caja:leer')],
+        loadComponent: () =>
+          import('./features/caja/mi-caja.component').then((m) => m.MiCajaComponent),
       },
       {
         path: 'elegir-negocio',

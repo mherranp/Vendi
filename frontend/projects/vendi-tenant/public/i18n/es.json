@@ -82,6 +82,75 @@
     "descripcion": "Tu cuenta administra más de un negocio. Elige uno para continuar; puedes cambiar cuando quieras.",
     "sin_negocios": "Tu cuenta todavía no está asociada a ningún negocio. Pídele al administrador que te agregue."
   },
+  "caja": {
+    "titulo": "Mi caja",
+    "subtitulo": "La caja del día: base, movimientos y arqueo",
+    "fallo": "No pudimos cargar el estado de la caja.",
+    "abrir": {
+      "titulo": "No hay caja abierta",
+      "descripcion": "Abre la caja para registrar los movimientos del día. La base es el efectivo con el que empiezas.",
+      "base": "Base inicial (pesos)",
+      "accion": "Abrir caja"
+    },
+    "sesion": {
+      "abierta": "Caja abierta",
+      "base": "Base inicial: {{monto}}",
+      "esperado": "Esperado en gaveta: {{monto}}"
+    },
+    "movimiento": {
+      "nuevo": "Registrar movimiento",
+      "titulo": "Movimiento de caja",
+      "tipo": "Tipo",
+      "ingreso": "Ingreso",
+      "egreso": "Egreso",
+      "categoria": "Categoría",
+      "monto": "Monto (pesos)",
+      "motivo": "Motivo",
+      "motivo_marcador": "Ej.: pago del arriendo de junio"
+    },
+    "categoria": {
+      "arriendo": "Arriendo",
+      "servicios": "Servicios",
+      "retiro_dueno": "Retiro del dueño",
+      "otro": "Otro"
+    },
+    "movimientos": {
+      "titulo": "Movimientos de la sesión",
+      "vacio": "Todavía no hay movimientos manuales",
+      "columna": {
+        "fecha": "Fecha",
+        "tipo": "Tipo",
+        "categoria": "Categoría",
+        "motivo": "Motivo",
+        "monto": "Monto"
+      }
+    },
+    "cerrar": {
+      "accion": "Cerrar caja",
+      "titulo": "Cerrar la caja del día",
+      "esperado": "Según el sistema debería haber {{monto}}.",
+      "contado": "Efectivo contado (pesos)",
+      "contado_ayuda": "Cuenta la gaveta y escribe el total, sin comas ni puntos de miles.",
+      "confirmar": "Cerrar con este conteo"
+    },
+    "arqueo": {
+      "titulo": "Arqueo del día",
+      "base": "Base inicial",
+      "ventas": "Ventas en efectivo",
+      "abonos": "Abonos de fiado en efectivo",
+      "ingresos": "Ingresos manuales",
+      "egresos": "Egresos manuales"
+    },
+    "historial": {
+      "titulo": "Historial de arqueos",
+      "vacio": "Todavía no hay arqueos",
+      "abierta": "Abierta",
+      "cerrada_por": "Cerrada por",
+      "esperado": "Esperado",
+      "contado": "Contado",
+      "diferencia": "Diferencia"
+    }
+  },
   "menu": {
     "caja": "Mi caja",
     "catalogo": "Catálogo",
