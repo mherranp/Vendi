@@ -22,6 +22,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.modules.caja.schemas import MovimientoCrear, SesionAbrir, SesionCerrar
 from app.modules.caja.service import CajaService, calcular_desglose
+from app.modules.ventas.schemas import LoteSync
+from app.modules.ventas.service import VentasService
 from vendi_core.db.engine import create_engine
 from vendi_core.db.session import create_session_factory
 from vendi_core.errors.domain import ConflictError, NotFoundError
@@ -36,6 +38,8 @@ BORRADO = (
     "DELETE FROM ventas WHERE tenant_id = ANY(:ids)",
     "DELETE FROM caja_sesiones WHERE tenant_id = ANY(:ids)",
     "DELETE FROM dispositivos WHERE tenant_id = ANY(:ids)",
+    "DELETE FROM productos WHERE tenant_id = ANY(:ids)",
+    "DELETE FROM outbox_messages WHERE routing_key LIKE '%.inventario.%'",
     "DELETE FROM outbox_messages WHERE routing_key LIKE '%.caja.%'",
     "DELETE FROM outbox_messages WHERE routing_key LIKE '%.venta.%'",
 )
@@ -48,13 +52,20 @@ async def semilla(pg_platform_url: str):
     """Un dispositivo en T1 (para insertar ventas por SQL con `recibida_en`
     controlada) y limpieza total antes y después: la suite es re-entrante."""
     engine = create_async_engine(pg_platform_url)
-    ids = {"dispositivo": uuid.uuid4()}
+    ids = {"dispositivo": uuid.uuid4(), "producto": uuid.uuid4()}
     async with engine.begin() as conn:
         for sentencia in BORRADO:
             await conn.execute(text(sentencia), {"ids": [T1, T2]})
         await conn.execute(
             text("INSERT INTO dispositivos (id, tenant_id, nombre) VALUES (:d, :t, 'Caja 1')"),
             {"d": ids["dispositivo"], "t": T1},
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO productos (id, tenant_id, nombre, precio_venta, stock_actual) "
+                "VALUES (:p, :t, 'Arroz 500g', 2500, 100)"
+            ),
+            {"p": ids["producto"], "t": T1},
         )
     try:
         yield ids
@@ -490,3 +501,115 @@ async def test_sin_sesion_abierta_la_actual_es_404(servicio):
     with pytest.raises(NotFoundError) as exc:
         await servicio.sesion_actual()
     assert exc.value.code == "caja_sin_sesion_abierta"
+
+
+# --- El camino real del sync contra la sesión (Tarea 6) ---------------------------
+
+
+def _lote_venta(dispositivo_id: uuid.UUID, producto_id: uuid.UUID, total: int, consecutivo: int = 1) -> LoteSync:
+    return LoteSync.model_validate(
+        {
+            "dispositivo_id": str(dispositivo_id),
+            "operaciones": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "tipo": "venta.crear",
+                    "secuencia": 1,
+                    "datos": {
+                        "consecutivo_local": consecutivo,
+                        "medio_pago": "efectivo",
+                        "total_centavos": total,
+                        "creada_en_cliente": "2026-07-28T10:00:00+00:00",
+                        "items": [
+                            {"producto_id": str(producto_id), "cantidad": "1", "precio_unitario_centavos": total}
+                        ],
+                    },
+                }
+            ],
+        }
+    )
+
+
+async def test_la_venta_que_sincroniza_tras_el_cierre_cae_en_la_sesion_nueva(servicio, semilla, pg_platform_url):
+    """El congelamiento es estructural (decisión 5): cerrada la sesión A, la
+    venta que llega tarde por el sync NO entra a A (su arqueo firmado no se
+    toca): el resolvedor abre una implícita nueva y la venta cae ahí."""
+    sesion_a = await servicio.abrir_sesion(SesionAbrir.model_validate({"base_inicial": 0}))
+    await servicio._session.commit()
+    await _venta(pg_platform_url, semilla, sesion_a.id, 10000)
+    arqueo = await servicio.cerrar_sesion(sesion_a.id, SesionCerrar.model_validate({"contado": 10000}))
+    await servicio._session.commit()
+    assert arqueo.efectivo_esperado == 10000
+
+    ventas = VentasService(session=servicio._session, tenant_id=T1, actor_id="cajero-prueba", puede_anular=False)
+    resultados = await ventas.procesar_lote(_lote_venta(semilla["dispositivo"], semilla["producto"], 4000))
+    await servicio._session.commit()
+    assert resultados[0].resultado == "aceptada"
+
+    fila = await _uno(
+        pg_platform_url,
+        "SELECT sesion_caja_id FROM ventas WHERE id = :v",
+        v=uuid.UUID(resultados[0].id) if isinstance(resultados[0].id, str) else resultados[0].id,
+    )
+    assert fila.sesion_caja_id != sesion_a.id
+    sesion_nueva = await _uno(
+        pg_platform_url,
+        "SELECT base_inicial, abierta_por FROM caja_sesiones WHERE id = :s AND estado = 'abierta'",
+        s=fila.sesion_caja_id,
+    )
+    assert sesion_nueva.base_inicial == 0  # implícita, como manda ADR-018
+    congelado = await _uno(
+        pg_platform_url,
+        "SELECT efectivo_esperado, diferencia FROM caja_sesiones WHERE id = :s",
+        s=sesion_a.id,
+    )
+    assert (congelado.efectivo_esperado, congelado.diferencia) == (10000, 0)
+
+
+async def test_anular_por_el_sync_estampa_anulada_en_y_la_devolucion_cae_en_la_sesion_abierta(
+    servicio, semilla, pg_platform_url
+):
+    """El camino real completo de ADR-021: la venta se vende y se cobra en la
+    sesión A, A cierra cuadrada, y al día siguiente el dueño la anula — la
+    plata sale de la gaveta de B y el esperado vivo de B la resta (decisión 7)."""
+    ventas = VentasService(session=servicio._session, tenant_id=T1, actor_id="dueno-prueba", puede_anular=True)
+    sesion_a = await servicio.abrir_sesion(SesionAbrir.model_validate({"base_inicial": 0}))
+    await servicio._session.commit()
+    lote = _lote_venta(semilla["dispositivo"], semilla["producto"], 10000)
+    [resultado] = await ventas.procesar_lote(lote)
+    await servicio._session.commit()
+    venta_id = resultado.id if isinstance(resultado.id, uuid.UUID) else uuid.UUID(resultado.id)
+
+    await servicio.cerrar_sesion(sesion_a.id, SesionCerrar.model_validate({"contado": 10000}))
+    await servicio._session.commit()
+    sesion_b = await servicio.abrir_sesion(SesionAbrir.model_validate({"base_inicial": 50000}))
+    await servicio._session.commit()
+
+    anulacion = LoteSync.model_validate(
+        {
+            "dispositivo_id": str(semilla["dispositivo"]),
+            "operaciones": [
+                {"id": str(uuid.uuid4()), "tipo": "venta.anular", "secuencia": 2, "datos": {"venta_id": str(venta_id)}}
+            ],
+        }
+    )
+    [resultado_anulacion] = await ventas.procesar_lote(anulacion)
+    await servicio._session.commit()
+    assert resultado_anulacion.resultado == "aceptada"
+
+    fila = await _uno(
+        pg_platform_url,
+        "SELECT estado, anulada_en IS NOT NULL AS marcada FROM ventas WHERE id = :v",
+        v=venta_id,
+    )
+    assert (fila.estado, fila.marcada) == ("anulada", True)
+    desglose = await calcular_desglose(servicio._session, sesion_b)
+    assert desglose.devoluciones == 10000
+    assert desglose.esperado == 50000 - 10000
+    # Y el arqueo firmado de A sigue intacto: el cierre de ayer cuadra mañana.
+    congelado = await _uno(
+        pg_platform_url,
+        "SELECT efectivo_esperado, diferencia FROM caja_sesiones WHERE id = :s",
+        s=sesion_a.id,
+    )
+    assert (congelado.efectivo_esperado, congelado.diferencia) == (10000, 0)

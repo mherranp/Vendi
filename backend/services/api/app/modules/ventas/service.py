@@ -475,6 +475,11 @@ class VentasService:
             return self._duplicada(operacion)
 
         venta.estado = "anulada"
+        # La marca de CUÁNDO se anuló (módulo 4, decisión 7 del plan de
+        # caja): con ella, la devolución de efectivo de una venta anulada
+        # tras el cierre cae en la sesión abierta en ese momento (ADR-021)
+        # sin duplicar la venta como movimiento de caja.
+        venta.anulada_en = datetime.now(UTC)
         # La reposición se consolida por producto, igual que el descuento del
         # alta (BUG-1): dos líneas del mismo producto son UN movimiento con la
         # cantidad sumada, no dos que chocarían en `ux_movimientos_origen`.
@@ -516,11 +521,30 @@ class VentasService:
     async def _resolver_sesion_caja(self) -> CajaSesion:
         """La sesión abierta del tenant, o una implícita nueva (ADR-018).
 
+        La sesión abierta se lee con `FOR UPDATE` (módulo 4, decisión 5 del
+        plan de caja): sin el bloqueo hay una carrera real con el cierre — el
+        sync resuelve la sesión abierta, el cierre confirma en medio, y la
+        venta inserta contra una sesión ya `cerrada`, huérfana de todo
+        arqueo. Con el bloqueo, cierre y sync se serializan sobre la fila:
+        quien llega segundo la ve `cerrada` (la consulta filtra `abierta`) y
+        abre una implícita nueva. No hay inversión de orden de bloqueo: este
+        camino es sesión → productos; el del cierre es solo sesión.
+
         La carrera de dos aperturas implícitas concurrentes la decide el
         índice único parcial `ux_caja_sesion_abierta` (ADR-021): quien pierde
         re-lee la ganadora. Una sola sesión abierta por tienda, siempre.
         """
-        consulta = select(CajaSesion).where(CajaSesion.estado == "abierta")
+        # FOR UPDATE desde el módulo 4 (decisión 5 del plan de caja): sin el
+        # bloqueo, el sync puede resolver la sesión abierta, el CIERRE
+        # confirmar en medio, y la venta insertar contra una sesión ya
+        # `cerrada` — huérfana de todo arqueo. Con él, cierre y sync se
+        # serializan sobre la fila: quien llega segundo la ve `cerrada` (la
+        # consulta filtra `abierta`) y abre una implícita nueva. No hay
+        # inversión de orden de bloqueo: este camino es sesión → productos;
+        # el del cierre es solo sesión. El costo (lotes concurrentes del
+        # mismo tenant serializados en la fila) es despreciable a la escala
+        # de una tienda.
+        consulta = select(CajaSesion).where(CajaSesion.estado == "abierta").with_for_update()
         sesion = (await self._session.execute(consulta)).scalar_one_or_none()
         if sesion is not None:
             return sesion
